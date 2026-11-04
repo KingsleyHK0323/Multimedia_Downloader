@@ -1,8 +1,8 @@
 # Multimedia Downloader — V4.3.20
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/SpaceSquare640/Multimedia_Downloader?sort=semver)](https://github.com/SpaceSquare640/Multimedia_Downloader/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/SpaceSquare640/Multimedia_Downloader/total)](https://github.com/SpaceSquare640/Multimedia_Downloader/releases)
+[![Latest release](https://img.shields.io/github/v/release/SpaceSquare640/Multimedia_Downloader?sort=semver)](https://github.com/KingsleyHK0323/Multimedia_Downloader/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/SpaceSquare640/Multimedia_Downloader/total)](https://github.com/KingsleyHK0323/Multimedia_Downloader/releases)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Web-blue)](#run-as-a-web-app-v41)
 [![Built with](https://img.shields.io/badge/built%20with-Tauri%20·%20Svelte%20·%20Python-6E56CF)](#project-layout)
 
@@ -21,6 +21,7 @@ granted with those copies. This change applies to the current project
 distribution and does not revoke earlier grants.
 
 <!-- OpenAI-Codex: added the current software-license notice and attribution. -->
+<!-- OpenAI-Codex: updated repository links. -->
 
 A cross-platform multimedia downloader & format converter built on top of
 [yt-dlp](https://github.com/yt-dlp/yt-dlp) and `ffmpeg`, with an AI assistant
@@ -28,7 +29,7 @@ for batch automation. Ships as a native desktop app (Windows / Linux / macOS)
 built with [Tauri](https://tauri.app), and as a deployable web app.
 
 > This document is in English. For 繁體中文 / 简体中文 documentation, see the
-> [Wiki](https://github.com/SpaceSquare640/Multimedia_Downloader/wiki) — the
+> [Wiki](https://github.com/KingsleyHK0323/Multimedia_Downloader/wiki) — the
 > app's own UI stays available in all three languages regardless.
 
 ---
@@ -59,7 +60,7 @@ built with [Tauri](https://tauri.app), and as a deployable web app.
 
 ## Install (end users)
 
-1. Download the installer for your platform from the [Releases page](https://github.com/SpaceSquare640/Multimedia_Downloader/releases/latest) (Windows: `.exe`
+1. Download the installer for your platform from the [Releases page](https://github.com/KingsleyHK0323/Multimedia_Downloader/releases/latest) (Windows: `.exe`
    or `.msi`).
 2. Run it and follow the prompts.
 3. Launch **Multimedia Downloader** from the Start Menu / Applications.
@@ -98,7 +99,7 @@ the app.
 ## Building from source (developers)
 
 ```bash
-git clone https://github.com/SpaceSquare640/Multimedia_Downloader.git
+git clone https://github.com/KingsleyHK0323/Multimedia_Downloader.git
 cd Multimedia_Downloader
 npm install                 # installs the Tauri CLI at the project root
 npm run tauri dev           # compile + run in dev mode (needs Python 3.8+, Rust, Node)
@@ -195,7 +196,7 @@ The desktop app can't run on Android, but the Python engine can — via
 in your phone's browser:
 
 ```bash
-pkg install -y git && git clone https://github.com/SpaceSquare640/Multimedia_Downloader.git
+pkg install -y git && git clone https://github.com/KingsleyHK0323/Multimedia_Downloader.git
 cd Multimedia_Downloader
 bash termux/run-cli.sh download "https://youtu.be/XXXX" -o ~/storage/downloads -f mp4   # CLI
 bash termux/run-web.sh                                                                  # web UI

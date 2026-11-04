@@ -28,6 +28,7 @@
   when scheduled checks are missing or fail.
 - Derive the weekly Pages health-check URL from the current repository owner and
   name to avoid probing a stale hostname after a repository owner change. (OpenAI-Codex)
+- Update repository links to the current GitHub owner. (OpenAI-Codex)
 
 ### [4.3.20] — 2026-10-16
 
@@ -157,22 +158,22 @@
 ### [4.3.4] — 2026-07-24
 
 #### Fixed
-- **Large empty margins on a maximized/wide desktop window** ([#8](https://github.com/SpaceSquare640/Multimedia_Downloader/issues/8), follow-up) — v4.3.2 fixed this issue's navigation-swapping symptom but missed the "large black empty spaces" half of the same report: the content column and header row were both hard-capped at a fixed 1024px regardless of window width. Replaced the fixed cap with `clamp(64rem, 90vw, 100rem)` — floors at the original 1024px for normal window sizes, scales continuously with viewport width, caps at 1600px on very wide/ultrawide displays. (A first attempt at this used discrete breakpoint tiers instead of `clamp()`; caught before release that the tiers stopped widening past a `2xl` breakpoint, so the margin would have grown back *larger than before* on any monitor wider than ~1536px — `clamp()` scales continuously with no such ceiling regression.)
+- **Large empty margins on a maximized/wide desktop window** ([#8](https://github.com/KingsleyHK0323/Multimedia_Downloader/issues/8), follow-up) — v4.3.2 fixed this issue's navigation-swapping symptom but missed the "large black empty spaces" half of the same report: the content column and header row were both hard-capped at a fixed 1024px regardless of window width. Replaced the fixed cap with `clamp(64rem, 90vw, 100rem)` — floors at the original 1024px for normal window sizes, scales continuously with viewport width, caps at 1600px on very wide/ultrawide displays. (A first attempt at this used discrete breakpoint tiers instead of `clamp()`; caught before release that the tiers stopped widening past a `2xl` breakpoint, so the margin would have grown back *larger than before* on any monitor wider than ~1536px — `clamp()` scales continuously with no such ceiling regression.)
 
 ### [4.3.3] — 2026-07-24
 
 #### Added
-- **Playlist position in the Run Log** ([#10](https://github.com/SpaceSquare640/Multimedia_Downloader/issues/10)) — pasting a playlist URL already downloaded every entry in it (yt-dlp's default behavior), but the log and task list gave no indication that more than one file was involved. The log now shows "Playlist item i/t: title" as each entry starts, across every frontend (desktop, web, CLI, TUI) since it's emitted from the shared engine. Selecting which entries to include, and reflecting the expanded count in the batch task list itself, remain unimplemented (tracked in #10) — this only adds visibility into what's already happening.
+- **Playlist position in the Run Log** ([#10](https://github.com/KingsleyHK0323/Multimedia_Downloader/issues/10)) — pasting a playlist URL already downloaded every entry in it (yt-dlp's default behavior), but the log and task list gave no indication that more than one file was involved. The log now shows "Playlist item i/t: title" as each entry starts, across every frontend (desktop, web, CLI, TUI) since it's emitted from the shared engine. Selecting which entries to include, and reflecting the expanded count in the batch task list itself, remain unimplemented (tracked in #10) — this only adds visibility into what's already happening.
 
 ### [4.3.2] — 2026-07-24
 
 #### Fixed
-- **Desktop app navigation swapping style when the window is resized** ([#8](https://github.com/SpaceSquare640/Multimedia_Downloader/issues/8)) — the top pill-bar nav vs. bottom nav + floating AI button was previously a pure CSS width breakpoint (`lg`), shared with the web build where it's genuinely needed for real phone browsers. In the desktop app this meant resizing the OS window across that breakpoint swapped the entire navigation style and moved the AI Assistant button, which read as broken rather than responsive. The desktop app (`IS_TAURI`) now always uses the top pill bar and header AI button regardless of window width; the web build's responsive mobile layout is unchanged.
+- **Desktop app navigation swapping style when the window is resized** ([#8](https://github.com/KingsleyHK0323/Multimedia_Downloader/issues/8)) — the top pill-bar nav vs. bottom nav + floating AI button was previously a pure CSS width breakpoint (`lg`), shared with the web build where it's genuinely needed for real phone browsers. In the desktop app this meant resizing the OS window across that breakpoint swapped the entire navigation style and moved the AI Assistant button, which read as broken rather than responsive. The desktop app (`IS_TAURI`) now always uses the top pill bar and header AI button regardless of window width; the web build's responsive mobile layout is unchanged.
 
 ### [4.3.1] — 2026-07-23
 
 #### Fixed
-- **Download task list disappearing when switching tabs** ([#9](https://github.com/SpaceSquare640/Multimedia_Downloader/issues/9)) — the per-batch task list lived in `DownloadTab.svelte`'s local component state, which Svelte destroys and recreates every time `App.svelte`'s `{#if}` tab switch swaps to a different tab (downloads themselves kept running in the background; only the UI's tracking of them was wiped). Moved the list into the shared store alongside `progress`/`busy`/`logs`, updated from `App.svelte`'s already-persistent global event listener instead of a per-tab one, so it now survives navigating away and back — and stays visible from either the Video or Music tab while a batch is running, consistent with how progress/busy already work app-wide.
+- **Download task list disappearing when switching tabs** ([#9](https://github.com/KingsleyHK0323/Multimedia_Downloader/issues/9)) — the per-batch task list lived in `DownloadTab.svelte`'s local component state, which Svelte destroys and recreates every time `App.svelte`'s `{#if}` tab switch swaps to a different tab (downloads themselves kept running in the background; only the UI's tracking of them was wiped). Moved the list into the shared store alongside `progress`/`busy`/`logs`, updated from `App.svelte`'s already-persistent global event listener instead of a per-tab one, so it now survives navigating away and back — and stays visible from either the Video or Music tab while a batch is running, consistent with how progress/busy already work app-wide.
 
 ### [4.3.0] — 2026-07-23
 
@@ -207,7 +208,7 @@
 #### Fixed
 - **Language dropdown showing raw codes instead of names** (`en` / `zh_tw` /
   `zh_cn` instead of "English" / "繁體中文" / "简体中文") — reported in
-  [#4](https://github.com/SpaceSquare640/Multimedia_Downloader/issues/4). The
+  [#4](https://github.com/KingsleyHK0323/Multimedia_Downloader/issues/4). The
   display names were being fetched over an unnecessary round-trip to the
   engine sidecar; if that round-trip ever hiccupped, the dropdown silently
   fell back to raw codes with no visible error. Fixed by reading the names
@@ -333,7 +334,7 @@ generation of the app: `Version/Version3.0/CHANGELOG.md`.
 #### 修復
 - **語言下拉選單顯示原始代碼而非名稱**（顯示 `en`／`zh_tw`／`zh_cn` 而非
   「English」／「繁體中文」／「简体中文」）——由
-  [#4](https://github.com/SpaceSquare640/Multimedia_Downloader/issues/4) 回報。
+  [#4](https://github.com/KingsleyHK0323/Multimedia_Downloader/issues/4) 回報。
   原因是顯示名稱要跑一趟引擎 sidecar 才能拿到，一旦這趟呼叫失敗，下拉選單
   會悄悄退回顯示原始代碼、不會有任何錯誤提示。修法：改成直接從建置時期就
   綁進 app 的語言檔讀取名稱——完全不依賴後端，不會再發生這個問題。
@@ -442,7 +443,7 @@ tkinter/Flask 世代的完整變更歷程見 V3.0 changelog：
 #### 修复
 - **语言下拉菜单显示原始代码而非名称**（显示 `en`／`zh_tw`／`zh_cn` 而非
   「English」／「繁體中文」／「简体中文」）——由
-  [#4](https://github.com/SpaceSquare640/Multimedia_Downloader/issues/4) 反馈。
+  [#4](https://github.com/KingsleyHK0323/Multimedia_Downloader/issues/4) 反馈。
   原因是显示名称要跑一趟引擎 sidecar 才能拿到，一旦这趟调用失败，下拉菜单
   会悄悄退回显示原始代码、不会有任何错误提示。修复方式：改成直接从构建时
   就绑进 app 的语言文件读取名称——完全不依赖后端，不会再发生这个问题。

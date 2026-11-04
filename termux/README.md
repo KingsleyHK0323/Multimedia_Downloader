@@ -102,3 +102,5 @@ bash termux/run-web.sh           # 開啟顯示的網址（如 http://127.0.0.1:
 > ⚠️ **Termux 不支援部分升級**：腳本會先自動 `pkg upgrade`。若你手動裝且看到
 > `CANNOT LINK EXECUTABLE .../ffmpeg`（libplacebo.so 找不到符號），先跑
 > `pkg upgrade -y && apt --fix-broken install` 修好 ffmpeg，再重跑腳本。
+
+<!-- Updated by: OpenAI-Codex -->

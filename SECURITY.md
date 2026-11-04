@@ -26,3 +26,5 @@ posted on the fix.
   expose it to an untrusted network without putting your own auth in front of it.
 - The bundled `ffmpeg` is a third-party binary (GPLv3); see
   [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+<!-- Updated by: OpenAI-Codex -->

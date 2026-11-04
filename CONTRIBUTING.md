@@ -49,3 +49,5 @@ reviewable PRs are easier to merge. See the PR template for the checklist.
 
 Use the [issue templates](https://github.com/KingsleyHK0323/Multimedia_Downloader/issues/new/choose).
 For security issues, see [SECURITY.md](SECURITY.md).
+
+<!-- Updated by: OpenAI-Codex -->
