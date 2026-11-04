@@ -26,6 +26,8 @@
 #### Maintenance
 - Add weekly CI and Dependabot watchdogs that open or update a GitHub issue
   when scheduled checks are missing or fail.
+- Derive the weekly Pages health-check URL from the current repository owner and
+  name to avoid probing a stale hostname after a repository owner change. (OpenAI-Codex)
 
 ### [4.3.20] — 2026-10-16
 

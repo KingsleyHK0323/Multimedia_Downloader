@@ -170,6 +170,10 @@ jobs:
 
       - name: Check deployed Pages site
         run: |
-          status="$(curl --fail --silent --show-error --location --retry 3 --retry-delay 10 --retry-connrefused --max-time 30 --output page.html --write-out '%{http_code}' https://spacesquare640.github.io/Multimedia_Downloader/)"
+          # OpenAI-Codex: derive the Pages host from the current repository owner.
+          repository_owner="${GITHUB_REPOSITORY%/*}"
+          repository_name="${GITHUB_REPOSITORY#*/}"
+          pages_url="https://${repository_owner,,}.github.io/${repository_name}/"
+          status="$(curl --fail --silent --show-error --location --retry 3 --retry-delay 10 --retry-connrefused --max-time 30 --output page.html --write-out '%{http_code}' "$pages_url")"
           test "$status" = "200"
           grep -Fq '<title>Multimedia Downloader — project field guide</title>' page.html
