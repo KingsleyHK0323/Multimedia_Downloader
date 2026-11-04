@@ -257,15 +257,16 @@
     <ol class="steps-list">{#each t.steps as step}<li><h3>{step.title}</h3><p>{step.body}</p><svg class="arrow-icon step-arrow" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 3v10h10M8 8l5 5" /></svg></li>{/each}</ol>
   </section>
 
+  <!-- OpenAI-Codex: updated repository links. -->
   <section class="about-section content-section" id="about">
-    <div class="about-copy"><h2>{t.aboutTitle}</h2><p>{t.aboutBody}</p><a class="text-link" href="https://github.com/SpaceSquare640/Multimedia_Downloader" target="_blank" rel="noreferrer">{t.sourceCta}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a></div>
+    <div class="about-copy"><h2>{t.aboutTitle}</h2><p>{t.aboutBody}</p><a class="text-link" href="https://github.com/KingsleyHK0323/Multimedia_Downloader" target="_blank" rel="noreferrer">{t.sourceCta}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a></div>
     <ul class="facts-list">{#each t.facts as fact}<li><span class="fact-mark" aria-hidden="true"></span>{fact}</li>{/each}</ul>
   </section>
 
   <section class="source-callout content-section">
     <div><h2>{t.sourceTitle}</h2><p>{t.sourceBody}</p></div>
-    <div class="source-actions"><a class="top-cta" href="https://github.com/SpaceSquare640/Multimedia_Downloader" target="_blank" rel="noreferrer">{t.sourceCta}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a><a class="community-link" href="https://discord.gg/aaUQVJeCgC" target="_blank" rel="noreferrer">{t.communityCta}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a></div>
+    <div class="source-actions"><a class="top-cta" href="https://github.com/KingsleyHK0323/Multimedia_Downloader" target="_blank" rel="noreferrer">{t.sourceCta}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a><a class="community-link" href="https://discord.gg/aaUQVJeCgC" target="_blank" rel="noreferrer">{t.communityCta}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a></div>
   </section>
 
-  <footer class="site-footer"><a class="footer-name" href="#top">Multimedia Downloader<span> / {t.fieldGuide}</span></a><span>{t.footer}</span><div class="footer-links"><a href="https://github.com/SpaceSquare640/Multimedia_Downloader" target="_blank" rel="noreferrer">{t.source}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a><a href="https://discord.gg/aaUQVJeCgC" target="_blank" rel="noreferrer">{t.community}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a><a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noreferrer">{t.contentLicense}</a><a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noreferrer">{t.codeLicense}</a></div></footer>
+  <footer class="site-footer"><a class="footer-name" href="#top">Multimedia Downloader<span> / {t.fieldGuide}</span></a><span>{t.footer}</span><div class="footer-links"><a href="https://github.com/KingsleyHK0323/Multimedia_Downloader" target="_blank" rel="noreferrer">{t.source}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a><a href="https://discord.gg/aaUQVJeCgC" target="_blank" rel="noreferrer">{t.community}<svg class="arrow-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M3 13 13 3M5 3h8v8" /></svg></a><a href="https://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noreferrer">{t.contentLicense}</a><a href="https://polyformproject.org/licenses/noncommercial/1.0.0/" target="_blank" rel="noreferrer">{t.codeLicense}</a></div></footer>
 </main>

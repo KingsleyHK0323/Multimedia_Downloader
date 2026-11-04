@@ -5,6 +5,7 @@
 - Updated the simulated app version to match Source_Code V4.3.20. (OpenAI-Codex)
 - Removed the duplicate TypeScript module resolution setting. (OpenAI-Codex)
 - Localized the page title and screen-reader navigation labels in all three interface languages. (OpenAI-Codex)
+- Updated project repository links to the current GitHub owner. (OpenAI-Codex)
 
 ## 2026-10-26
 

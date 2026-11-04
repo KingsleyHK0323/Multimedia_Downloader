@@ -49,7 +49,9 @@ The build uses the repository project path `/Multimedia_Downloader/` so its stat
 
 ## Project links
 
-- [Multimedia Downloader source repository](https://github.com/SpaceSquare640/Multimedia_Downloader)
-- [Releases](https://github.com/SpaceSquare640/Multimedia_Downloader/releases)
-- [User manual wiki](https://github.com/SpaceSquare640/Multimedia_Downloader/wiki)
+- [Multimedia Downloader source repository](https://github.com/KingsleyHK0323/Multimedia_Downloader)
+- [Releases](https://github.com/KingsleyHK0323/Multimedia_Downloader/releases)
+- [User manual wiki](https://github.com/KingsleyHK0323/Multimedia_Downloader/wiki)
 - [Discord community](https://discord.gg/aaUQVJeCgC)
+
+<!-- OpenAI-Codex: updated project repository links. -->
