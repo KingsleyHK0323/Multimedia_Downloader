@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-11-04
+
+- Updated the simulated app version to match Source_Code V4.3.20. (OpenAI-Codex)
+- Removed the duplicate TypeScript module resolution setting. (OpenAI-Codex)
+- Localized the page title and screen-reader navigation labels in all three interface languages. (OpenAI-Codex)
+
 ## 2026-10-26
 
 - Applied PolyForm Noncommercial 1.0.0 to the website code and CC BY-NC-SA 4.0 to original website content, with copyright credited to Kingsley.

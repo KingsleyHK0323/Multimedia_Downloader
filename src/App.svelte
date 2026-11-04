@@ -8,6 +8,7 @@
 
   const copy = {
     en: {
+      pageTitle: 'Multimedia Downloader — project field guide', homeLabel: 'Multimedia Downloader home', navigationLabel: 'Main navigation', projectIndexLabel: 'Project index',
       navProject: 'Project', navWorkflows: 'Workflows', navAbout: 'About', tryDemo: 'Try the demo', tryFlow: 'Try this flow',
       title: 'A field guide to\nMultimedia Downloader.', intro: 'A source-available, cross-platform project for downloading and converting media. Explore its everyday workflows without installing anything.',
       demoLabel: 'Interactive app preview', simulated: 'SIMULATION · LOCAL ONLY', fieldGuide: 'FIELD GUIDE', mediaTools: 'MEDIA TOOLS', sourceAvailable: 'Source available', inBrowser: 'IN THE BROWSER', localSimulation: 'LOCAL SIMULATION',
@@ -28,6 +29,7 @@
       mockTag: 'Fictional sample', inputRequired: 'Enter a sample URL to continue.', invalidPrompt: 'Add a short task description first.', dropped: 'Drop a sample item here',
     },
     'zh-TW': {
+      pageTitle: 'Multimedia Downloader — 互動專案指南', homeLabel: 'Multimedia Downloader 首頁', navigationLabel: '主要導覽', projectIndexLabel: '專案索引',
       navProject: '專案', navWorkflows: '工作流程', navAbout: '關於', tryDemo: '試用模擬 App', tryFlow: '試走此流程',
       title: 'Multimedia Downloader\n互動專案指南。', intro: '跨平台、原始碼可得的媒體下載與轉檔工具。免安裝探索專案功能並體驗常見工作流程。',
       demoLabel: '互動式 App 預覽', simulated: '模擬操作 · 僅限本機', fieldGuide: '互動指南', mediaTools: '媒體工具', sourceAvailable: '原始碼可得', inBrowser: '瀏覽器示範', localSimulation: '本機模擬',
@@ -48,6 +50,7 @@
       mockTag: '虛構範例', inputRequired: '請先輸入示範網址。', invalidPrompt: '請先簡短描述任務。', dropped: '拖曳範例項目至此',
     },
     'zh-CN': {
+      pageTitle: 'Multimedia Downloader — 互动项目指南', homeLabel: 'Multimedia Downloader 首页', navigationLabel: '主导航', projectIndexLabel: '项目索引',
       navProject: '项目', navWorkflows: '工作流程', navAbout: '关于', tryDemo: '试用模拟 App', tryFlow: '体验此流程',
       title: 'Multimedia Downloader\n互动项目指南。', intro: '跨平台、源代码可得的媒体下载与转换工具。免安装探索项目功能并体验常见工作流程。',
       demoLabel: '互动式 App 预览', simulated: '模拟操作 · 仅限本地', fieldGuide: '互动指南', mediaTools: '媒体工具', sourceAvailable: '源代码可得', inBrowser: '浏览器演示', localSimulation: '本地模拟',
@@ -140,13 +143,14 @@
   onDestroy(() => { if (timer) clearInterval(timer); });
 </script>
 
+<!-- OpenAI-Codex: localize page titles and navigation labels. -->
 <svelte:head>
-  <title>{locale === 'en' ? 'Multimedia Downloader — project field guide' : 'Multimedia Downloader — 互動專案指南'}</title>
+  <title>{t.pageTitle}</title>
 </svelte:head>
 
 <header class="topbar">
-  <a class="wordmark" href="#top" aria-label="Multimedia Downloader home"><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Multimedia<br />Downloader</span></a>
-  <nav aria-label="Main navigation">
+  <a class="wordmark" href="#top" aria-label={t.homeLabel}><span class="mark" aria-hidden="true"><i></i><i></i><i></i></span><span>Multimedia<br />Downloader</span></a>
+  <nav aria-label={t.navigationLabel}>
     <a href="#project">{t.navProject}</a><a href="#workflows">{t.navWorkflows}</a><a href="#about">{t.navAbout}</a>
   </nav>
   <div class="top-actions">
@@ -160,9 +164,10 @@
     <div class="hero-copy">
       <h1>{t.title}</h1>
       <p class="hero-intro">{t.intro}</p>
-      <div class="hero-links"><a class="text-link" href="#workflows">{t.navWorkflows}<svg class="arrow-icon down-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M8 2v11M4 9l4 4 4-4" /></svg></a><span class="source-available"><span class="status-dot"></span> {t.sourceAvailable} · V4.3.11</span></div>
+      <!-- OpenAI-Codex: align the simulated app version with Source_Code. -->
+      <div class="hero-links"><a class="text-link" href="#workflows">{t.navWorkflows}<svg class="arrow-icon down-icon" aria-hidden="true" viewBox="0 0 16 16"><path d="M8 2v11M4 9l4 4 4-4" /></svg></a><span class="source-available"><span class="status-dot"></span> {t.sourceAvailable} · V4.3.20</span></div>
     </div>
-    <div class="hero-index" aria-label="Project index"><span>{t.fieldGuide}</span><b>MD / 043</b><span>{t.mediaTools}</span></div>
+    <div class="hero-index" role="group" aria-label={t.projectIndexLabel}><span>{t.fieldGuide}</span><b>MD / 043</b><span>{t.mediaTools}</span></div>
   </section>
 
   <section class="demo-section" id="demo" aria-labelledby="demo-heading">
@@ -177,7 +182,7 @@
       </div>
       <div class="app-body">
         <div class="workbench">
-          <div class="mode-tabs" role="tablist" aria-label="Workflow">
+          <div class="mode-tabs" role="tablist" aria-label={t.navWorkflows}>
             <button class:active={mode === 'download'} role="tab" aria-selected={mode === 'download'} onclick={() => { mode = 'download'; notice = ''; }}>{t.tabDownload}</button>
             <button class:active={mode === 'convert'} role="tab" aria-selected={mode === 'convert'} onclick={() => { mode = 'convert'; notice = ''; }}>{t.tabConvert}</button>
             <button class:active={mode === 'assistant'} role="tab" aria-selected={mode === 'assistant'} onclick={() => { mode = 'assistant'; notice = ''; }}>{t.tabAssistant}</button>
