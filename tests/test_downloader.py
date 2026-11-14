@@ -213,6 +213,17 @@ class LogRedactionTests(unittest.TestCase):
             "[redacted URL]",
         )
 
+    def test_engine_logs_and_error_result_redact_sensitive_urls(self):
+        events = []
+        downloader = _make_downloader(log_cb=lambda level, key, **fmt: events.append(fmt))
+        url = "https://alice:password@example.com/watch?token=secret#private"
+        with patch.object(Downloader, "download_one", side_effect=RuntimeError(url)):
+            results = downloader.download_batch([url])
+        self.assertNotIn("password", repr(events))
+        self.assertNotIn("secret", repr(events))
+        self.assertNotIn("password", results[0][2])
+        self.assertNotIn("secret", results[0][2])
+
     def test_cli_logger_redacts_rendered_messages(self):
         from cli import _make_logger
 

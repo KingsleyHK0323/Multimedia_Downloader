@@ -16,6 +16,8 @@ from typing import Iterable, Optional
 import yt_dlp
 
 from .errors import ErrorKind, classify, is_stale_tool
+# OpenAI-Codex_engine_cli: sanitize URL components in log text.
+from .log_safety import redact_sensitive_urls
 from .formats import (
     AUDIO_FORMATS,
     QUALITY_PRESETS,
@@ -110,8 +112,9 @@ class Downloader:
                 self._log("ok", "log_item_done", i=i, t=total)
                 results.append((url, True, ""))
             except Exception as e:  # yt-dlp raises DownloadError + others
-                self._log("err", "log_item_error", i=i, t=total, err=str(e))
-                results.append((url, False, str(e)))
+                message = redact_sensitive_urls(str(e))
+                self._log("err", "log_item_error", i=i, t=total, err=message)
+                results.append((url, False, message))
 
         self._log_batch_summary(results, total)
         return results
@@ -245,4 +248,6 @@ class Downloader:
     # ── Log dispatch ────────────────────────────────────────────────────────
     def _log(self, level: str, key: str, **fmt) -> None:
         if self.log_cb:
-            self.log_cb(level, key, **fmt)
+            safe = {name: redact_sensitive_urls(value) if isinstance(value, str) else value
+                    for name, value in fmt.items()}
+            self.log_cb(level, key, **safe)
