@@ -1,4 +1,5 @@
 <script lang="ts">
+  // OpenAI-Codex_app_ui: expose the progress description to assistive technology.
   let { pct, label }: { pct: number; label?: string } = $props();
 </script>
 
@@ -6,6 +7,7 @@
   <div
     class="h-2 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800"
     role="progressbar"
+    aria-label={label}
     aria-valuenow={Math.round(pct)}
     aria-valuemin={0}
     aria-valuemax={100}
