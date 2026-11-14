@@ -23,6 +23,10 @@ permissions:
 
 jobs:
   check:
+    # OpenAI-Codex_Fork_GitHub_REPO: serialize runs of this roster checker.
+    concurrency:
+      group: ai-model-roster-check
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -36,8 +40,32 @@ jobs:
         name: Check whether the default models are still live
         run: |
           set +e
+          # OpenAI-Codex_Fork_GitHub_REPO: nonce detects accidental exit-code collisions.
+          export MMDL_ROSTER_COMPLETION_TOKEN="roster-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${RANDOM}-${RANDOM}"
           python scripts/check_ai_roster.py | tee roster.txt
+          # OpenAI-Codex_Fork_GitHub_REPO: capture both pipeline results immediately.
+          roster_pipeline_status=("${PIPESTATUS[@]}")
+          # Require exactly one fixed-format completion record matching the captured status.
+          roster_record="MMDL_ROSTER_COMPLETE ${MMDL_ROSTER_COMPLETION_TOKEN} ${roster_pipeline_status[0]}"
+          roster_count="$(grep -c '^MMDL_ROSTER_COMPLETE ' roster.txt)"
+          if [ "$roster_count" != "1" ] || ! grep -Fxq -- "$roster_record" roster.txt; then
+            echo "::error::Roster completion evidence is missing, duplicated, or mismatched."
+            exit 1
+          fi
+          # OpenAI-Codex_Fork_GitHub_REPO: restore the original process status for the retained output line.
+          (exit "${roster_pipeline_status[0]}")
           echo "status=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
+
+          if [ "$?" -ne 0 ]; then
+            echo "::error::Initial roster status output failed."
+            exit 1
+          fi
+          # OpenAI-Codex_Fork_GitHub_REPO: output and logging failures must not look successful.
+          if [ "${roster_pipeline_status[1]}" != "0" ]; then
+            echo "::error::Roster report capture failed."
+            exit 1
+          fi
+          printf 'status=%s\n' "${roster_pipeline_status[0]}" >> "$GITHUB_OUTPUT" || exit 1
 
       # Exit 2 means the catalogue could not be read -- that says nothing about
       # the roster, so it must not raise an issue. Report it and stop.
@@ -45,6 +73,59 @@ jobs:
         if: steps.check.outputs.status == '2'
         run: |
           echo "::warning::Could not read the OpenRouter catalogue; roster state is unknown."
+
+      # OpenAI-Codex_Fork_GitHub_REPO: an unhandled startup error is not retirement.
+      - name: Stop on unknown roster status
+        if: steps.check.outputs.status != '0' && steps.check.outputs.status != '1' && steps.check.outputs.status != '2' && steps.check.outputs.status != '3'
+        run: |
+          echo "::error::Roster process returned an unknown status; roster state is unknown."
+          exit 1
+
+      - name: Stop on unclassified roster process failure
+        if: steps.check.outputs.status == '1'
+        run: |
+          echo "::error::Roster process failed before a classified result; roster state is unknown."
+          exit 1
+
+      - name: Report observed roster substitution
+        if: steps.check.outputs.status == '3'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            // Only an observed difference is known; do not claim retirement or copy raw output.
+            const { owner, repo } = context.repo;
+            const title = 'AI model roster: default candidate substitution observed';
+            const issues = await github.paginate(github.rest.issues.listForRepo,
+              { owner, repo, state: 'open', per_page: 100 });
+            const existing = issues.filter((issue) => !issue.pull_request &&
+              issue.user?.login === 'github-actions[bot]' && issue.title === title);
+            // OpenAI-Codex_Fork_GitHub_REPO: do not duplicate a legacy bot report.
+            const legacyTitle = 'AI model roster: default OpenRouter ids have been retired';
+            if (issues.some((issue) => !issue.pull_request && issue.user?.login === 'github-actions[bot]' && issue.title === legacyTitle)) {
+              core.warning('An older roster issue is open; review it manually before creating a new report.');
+              return;
+            }
+            // OpenAI-Codex_Fork_GitHub_REPO: require bot identity and exact marker.
+            const rosterMarker = '<!-- ai-roster-candidate-substitution -->';
+            if (existing.some((issue) => typeof issue.body !== 'string' ||
+                !issue.body.split(/\r?\n/).includes(rosterMarker))) {
+              core.warning('A same-title bot issue has no trusted marker; skipped.');
+              return;
+            }
+            if (existing.length > 1) {
+              core.warning('Multiple matching bot issues exist; no issue was created.');
+              return;
+            }
+            if (existing.length === 1) {
+              core.notice(`Roster substitution issue #${existing[0].number} is already open.`);
+              return;
+            }
+            // Use a fixed body only: no external catalogue text is published.
+            await github.rest.issues.create({ owner, repo, title,
+              body: `${rosterMarker}\nThe roster check observed a difference between at least one default model and the selected candidate. This does not establish that any model has retired. Review the catalogue and roster before changing defaults.` });
+            return;
+            await github.rest.issues.create({ owner, repo, title,
+              body: 'The roster check observed a difference between at least one default model and the selected candidate. This does not establish that any model has retired. Review the catalogue and roster before changing defaults.' });
 
       - name: Open an issue when defaults have been retired
         if: steps.check.outputs.status == '1'
@@ -70,4 +151,4 @@ jobs:
 
       - name: Report when everything is live
         if: steps.check.outputs.status == '0'
-        run: echo "All four defaults are still live."
+        run: echo "No default-model substitutions were observed in this check."

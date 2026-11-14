@@ -3,6 +3,7 @@ name: Dependabot auto-merge
 # Merge only after the full CI workflow for a Dependabot PR has succeeded.
 # This privileged workflow uses API/CLI operations only and never checks out
 # or executes code from the pull request.
+# OpenAI-Codex_dependabot_changes: pin merge decisions to the verified head.
 on:
   workflow_run:
     workflows: [CI]
@@ -10,6 +11,7 @@ on:
 
 permissions:
   actions: write
+  checks: read
   contents: write
   pull-requests: write
 
@@ -17,14 +19,24 @@ jobs:
   auto-merge:
     if: >-
       github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request'
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.path == '.github/workflows/ci.yml' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    concurrency:
+      group: dependabot-merge-${{ github.event.workflow_run.head_sha }}
+      cancel-in-progress: false
     steps:
       - name: Merge successful Dependabot PR and request its release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          CI_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          CI_WORKFLOW_ID: ${{ github.event.workflow_run.workflow_id }}
+          CI_SUITE_ID: ${{ github.event.workflow_run.check_suite_id }}
+          CI_PULLS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
         run: |
           set -euo pipefail
           if [[ ! "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
@@ -32,22 +44,124 @@ jobs:
             exit 1
           fi
 
-          pr_number="$(gh api "repos/${GH_REPO}/commits/${HEAD_SHA}/pulls" \
-            --jq ".[] | select(.state == \"open\" and .user.login == \"dependabot[bot]\" and .base.ref == \"Source_Code\" and .head.sha == \"${HEAD_SHA}\") | .number" \
-            | head -n 1)"
+          for id in "$CI_RUN_ID" "$CI_RUN_ATTEMPT" "$CI_WORKFLOW_ID" "$CI_SUITE_ID"; do
+            if [[ ! "$id" =~ ^[0-9]+$ ]]; then
+              echo "::warning::CI identity is incomplete; skipping merge."
+              exit 0
+            fi
+          done
+          if ! actual_workflow="$(gh api "repos/${GH_REPO}/actions/workflows/ci.yml" --jq '.id')" ||
+             [ "$actual_workflow" != "$CI_WORKFLOW_ID" ]; then
+            echo "::warning::The CI workflow identity cannot be verified; skipping merge."
+            exit 0
+          fi
+          if ! suite="$(gh api "repos/${GH_REPO}/check-suites/${CI_SUITE_ID}" 2>/dev/null)" ||
+             ! actions_app_id="$(jq -er 'select(.app.slug == "github-actions") | .app.id | select(type == "number" and . > 0)' <<< "$suite")"; then
+            echo "::warning::The CI check-suite source cannot be verified; skipping merge."
+            exit 0
+          fi
+          if ! jobs="$(gh api --paginate --slurp "repos/${GH_REPO}/actions/runs/${CI_RUN_ID}/attempts/${CI_RUN_ATTEMPT}/jobs?per_page=100")"; then
+            echo "::warning::CI jobs cannot be verified; skipping merge."
+            exit 0
+          fi
+          if ! jq -e '
+            .[0].total_count as $total | [.[].jobs[]] as $jobs |
+            ($total == ($jobs | length)) and
+            all(["version-consistency", "lint", "python-tests", "frontend-check", "rust-check"][];
+              . as $name | [$jobs[] | select(.name == $name)] as $found |
+              ($found | length) == 1 and $found[0].status == "completed" and $found[0].conclusion == "success")
+          ' <<< "$jobs" >/dev/null; then
+            echo "::warning::Required CI jobs were missing, incomplete, skipped or unsuccessful; skipping merge."
+            exit 0
+          fi
+
+          associated="$(gh api --paginate --slurp "repos/${GH_REPO}/commits/${HEAD_SHA}/pulls?per_page=100")"
+          pr_number="$(jq -r --arg sha "$HEAD_SHA" \
+            '[.[][] | select(.state == "open" and .user.login == "dependabot[bot]" and
+             .base.ref == "Source_Code" and .head.sha == $sha) | .number] | unique |
+             if length == 1 then .[0] else empty end' <<< "$associated")"
           if [ -z "${pr_number}" ]; then
             echo "No open Dependabot PR targeting Source_Code is associated with this successful CI run."
             exit 0
           fi
+          if ! jq -e --argjson number "$pr_number" --arg sha "$HEAD_SHA" \
+            'type == "array" and any(.[]; .number == $number and .head.sha == $sha and .base.ref == "Source_Code")' \
+            <<< "$CI_PULLS" >/dev/null; then
+            echo "::warning::CI does not identify this PR, base and exact head; skipping merge."
+            exit 0
+          fi
 
-          workflow_files="$(gh api "repos/${GH_REPO}/pulls/${pr_number}/files" \
-            --jq '.[].filename | select(startswith(".github/workflows/"))')"
+          # Fail closed if the repository would delete a branch on merge.
+          if [ "$(gh api "repos/${GH_REPO}" --jq '.delete_branch_on_merge')" != "false" ]; then
+            echo "::warning::Automatic branch deletion is enabled or cannot be confirmed; skipping merge."
+            exit 0
+          fi
+
+          # Do not merge unless classic protection enforces an up-to-date base,
+          # all known CI jobs, and administrator enforcement. A 403, missing
+          # rule or unrecognised configuration is not evidence of protection.
+          if ! protection="$(gh api "repos/${GH_REPO}/branches/Source_Code/protection" 2>/dev/null)"; then
+            echo "::warning::Required branch protection cannot be verified; skipping merge."
+            exit 0
+          fi
+          if ! jq -e --argjson actions_app_id "$actions_app_id" '
+            (.enforce_admins.enabled == true) and
+            (.required_status_checks.strict == true) and
+            ((.required_status_checks.checks // []) as $checks |
+             all(["version-consistency", "lint", "python-tests", "frontend-check", "rust-check"][];
+               . as $required | any($checks[]; .context == $required and .app_id == $actions_app_id)))
+          ' <<< "$protection" >/dev/null; then
+            echo "::warning::Strict CI checks bound to GitHub Actions or administrator enforcement are absent; skipping merge."
+            exit 0
+          fi
+
+          # Fetch every page and compare with the PR's declared count; the API
+          # has an upper limit and a partial list must never authorize a merge.
+          pr_json="$(gh api "repos/${GH_REPO}/pulls/${pr_number}")"
+          if ! jq -e --arg sha "$HEAD_SHA" --arg repo "$GH_REPO" \
+            '.state == "open" and .draft == false and .user.login == "dependabot[bot]" and
+             .base.ref == "Source_Code" and .head.sha == $sha and
+             .head.repo.full_name == $repo and (.head.ref | startswith("dependabot/"))' \
+            <<< "$pr_json" >/dev/null; then
+            echo "PR state, author, repository, branch, or head changed; skipping merge."
+            exit 0
+          fi
+          changed_files="$(jq -r '.changed_files' <<< "$pr_json")"
+          if [[ ! "$changed_files" =~ ^[0-9]+$ ]] || [ "$changed_files" -eq 0 ] || [ "$changed_files" -gt 3000 ]; then
+            echo "::warning::PR file count is invalid or exceeds the API limit; skipping merge."
+            exit 0
+          fi
+          pages="$(gh api --paginate --slurp "repos/${GH_REPO}/pulls/${pr_number}/files?per_page=100")"
+          if ! jq -e --argjson expected "$changed_files" '[.[][]] | length == $expected' <<< "$pages" >/dev/null; then
+            echo "::warning::The paginated file list is incomplete; skipping merge."
+            exit 0
+          fi
+          # OpenAI-Codex_dependabot_changes: accept only inspectable additions
+          # to explicitly listed dependency files; all other changes need review.
+          if ! jq -e '[.[][]] | all(.[];
+               (.status == "added" or .status == "modified") and
+               .deletions == 0 and (.patch | type == "string" and length > 0) and
+               (.filename as $path | ["package.json", "package-lock.json",
+                 "frontend/package.json", "frontend/package-lock.json",
+                 "requirements-dev.txt", "requirements-tui.txt", "requirements-web.txt",
+                 "engine/requirements.txt", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock"] |
+                 index($path) != null))' <<< "$pages" >/dev/null; then
+            echo "::warning::PR contains an unapproved path, deletion, rename, or unavailable patch; skipping merge."
+            exit 0
+          fi
+          workflow_files="$(jq -r '.[][] | select(any([.filename, (.previous_filename // "")][];
+            startswith(".github/workflows/") or startswith(".github/actions/"))) | .filename' <<< "$pages")"
           if [ -n "${workflow_files}" ]; then
             echo "Skipping PR #${pr_number}: updating GitHub Actions workflow files requires a separate Workflows permission."
             exit 0
           fi
 
-          gh pr merge "${pr_number}" --squash
+          # OpenAI-Codex_Fork_GitHub_REPO: fail closed until server-side
+          # no-deletion and non-bypass guarantees can be demonstrated.
+          echo "::warning::Automatic merge disabled: branch deletion and bypass guarantees are unverified."
+          exit 0
+          # The API enforces the checked head when the merge is requested.
+          gh pr merge "${pr_number}" --squash --match-head-commit "${HEAD_SHA}"
           release_label="$(gh api "repos/${GH_REPO}/pulls/${pr_number}" \
             --jq '[.labels[].name] | any(. == "release:patch")')"
           if [ "${release_label}" = "true" ]; then
