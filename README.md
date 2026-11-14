@@ -46,6 +46,9 @@ built with [Tauri](https://tauri.app), and as a deployable web app.
   (bundled — no separate ffmpeg install needed).
 - **Tri-language UI** — English (default), Traditional Chinese, Simplified
   Chinese; switchable at runtime.
+- **Form state** — download and conversion inputs remain when switching tabs;
+  refreshing or closing the app resets unsaved form state.
+  <!-- OpenAI-Codex_Fork_GitHub_REPO -->
 - **Cookie support** — read from an installed browser, or supply a
   `cookies.txt` for Douyin / Instagram / login-gated platforms.
 - **Batch queue** — download or convert many items in one go, with live

@@ -27,7 +27,7 @@
 - Forward the selected audio bitrate from the TUI download form. AI queue selection is not included. (OpenAI-Codex_Fork_GitHub_REPO)
 - Pass the audio bitrate selection through desktop and Web single downloads. TUI and AI queue selection are not included. (OpenAI-Codex_Fork_GitHub_REPO)
 - Allow audio bitrate selection in the engine and CLI, validating decimal values from 1 through 9999 kbps. Other interfaces are not yet connected. (OpenAI-Codex_Fork_GitHub_REPO)
-- Support arrow, Home, and End keys for tab navigation and expose tab-panel relationships. Inactive tabs still unmount; input-state preservation is not included. (OpenAI-Codex_Fork_GitHub_REPO)
+- Support arrow, Home, and End keys for tab navigation and expose tab-panel relationships. Download and conversion forms retain input when switching tabs; the log panel still unmounts. (OpenAI-Codex_Fork_GitHub_REPO)
 - Redact HTTP(S) URL credentials, queries, and fragments in CLI log messages; URL paths and other text may still contain sensitive data. (OpenAI-Codex_Fork_GitHub_REPO)
 - Expose the existing progress label to assistive technology. (OpenAI-Codex_Fork_GitHub_REPO)
 - Run Rust unit tests in the existing CI Rust job. (OpenAI-Codex_Fork_GitHub_REPO)

@@ -100,15 +100,15 @@
        90% of viewport width, caps at 100rem (1600px) so very long lines
        don't form on ultrawide displays. -->
   <main class="mx-auto w-full max-w-[clamp(64rem,90vw,100rem)] flex-1 px-4 pt-4 {IS_TAURI ? 'pb-8' : 'pb-24 lg:pb-8'}">
-    <!-- OpenAI-Codex_Fork_GitHub_REPO: keep panel targets stable while preserving conditional mounting. -->
+    <!-- OpenAI-Codex_Fork_GitHub_REPO: preserve download and conversion form state while switching tabs. -->
     <div id="panel-video" role="tabpanel" aria-label={tr("tab_video")} hidden={active !== "video"}>
-      {#if active === "video"}<DownloadTab mode="video" {formats} />{/if}
+      <DownloadTab mode="video" {formats} />
     </div>
     <div id="panel-music" role="tabpanel" aria-label={tr("tab_music")} hidden={active !== "music"}>
-      {#if active === "music"}<DownloadTab mode="audio" {formats} />{/if}
+      <DownloadTab mode="audio" {formats} />
     </div>
     <div id="panel-convert" role="tabpanel" aria-label={tr("tab_convert")} hidden={active !== "convert"}>
-      {#if active === "convert"}<ConvertTab {formats} />{/if}
+      <ConvertTab {formats} />
     </div>
     <div id="panel-log" role="tabpanel" aria-label={tr("tab_log")} hidden={active !== "log"}>
       {#if active === "log"}<LogTab />{/if}
