@@ -1,8 +1,11 @@
 {
   "_meta": {
     "lang": "zh_cn",
-    "name": "简体中文"
+    "name": "简体中文",
+    "signature": "OpenAI-Codex_app_ui",
+    "updated_by": "OpenAI-Codex_Fork_Source_Code"
   },
+  "sections_label": "功能标签",
   "app_title": "多媒体下载器",
   "app_subtitle": "YouTube · Facebook · Instagram · TikTok · BiliBili · 500+ 平台",
   "language": "语言",

@@ -16,6 +16,7 @@
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
 #### Changed
+- Support arrow, Home, and End keys for tab navigation and expose tab-panel relationships. Inactive tabs still unmount; input-state preservation is not included. (OpenAI-Codex_Fork_GitHub_REPO)
 - Redact HTTP(S) URL credentials, queries, and fragments in CLI log messages; URL paths and other text may still contain sensitive data. (OpenAI-Codex_Fork_GitHub_REPO)
 - Expose the existing progress label to assistive technology. (OpenAI-Codex_Fork_GitHub_REPO)
 - Run Rust unit tests in the existing CI Rust job. (OpenAI-Codex_Fork_GitHub_REPO)

@@ -100,15 +100,19 @@
        90% of viewport width, caps at 100rem (1600px) so very long lines
        don't form on ultrawide displays. -->
   <main class="mx-auto w-full max-w-[clamp(64rem,90vw,100rem)] flex-1 px-4 pt-4 {IS_TAURI ? 'pb-8' : 'pb-24 lg:pb-8'}">
-    {#if active === "video"}
-      <DownloadTab mode="video" {formats} />
-    {:else if active === "music"}
-      <DownloadTab mode="audio" {formats} />
-    {:else if active === "convert"}
-      <ConvertTab {formats} />
-    {:else}
-      <LogTab />
-    {/if}
+    <!-- OpenAI-Codex_Fork_GitHub_REPO: keep panel targets stable while preserving conditional mounting. -->
+    <div id="panel-video" role="tabpanel" aria-label={tr("tab_video")} hidden={active !== "video"}>
+      {#if active === "video"}<DownloadTab mode="video" {formats} />{/if}
+    </div>
+    <div id="panel-music" role="tabpanel" aria-label={tr("tab_music")} hidden={active !== "music"}>
+      {#if active === "music"}<DownloadTab mode="audio" {formats} />{/if}
+    </div>
+    <div id="panel-convert" role="tabpanel" aria-label={tr("tab_convert")} hidden={active !== "convert"}>
+      {#if active === "convert"}<ConvertTab {formats} />{/if}
+    </div>
+    <div id="panel-log" role="tabpanel" aria-label={tr("tab_log")} hidden={active !== "log"}>
+      {#if active === "log"}<LogTab />{/if}
+    </div>
   </main>
 
   <!-- Mobile FAB for the AI assistant (web build only, header button is

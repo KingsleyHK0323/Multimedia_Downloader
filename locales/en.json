@@ -1,8 +1,11 @@
 {
   "_meta": {
     "lang": "en",
-    "name": "English"
+    "name": "English",
+    "signature": "OpenAI-Codex_app_ui",
+    "updated_by": "OpenAI-Codex_Fork_Source_Code"
   },
+  "sections_label": "Sections",
   "app_title": "Multimedia Downloader",
   "app_subtitle": "YouTube · Facebook · Instagram · TikTok · BiliBili · 500+ platforms",
   "language": "Language",
