@@ -82,9 +82,10 @@ the app.
 
 1. Click the **✨ AI Assistant** button (or press `Ctrl/Cmd+K`).
 2. First time only: open **Settings** and paste your own
-   [OpenRouter](https://openrouter.ai/keys) API key. The current interface attempts to save
-   it in browser or app WebView localStorage, not an OS keychain. In Web mode,
-   the key is sent to the application server before OpenRouter.
+   [OpenRouter](https://openrouter.ai/keys) API key. The interface can optionally save it in browser or app WebView localStorage,
+   not an OS keychain. An unsaved key lasts while the AI panel remains open;
+   turning off saving does not remove previously stored keys. In Web mode, the
+   key is sent to the application server before OpenRouter.
    <!-- OpenAI-Codex_Fork_GitHub_REPO -->
 3. Describe your task, e.g. *"Download
    https://youtube.com/watch?v=... as mp4"* or *"Convert D:\videos\a.mov and

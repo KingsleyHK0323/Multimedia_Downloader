@@ -87,13 +87,17 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
-          node-version: "22"
+          node-version: ">=22.13.0 <23"
 
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend
 
       - name: svelte-check
         run: npm run check --prefix frontend
+
+      # OpenAI-Codex_Fork_GitHub_REPO: check persistence hints with in-memory fakes.
+      - name: Check key storage behavior
+        run: node --experimental-strip-types frontend/src/lib/keyStorage.behavior.mjs
 
   rust-check:
     runs-on: ubuntu-latest

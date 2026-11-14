@@ -4,25 +4,46 @@
     Download, RefreshCw, Clock, CheckCircle2, XCircle, SkipForward,
   } from "lucide-svelte";
   import { t } from "../store";
-  import { api, IS_MOCK, type AiPlan, type AiTask, type EngineEvent } from "../api";
+  import { api, IS_MOCK, IS_TAURI, type AiPlan, type AiTask, type EngineEvent } from "../api";
+  import { keyStorageView, type KeySaveState } from "../lib/keyStorage";
   import { toast } from "../lib/toast";
 
   const tr = $derived($t);
 
   let { onclose }: { onclose: () => void } = $props();
 
-  // OpenAI-Codex_Fork_GitHub_REPO: localStorage is not an OS keychain.
-  // Web mode sends the key to the application server before OpenRouter.
+  // OpenAI-Codex_app_ui: session-only keys are never written to localStorage.
+  // Previously saved keys are preserved until the user explicitly removes them.
   const KEY_STORAGE = "mmdl_or_api_key";
   const SAVE_PATH_STORAGE = "mmdl_ai_save_path";
+  let keyReadFailed = false;
 
-  const storedApiKey = localStorage.getItem(KEY_STORAGE) ?? "";
+  function readStored(key: string): string {
+    try { return localStorage.getItem(key) ?? ""; }
+    catch { if (key === KEY_STORAGE) keyReadFailed = true; return ""; }
+  }
+  const storedApiKey = readStored(KEY_STORAGE);
   let apiKey = $state(storedApiKey);
-  let defaultSavePath = $state(localStorage.getItem(SAVE_PATH_STORAGE) ?? "");
+  let defaultSavePath = $state(readStored(SAVE_PATH_STORAGE));
+  let rememberKey = $state(Boolean(storedApiKey));
+  let savedKeyExists = $state(Boolean(storedApiKey));
+  let possibleLegacy = $state(keyReadFailed);
+  let keySaveState = $state<KeySaveState>("pending");
+  let keyEditRevision = $state(0);
+  const keyStorageStatus = $derived(keyStorageView({ remember: rememberKey, hasValue: Boolean(apiKey),
+    saveState: keySaveState, savedKeyExists, possibleLegacy }));
   let showSettings = $state(!storedApiKey && !IS_MOCK);
 
-  $effect(() => { localStorage.setItem(KEY_STORAGE, apiKey); });
-  $effect(() => { localStorage.setItem(SAVE_PATH_STORAGE, defaultSavePath); });
+  function markKeyStoragePending() { keySaveState = "pending"; keyEditRevision += 1; }
+
+  $effect(() => {
+    keyEditRevision;
+    if (rememberKey && apiKey) {
+      try { localStorage.setItem(KEY_STORAGE, apiKey); savedKeyExists = true; keySaveState = "saved"; }
+      catch { possibleLegacy = true; keySaveState = "failed"; }
+    } else keySaveState = "idle";
+  });
+  $effect(() => { try { localStorage.setItem(SAVE_PATH_STORAGE, defaultSavePath); } catch { /* storage may be unavailable */ } });
 
   type Phase = "idle" | "planning" | "review" | "running" | "done" | "error";
   let phase = $state<Phase>("idle");
@@ -146,9 +167,16 @@
       <div class="space-y-3 rounded-xl border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
         <label class="block">
           <span class="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">{tr("ai_api_key_label")}</span>
-          <input type="password" class={inputCls} bind:value={apiKey} placeholder={tr("ai_api_key_placeholder")} />
+          <input type="password" autocomplete="off" class={inputCls} bind:value={apiKey} placeholder={tr("ai_api_key_placeholder")}
+                 oninput={markKeyStoragePending}
+                 aria-describedby={keyStorageStatus.legacy ? "ai-key-storage-hint ai-key-legacy-hint" : "ai-key-storage-hint"} />
         </label>
-        <p class="text-[10px] text-zinc-400 dark:text-zinc-500">{tr("ai_api_key_hint")}</p>
+        <label class="flex items-center gap-2 text-xs text-zinc-700 dark:text-zinc-300">
+          <input type="checkbox" bind:checked={rememberKey} onchange={markKeyStoragePending} />{tr("ai_remember_key")}
+        </label>
+        <p id="ai-key-storage-hint" role={keyStorageStatus.hint === "ai_key_save_failed_hint" ? "alert" : undefined} class="text-xs text-zinc-600 dark:text-zinc-400">{keyStorageStatus.hint ? tr(keyStorageStatus.hint) : ""}</p>
+        {#if keyStorageStatus.legacy}<p id="ai-key-legacy-hint" class="text-xs text-amber-700 dark:text-amber-400">{tr(keyStorageStatus.legacy)}</p>{/if}
+        {#if !IS_TAURI && !IS_MOCK}<p class="text-xs text-zinc-600 dark:text-zinc-400">{tr("ai_key_web_hint")}</p>{/if}
         <label class="block">
           <span class="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">{tr("ai_default_save_path")}</span>
           <input class={inputCls} bind:value={defaultSavePath} placeholder="C:\Downloads" />

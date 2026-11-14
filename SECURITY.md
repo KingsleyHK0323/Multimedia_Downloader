@@ -20,9 +20,11 @@ posted on the fix.
 ## Scope notes
 
 - The **AI Assistant** sends prompts to [OpenRouter](https://openrouter.ai)
-  using your API key. The current interface attempts to save the key in browser or app
-  WebView localStorage, not an OS keychain. In Web mode the key also passes
-  through the application server. File-touching actions require confirmation.
+  using your API key. The interface can optionally save the key in browser or app
+  WebView localStorage, not an OS keychain. An unsaved key lasts while the panel
+  remains open; disabling saving does not remove a previously stored key. In Web
+  mode the key also passes through the application server. File-touching actions
+  require confirmation.
   <!-- OpenAI-Codex_Fork_GitHub_REPO -->
 - The **web version** (`web_app.py`) has **no built-in authentication** — do not
   expose it to an untrusted network without putting your own auth in front of it.
