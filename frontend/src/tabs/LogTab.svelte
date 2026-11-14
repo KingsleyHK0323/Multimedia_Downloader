@@ -1,4 +1,5 @@
 <script lang="ts">
+  // OpenAI-Codex_app_ui: localize the log level control's accessible name.
   import { Search, Trash2, FileDown, ArrowDownToLine } from "lucide-svelte";
   import { t, logs, clearLogs } from "../store";
 
@@ -75,7 +76,7 @@
     <select
       class="h-9 rounded-lg border border-zinc-300 bg-white px-2 text-xs dark:border-zinc-700 dark:bg-zinc-900"
       bind:value={level}
-      aria-label="Level"
+      aria-label={tr("log_level_label")}
     >
       <option value="all">{tr("log_level_all")}</option>
       <option value="info">info</option>

@@ -16,6 +16,7 @@
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
 #### Changed
+- Localize the accessible name of the log level control. (OpenAI-Codex_Fork_GitHub_REPO)
 - Preserve and display requested audio bitrate for AI-planned download tasks; invalid planner values fall back to 192 kbps with a warning. (OpenAI-Codex_Fork_GitHub_REPO)
 - Forward the selected audio bitrate from the TUI download form. AI queue selection is not included. (OpenAI-Codex_Fork_GitHub_REPO)
 - Pass the audio bitrate selection through desktop and Web single downloads. TUI and AI queue selection are not included. (OpenAI-Codex_Fork_GitHub_REPO)
