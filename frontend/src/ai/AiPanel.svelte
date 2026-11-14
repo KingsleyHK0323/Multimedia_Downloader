@@ -11,9 +11,8 @@
 
   let { onclose }: { onclose: () => void } = $props();
 
-  // Interim storage: the OpenRouter key lives in this device's localStorage
-  // only — never committed, never sent anywhere except the OpenRouter API
-  // itself. Hardening to the Tauri OS keychain is deferred (documented).
+  // OpenAI-Codex_Fork_GitHub_REPO: localStorage is not an OS keychain.
+  // Web mode sends the key to the application server before OpenRouter.
   const KEY_STORAGE = "mmdl_or_api_key";
   const SAVE_PATH_STORAGE = "mmdl_ai_save_path";
 

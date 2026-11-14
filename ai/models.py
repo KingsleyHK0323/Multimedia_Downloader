@@ -50,8 +50,8 @@ SUMMARIZER = Model("liquid/lfm-2.5-2.6b:free", "summarizer", 65_536)
 
 ROSTER: list[Model] = [PLANNER, EXECUTOR, CHECKER, SUMMARIZER]
 
-# OpenRouter endpoint. The user's own API key is supplied at runtime and is
-# stored ONLY in the Tauri secure layer — never hard-coded, never committed.
+# OpenAI-Codex_web_ai: the caller supplies and manages the API key at runtime.
+# This module does not store the key or assume a particular storage backend.
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # NOTE: free-tier rate limits are account-level (not per-model): roughly

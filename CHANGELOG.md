@@ -16,6 +16,7 @@
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
 #### Changed
+- Correct AI key storage and Web server transit disclosures. (OpenAI-Codex_Fork_GitHub_REPO)
 - Apply the existing retry policy to queue downloads; stopping may wait for the current item and its retries. (OpenAI-Codex_Fork_GitHub_REPO)
 - Report an error when an explicitly specified cookie file is missing instead of falling back to browser cookies. (OpenAI-Codex_Fork_GitHub_REPO)
 - Localize the accessible name of the log level control. (OpenAI-Codex_Fork_GitHub_REPO)
