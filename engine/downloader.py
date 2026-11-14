@@ -172,7 +172,10 @@ class Downloader:
         }
 
         # Cookies: file first (more reliable), then browser.
-        if o.cookie_file and os.path.isfile(o.cookie_file):
+        # OpenAI-Codex_engine_cli: a specified missing cookie file is an error.
+        if o.cookie_file:
+            if not os.path.isfile(o.cookie_file):
+                raise ValueError("Cookie file does not exist or is not a regular file")
             base["cookiefile"] = o.cookie_file
             self._log("info", "log_cookie_file", name=os.path.basename(o.cookie_file))
         elif o.browser and o.browser != "none":

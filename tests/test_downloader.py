@@ -253,5 +253,27 @@ class DownloadSafetyTests(unittest.TestCase):
         self.assertEqual(actual["postprocessors"][0]["preferredquality"], "192")
 
 
+class CookieFileSelectionTests(unittest.TestCase):
+    # OpenAI-Codex_Fork_GitHub_REPO: a specified file takes priority and must exist.
+    def test_missing_file_does_not_fall_back_to_browser(self):
+        options = DownloadOptions(save_path=".", cookie_file="missing.txt", browser="chrome")
+        with patch("engine.downloader.os.path.isfile", return_value=False):
+            with self.assertRaisesRegex(ValueError, "Cookie file"):
+                Downloader(options)._build_ydl_opts("https://example.com/media")
+
+    def test_existing_file_takes_priority(self):
+        options = DownloadOptions(save_path=".", cookie_file="cookies.txt", browser="chrome")
+        with patch("engine.downloader.os.path.isfile", return_value=True):
+            result = Downloader(options)._build_ydl_opts("https://example.com/media")
+        self.assertEqual(result["cookiefile"], "cookies.txt")
+        self.assertNotIn("cookiesfrombrowser", result)
+
+    def test_empty_file_allows_browser(self):
+        options = DownloadOptions(save_path=".", cookie_file="", browser="chrome")
+        result = Downloader(options)._build_ydl_opts("https://example.com/media")
+        self.assertNotIn("cookiefile", result)
+        self.assertEqual(result["cookiesfrombrowser"][0], "chrome")
+
+
 if __name__ == "__main__":
     unittest.main()

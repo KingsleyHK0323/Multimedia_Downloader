@@ -256,6 +256,10 @@ media without an authenticated cookie:
    *Get cookies.txt LOCALLY* for Chrome/Edge/Brave, *cookies.txt* for
    Firefox).
 
+A specified cookie file must exist as a regular file. If it does not, the
+engine reports an error instead of falling back to browser cookies.
+<!-- OpenAI-Codex_Fork_GitHub_REPO -->
+
 ## Disclaimer
 
 This software is for personal, lawful use only. Respect each platform's terms

@@ -16,6 +16,7 @@
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
 #### Changed
+- Report an error when an explicitly specified cookie file is missing instead of falling back to browser cookies. (OpenAI-Codex_Fork_GitHub_REPO)
 - Localize the accessible name of the log level control. (OpenAI-Codex_Fork_GitHub_REPO)
 - Preserve and display requested audio bitrate for AI-planned download tasks; invalid planner values fall back to 192 kbps with a warning. (OpenAI-Codex_Fork_GitHub_REPO)
 - Forward the selected audio bitrate from the TUI download form. AI queue selection is not included. (OpenAI-Codex_Fork_GitHub_REPO)
