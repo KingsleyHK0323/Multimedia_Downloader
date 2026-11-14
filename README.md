@@ -203,7 +203,10 @@ bash termux/run-web.sh                                                          
 ```
 
 Full walkthrough: [termux/README.md](termux/README.md). The CLI ([`cli.py`](cli.py))
-also runs on any desktop/server with Python + ffmpeg.
+also runs on any desktop/server with Python + ffmpeg. For audio downloads,
+`--bitrate` accepts a decimal value in kbps (default `192`). The supported
+encoder ultimately determines which values work.
+<!-- OpenAI-Codex_Fork_GitHub_REPO -->
 
 ## Run in your terminal (TUI)
 

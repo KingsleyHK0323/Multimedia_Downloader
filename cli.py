@@ -59,6 +59,7 @@ def cmd_download(args, log) -> int:
         quality=args.quality,
         cookie_file=args.cookies,
         browser=None if args.browser == "none" else args.browser,
+        bitrate=getattr(args, "bitrate", "192"),
     )
     # yt-dlp prints its own progress bar; no extra progress_cb needed here.
     dl = Downloader(opts, log_cb=log)
@@ -100,6 +101,7 @@ def build_parser() -> argparse.ArgumentParser:
     d.add_argument("-q", "--quality", default="best", choices=QUALITY_PRESETS, help="video quality")
     d.add_argument("--audio", action="store_true", help="extract audio instead of video")
     d.add_argument("--audio-format", default="mp3", choices=AUDIO_FORMATS, help="audio format (with --audio)")
+    d.add_argument("--bitrate", default="192", help="audio bitrate in kbps (default: 192)")
     d.add_argument("--browser", default="none", choices=BROWSERS, help="read login cookies from this browser")
     d.add_argument("--cookies", help="path to a Netscape cookies.txt file (overrides --browser)")
     d.set_defaults(func=cmd_download)

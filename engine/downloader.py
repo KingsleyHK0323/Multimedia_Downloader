@@ -1,3 +1,4 @@
+# OpenAI-Codex_engine_cli
 """
 Downloader — orchestrates one or more downloads using yt-dlp.
 
@@ -196,6 +197,11 @@ class Downloader:
             }
 
         # audio mode
+        bitrate = o.bitrate.strip() if isinstance(o.bitrate, str) else ""
+        digits = bitrate.lstrip("0") or "0"
+        if (not bitrate.isascii() or not bitrate.isdecimal() or len(digits) > 4
+                or not 1 <= int(digits) <= 9999):
+            raise ValueError("bitrate must be a decimal string between 1 and 9999 kbps")
         return {
             **base,
             "format": "bestaudio/best",
@@ -203,7 +209,7 @@ class Downloader:
                 "key":              "FFmpegExtractAudio",
                 "preferredcodec":   ensure_known(o.audio_fmt, AUDIO_FORMATS,
                                                  "audio format"),
-                "preferredquality": "192",
+                "preferredquality": str(int(digits)),
             }],
         }
 

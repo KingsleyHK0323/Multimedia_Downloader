@@ -227,5 +227,31 @@ class LogRedactionTests(unittest.TestCase):
         self.assertNotIn("secret", out.getvalue())
 
 
+class DownloadSafetyTests(unittest.TestCase):
+    def test_audio_bitrate_reaches_postprocessor(self):
+        options = DownloadOptions(save_path=".", mode="audio", bitrate="320")
+        actual = Downloader(options)._build_ydl_opts("https://example.com/video")
+        self.assertEqual(actual["postprocessors"][0]["preferredquality"], "320")
+
+    def test_invalid_audio_bitrate_is_rejected(self):
+        for bitrate in ("0", "10000", "1.5", "１２８", "-1", "128k"):
+            with self.subTest(bitrate=bitrate):
+                options = DownloadOptions(save_path=".", mode="audio", bitrate=bitrate)
+                with self.assertRaises(ValueError):
+                    Downloader(options)._build_ydl_opts("https://example.com/video")
+
+    def test_cli_accepts_audio_bitrate_option(self):
+        from cli import build_parser
+
+        args = build_parser().parse_args(["download", "https://example.com/video",
+                                          "--audio", "--bitrate", "320"])
+        self.assertEqual(args.bitrate, "320")
+
+    def test_bitrate_with_many_leading_zeroes_is_normalized(self):
+        options = DownloadOptions(save_path=".", mode="audio", bitrate="0" * 5000 + "192")
+        actual = Downloader(options)._build_ydl_opts("https://example.com/video")
+        self.assertEqual(actual["postprocessors"][0]["preferredquality"], "192")
+
+
 if __name__ == "__main__":
     unittest.main()

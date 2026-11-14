@@ -1,3 +1,4 @@
+# OpenAI-Codex_engine_cli
 """
 Data types shared across the engine: settings dataclasses and callback aliases.
 
@@ -36,6 +37,8 @@ class DownloadOptions:
         Path to a Netscape ``cookies.txt`` file (takes priority over browser).
     browser : Optional[str]
         Browser name to read cookies from. ``"none"`` or ``None`` disables.
+    bitrate : str
+        Requested audio bitrate in kbps, as a decimal string.
     """
     save_path:   str
     mode:        str = "video"
@@ -44,6 +47,7 @@ class DownloadOptions:
     quality:     str = "best"
     cookie_file: Optional[str] = None
     browser:     Optional[str] = None
+    bitrate:     str = "192"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
