@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# OpenAI-Codex_engine_cli
 """
 Multimedia Downloader — command-line interface.
 
@@ -37,12 +38,14 @@ from engine import (
     Downloader,
 )
 
+from engine.log_safety import redact_sensitive_urls
+
 _ICON = {"info": "·", "ok": "✓", "warn": "!", "err": "✗"}
 
 
 def _make_logger(tr: "i18n.Translator"):
     def log(level: str, key: str, **fmt) -> None:
-        print(f" {_ICON.get(level, '·')} {tr.t(key, **fmt)}")
+        print(f" {_ICON.get(level, '·')} {redact_sensitive_urls(tr.t(key, **fmt))}")
     return log
 
 

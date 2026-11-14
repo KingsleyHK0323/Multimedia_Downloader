@@ -16,6 +16,7 @@
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
 #### Changed
+- Redact HTTP(S) URL credentials, queries, and fragments in CLI log messages; URL paths and other text may still contain sensitive data. (OpenAI-Codex_Fork_GitHub_REPO)
 - Expose the existing progress label to assistive technology. (OpenAI-Codex_Fork_GitHub_REPO)
 - Run Rust unit tests in the existing CI Rust job. (OpenAI-Codex_Fork_GitHub_REPO)
 - Require explicit Termux dependency setup and frontend provisioning before launch; launchers no longer install packages or download assets. (OpenAI-Codex_Fork_GitHub_REPO)

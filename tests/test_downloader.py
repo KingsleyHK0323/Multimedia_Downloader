@@ -1,7 +1,11 @@
 import unittest
+# OpenAI-Codex_engine_cli
+import io
+from contextlib import redirect_stdout
 from unittest.mock import MagicMock, patch
 
 import _path  # noqa: F401
+from engine.log_safety import redact_sensitive_urls
 from engine import (
     AUDIO_FORMATS,
     QUALITY_PRESETS,
@@ -186,6 +190,41 @@ class FormatValidationTests(unittest.TestCase):
         got = self._opts(mode="audio", audio_fmt="mp3", video_fmt="") \
             ._build_ydl_opts("u")
         self.assertEqual(got["postprocessors"][0]["preferredcodec"], "mp3")
+
+
+class LogRedactionTests(unittest.TestCase):
+    def test_redacts_url_credentials_query_and_fragment(self):
+        line = "Downloading https://alice:password@example.com/watch?token=secret#private"
+        self.assertEqual(
+            redact_sensitive_urls(line),
+            "Downloading https://[redacted]@example.com/watch?[redacted]#[redacted]",
+        )
+
+    def test_handles_multiple_urls_and_preserves_safe_url(self):
+        line = "https://example.com/a and https://example.org/b?key=secret."
+        self.assertEqual(
+            redact_sensitive_urls(line),
+            "https://example.com/a and https://example.org/b?[redacted].",
+        )
+
+    def test_malformed_url_is_redacted_instead_of_exposing_secrets(self):
+        self.assertEqual(
+            redact_sensitive_urls("https://user:secret@[invalid?token=private"),
+            "[redacted URL]",
+        )
+
+    def test_cli_logger_redacts_rendered_messages(self):
+        from cli import _make_logger
+
+        class Translator:
+            def t(self, key, **fmt):
+                return "https://alice:password@example.com/?token=secret"
+
+        out = io.StringIO()
+        with redirect_stdout(out):
+            _make_logger(Translator())("err", "any")
+        self.assertNotIn("password", out.getvalue())
+        self.assertNotIn("secret", out.getvalue())
 
 
 if __name__ == "__main__":
