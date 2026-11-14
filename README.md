@@ -263,6 +263,8 @@ media without an authenticated cookie:
 
 A specified cookie file must exist as a regular file. If it does not, the
 engine reports an error instead of falling back to browser cookies.
+CLI and TUI log messages redact HTTP(S) URL userinfo, query and fragment;
+URL paths and other text can still contain sensitive information.
 <!-- OpenAI-Codex_Fork_GitHub_REPO -->
 
 ## Disclaimer

@@ -109,6 +109,15 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
                 dl._start()
             self.assertEqual(worker.call_args.args[1].bitrate, "320")
 
+    # OpenAI-Codex_Fork_GitHub_REPO: the stored TUI log uses redacted URLs.
+    async def test_log_redacts_url_before_storing(self):
+        app = MultimediaDownloaderApp(i18n.Translator("en"))
+        async with app.run_test():
+            log = app.query_one(LogTab)
+            log.append_entry("info", "https://user:password@example.com/watch?token=secret#fragment")
+            entry = log._entries[-1][2]
+            self.assertEqual(entry, "https://[redacted]@example.com/watch?[redacted]#[redacted]")
+
     async def test_log_handles_bracket_content_without_crashing(self):
         # yt-dlp/ffmpeg output routinely contains literal "[...]" (site name
         # prefixes, codec/address tags) -- these must never be parsed as Rich

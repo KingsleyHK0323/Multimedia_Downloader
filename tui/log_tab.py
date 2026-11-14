@@ -9,6 +9,9 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Input, RichLog, Select
 
+# OpenAI-Codex_engine_cli: redact selected URL components before display/export.
+from engine.log_safety import redact_sensitive_urls
+
 from .widgets import ConfirmDialog
 
 _LEVEL_COLOR = {
@@ -49,6 +52,7 @@ class LogTab(Vertical):
         yield RichLog(id="console", wrap=True, markup=True)
 
     def append_entry(self, level: str, text: str) -> None:
+        text = redact_sensitive_urls(text)
         ts = datetime.now().strftime("%H:%M:%S")
         self._entries.append((ts, level, text))
         if self._passes_filter(level, text):

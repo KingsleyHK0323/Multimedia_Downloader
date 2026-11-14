@@ -16,6 +16,7 @@
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
 #### Changed
+- Redact URL userinfo, query and fragment in TUI logs before display and export. (OpenAI-Codex_Fork_GitHub_REPO)
 - Make AI key persistence optional, report storage failures and disclose previously saved keys. (OpenAI-Codex_Fork_GitHub_REPO)
 - Correct AI key storage and Web server transit disclosures. (OpenAI-Codex_Fork_GitHub_REPO)
 - Apply the existing retry policy to queue downloads; stopping may wait for the current item and its retries. (OpenAI-Codex_Fork_GitHub_REPO)
