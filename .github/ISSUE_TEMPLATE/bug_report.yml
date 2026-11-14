@@ -1,3 +1,4 @@
+# OpenAI-Codex_Fork_GitHub_REPO: support CLI, TUI and Termux reports and safer log sharing.
 name: 🐛 Bug report
 description: Something isn't working as expected
 labels: [bug]
@@ -20,13 +21,16 @@ body:
         - Desktop app (installer)
         - Web app (web_app.py)
         - From source (npm run tauri dev)
+        - Command-line interface (CLI)
+        - Terminal user interface (TUI)
+        - Android Termux
     validations:
       required: true
   - type: dropdown
     id: os
     attributes:
       label: Operating system
-      options: [Windows, Linux, macOS]
+      options: [Windows, Linux, macOS, Android]
     validations:
       required: true
   - type: textarea
@@ -49,7 +53,7 @@ body:
     id: log
     attributes:
       label: Run Log output
-      description: Copy the contents of the **Run Log** tab (or the terminal, for the web app). This is the single most useful thing for diagnosis.
+      description: Share only relevant log excerpts after removing credentials, tokens, private URLs, and personal information. Report vulnerabilities through [private security reporting](https://github.com/KingsleyHK0323/Multimedia_Downloader/security/advisories/new).
       render: shell
   - type: checkboxes
     id: checks

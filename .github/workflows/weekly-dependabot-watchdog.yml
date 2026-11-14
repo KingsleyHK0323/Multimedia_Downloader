@@ -8,6 +8,7 @@ on:
 
 permissions:
   actions: read
+  contents: read
   issues: write
   pull-requests: read
 
@@ -25,6 +26,7 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const marker = "<!-- weekly-dependabot-watchdog -->";
+            const commentMarker = "<!-- weekly-dependabot-watchdog-comment -->";
             const maxAgeMs = 8 * 24 * 60 * 60 * 1000;
             const findings = [];
             const expectedScans = [
@@ -56,6 +58,10 @@ jobs:
                 .sort(
                   (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
                 );
+              // OpenAI-Codex_Fork_GitHub_REPO: invalid dates make ordering uncertain.
+              if (matching.some((run) => !Number.isFinite(Date.parse(run.created_at)))) {
+                findings.push(`The ${label} scan history contains an invalid creation time; newest-run ordering is unknown.`);
+              }
               const latest = matching[0];
               if (!latest) {
                 findings.push(
@@ -64,6 +70,14 @@ jobs:
                 continue;
               }
 
+              // OpenAI-Codex_Fork_GitHub_REPO: invalid timestamps cannot establish freshness.
+              if (!Number.isFinite(Date.parse(latest.created_at))) {
+                findings.push(`The ${label} Dependabot scan has an invalid creation time; freshness is unknown.`);
+              }
+              // OpenAI-Codex_Fork_GitHub_REPO: a future scan time cannot establish freshness.
+              if (Number.isFinite(Date.parse(latest.created_at)) && Date.parse(latest.created_at) > Date.now() + 5 * 60 * 1000) {
+                findings.push(`The ${label} Dependabot scan has a future creation time; freshness is unknown.`);
+              }
               if (Date.now() - Date.parse(latest.created_at) > maxAgeMs) {
                 findings.push(
                   `The ${label} Dependabot scan is stale: [run #${latest.run_number}](${latest.html_url}), created ${latest.created_at}.`,
@@ -96,14 +110,28 @@ jobs:
                 event: "pull_request",
                 per_page: 100,
               });
+              // OpenAI-Codex_dependabot_changes: only current-head evidence counts.
+              const matchesCurrentHead = (run) =>
+                run.path === ".github/workflows/ci.yml" &&
+                run.name === "CI" &&
+                (run.pull_requests ?? []).some(
+                  (pr) => pr.number === pullRequest.number &&
+                    pr.head?.sha === pullRequest.head.sha && pr.base?.ref === "Source_Code",
+                );
+              // OpenAI-Codex_Fork_GitHub_REPO: a truncated query cannot prove the latest run.
+              if (!Number.isInteger(data.total_count) || !Array.isArray(data.workflow_runs) ||
+                  data.total_count !== data.workflow_runs.length) {
+                findings.push(`CI run inventory for Dependabot PR #${pullRequest.number} is incomplete; latest status is unknown.`);
+                continue;
+              }
               let ciRuns = data.workflow_runs
-                .filter((run) => run.name === "CI")
+                .filter(matchesCurrentHead)
                 .sort(
                   (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
                 );
 
-              // Pull-request workflow runs can use GitHub's merge-ref SHA,
-              // which differs from the PR head SHA. Fall back to its branch.
+              // A merge-ref run is usable only when its PR metadata confirms
+              // this PR and its current head, not merely the same branch name.
               if (ciRuns.length === 0) {
                 ({ data } = await github.rest.actions.listWorkflowRunsForRepo({
                   owner,
@@ -112,10 +140,15 @@ jobs:
                   event: "pull_request",
                   per_page: 100,
                 }));
+                // OpenAI-Codex_Fork_GitHub_REPO: apply the same completeness rule to fallback.
+                if (!Number.isInteger(data.total_count) || !Array.isArray(data.workflow_runs) ||
+                    data.total_count !== data.workflow_runs.length) {
+                  findings.push(`Fallback CI inventory for Dependabot PR #${pullRequest.number} is incomplete; latest status is unknown.`);
+                  continue;
+                }
                 ciRuns = data.workflow_runs
                   .filter(
-                    (run) =>
-                      run.name === "CI" &&
+                    (run) => matchesCurrentHead(run) &&
                       run.head_branch === pullRequest.head.ref,
                   )
                   .sort(
@@ -123,8 +156,19 @@ jobs:
                       Date.parse(b.created_at) - Date.parse(a.created_at),
                   );
               }
+              // OpenAI-Codex_Fork_GitHub_REPO: malformed or future timestamps make ordering unknown.
+              if (ciRuns.some((run) => !Number.isFinite(Date.parse(run.created_at)) ||
+                  Date.parse(run.created_at) > Date.now() + 5 * 60 * 1000)) {
+                findings.push(`CI run time for Dependabot PR #${pullRequest.number} is invalid or in the future; latest status is unknown.`);
+                continue;
+              }
               const latest = ciRuns[0];
 
+              // OpenAI-Codex_Fork_GitHub_REPO: incomplete API evidence is unknown.
+              if (!latest) {
+                findings.push(`CI evidence is unavailable for Dependabot PR #${pullRequest.number}; its state is unknown.`);
+                continue;
+              }
               if (!latest) {
                 findings.push(
                   `Dependabot PR [#${pullRequest.number}](${pullRequest.html_url}) has no CI run for its current head commit.`,
@@ -140,17 +184,87 @@ jobs:
               }
             }
 
-            const openIssues = await github.paginate(
-              github.rest.issues.listForRepo,
-              { owner, repo, state: "open", per_page: 100 },
+            // OpenAI-Codex_dependabot_changes: report candidates only; never delete.
+            // Compare against all open PR heads, including forks and other bases,
+            // to avoid suggesting a branch with any matching open PR is orphaned.
+            const allOpenPullRequests = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: "open", per_page: 100,
+            });
+            const openHeadNames = new Set(
+              allOpenPullRequests.map((pr) => pr.head?.ref).filter(Boolean),
             );
-            const issue = openIssues.find(
+            // OpenAI-Codex_Fork_GitHub_REPO: distinguish same-name heads in forks.
+            const localOpenHeads = new Set(allOpenPullRequests
+              .filter((pr) => pr.head?.repo?.full_name?.toLowerCase() === `${owner}/${repo}`.toLowerCase())
+              .map((pr) => pr.head?.ref).filter(Boolean));
+            const branches = await github.paginate(github.rest.repos.listBranches, {
+              owner, repo, per_page: 100,
+            });
+            const branchObservations = [];
+            for (const branch of branches) {
+              // OpenAI-Codex_Fork_GitHub_REPO: an unknown head repository is not a fork.
+              if (branch.name.startsWith("dependabot/") && allOpenPullRequests.some((pr) =>
+                  pr.head?.ref === branch.name && typeof pr.head?.repo?.full_name !== "string")) {
+                branchObservations.push(`Dependabot branch \`${encodeURIComponent(branch.name)}\` has a same-name PR head with unknown repository identity; local association is unknown.`);
+                continue;
+              }
+              // A fork-only same-name head must not hide this local inventory observation.
+              if (branch.name.startsWith("dependabot/") && openHeadNames.has(branch.name) && !localOpenHeads.has(branch.name)) {
+                branchObservations.push(`Dependabot branch \`${encodeURIComponent(branch.name)}\` has no matching local-repository PR head; a same-name fork head exists. This is not permission or evidence to delete it.`);
+              }
+              if (branch.name.startsWith("dependabot/") && !openHeadNames.has(branch.name)) {
+                branchObservations.push(
+                  `Dependabot branch \`${encodeURIComponent(branch.name)}\` has no matching open PR head. This is an inventory observation, not permission or evidence to delete it.`,
+                );
+              }
+            }
+            // OpenAI-Codex_dependabot_changes: branch observations never alter issues.
+            core.summary.addHeading("Dependabot branch inventory");
+            core.summary.addList(branchObservations.length ? branchObservations : [
+              "No Dependabot branches without a matching open PR head were found.",
+            ]);
+
+            // OpenAI-Codex_Fork_GitHub_REPO: qualify snapshot and CI evidence limits.
+            core.summary.addRaw("Inventory is a point-in-time observation; verify identity and PR history before any decision.\n\n");
+            core.summary.addRaw("CI observations do not verify base SHA, all required jobs, or trusted check source.\n\n");
+            const issues = await github.paginate(
+              github.rest.issues.listForRepo,
+              { owner, repo, state: "all", per_page: 100 },
+            );
+            const matchingIssues = issues.filter(
               (item) =>
                 !item.pull_request &&
                 item.user?.login === "github-actions[bot]" &&
-                item.body?.includes(marker),
+                typeof item.body === "string" &&
+                item.body.split(/\r?\n/).includes(marker),
             );
 
+            // OpenAI-Codex_Fork_GitHub_REPO: persist observed recovery as a bot comment.
+            // A clean observation is not proof that all CI checks passed.
+            const recoveryMarker = "<!-- weekly-dependabot-watchdog-recovered -->";
+            if (findings.length === 0) {
+              const openIssues = matchingIssues.filter((item) => item.state === "open");
+              if (openIssues.length === 1) {
+                const number = openIssues[0].number;
+                const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
+                const states = comments.filter((item) => item.user?.login === "github-actions[bot]" &&
+                  typeof item.body === "string" && [commentMarker, recoveryMarker].includes(item.body.split(/\r?\n/)[0]))
+                  .sort((a, b) => a.id - b.id);
+                if (states.at(-1)?.body.split(/\r?\n/)[0] !== recoveryMarker) {
+                  await github.rest.issues.createComment({ owner, repo, issue_number: number, body:
+                    `${recoveryMarker}\nNo scan or current-head finding was detected in this run. Required jobs, base and check source remain unverified.` });
+                }
+              } else if (openIssues.length > 1) {
+                core.warning("Multiple open watchdog issues; recovery state was not recorded.");
+              }
+            }
+            // OpenAI-Codex_Fork_GitHub_REPO: do not overstate incomplete CI evidence.
+            if (findings.length === 0) {
+              await core.summary.addHeading("Weekly Dependabot watchdog")
+                .addRaw("No scan or current-head run finding was detected. CI base SHA, required jobs and check source remain unverified.")
+                .write();
+              return;
+            }
             if (findings.length === 0) {
               await core.summary
                 .addHeading("Weekly Dependabot watchdog")
@@ -158,6 +272,72 @@ jobs:
                   `All six update scans succeeded; CI is current for ${dependabotPullRequests.length} open Dependabot pull request(s).`,
                 )
                 .write();
+              return;
+            }
+
+            await core.summary.write();
+            // OpenAI-Codex_Fork_GitHub_REPO: ignore closed markers in this in-memory selection.
+            // Closed issues remain unchanged; a new open issue is created when needed.
+            for (let index = matchingIssues.length - 1; index >= 0; index--) {
+              if (matchingIssues[index].state !== "open") matchingIssues.splice(index, 1);
+            }
+            if (matchingIssues.length > 1) {
+              core.warning("Multiple bot watchdog issues have the marker; leaving them unchanged.");
+              return;
+            }
+
+            // Stable ordering enables exact, repeatable comment deduplication.
+            findings.sort();
+            const issue = matchingIssues[0];
+            if (issue) {
+              // OpenAI-Codex_Fork_GitHub_REPO: closed issues may be overlooked.
+              if (issue.state !== "open") {
+                core.warning(`The watchdog issue #${issue.number} is closed; findings will be posted there without reopening it.`);
+              }
+              const commentBody = [
+                commentMarker,
+                "## Dependabot watchdog findings",
+                "",
+                ...findings.map((finding) => `- ${finding}`),
+                "",
+                "This automated comment does not change dependencies, merge pull requests, or close this issue.",
+              ].join("\n");
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: issue.number, per_page: 100,
+              });
+              const priorComments = comments.filter((comment) =>
+                comment.user?.login === "github-actions[bot]" &&
+                typeof comment.body === "string" &&
+                comment.body.split(/\r?\n/)[0] === commentMarker,
+              );
+              // OpenAI-Codex_Fork_GitHub_REPO: a recovery marker starts a new finding cycle.
+              const latestState = comments.filter((item) => item.user?.login === "github-actions[bot]" &&
+                typeof item.body === "string" && [commentMarker, recoveryMarker].includes(item.body.split(/\r?\n/)[0]))
+                .sort((a, b) => a.id - b.id).at(-1);
+              if (latestState?.body.split(/\r?\n/)[0] === recoveryMarker) {
+                await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: commentBody });
+                core.warning(`Dependabot watchdog findings recurred on issue #${issue.number}.`);
+                return;
+              }
+              // OpenAI-Codex_Fork_GitHub_REPO: avoid repeating the initial issue findings.
+              const initialFindings = issue.body.split(/\r?\n/).filter((line) => line.startsWith("- ")).sort();
+              const currentFindings = findings.map((finding) => `- ${finding}`).sort();
+              if (priorComments.length === 0 && initialFindings.length === currentFindings.length &&
+                  initialFindings.every((line, index) => line === currentFindings[index])) {
+                core.info(`Watchdog findings are unchanged since issue #${issue.number} was created.`);
+                return;
+              }
+              const lastComment = priorComments.sort(
+                (a, b) => Date.parse(a.created_at) - Date.parse(b.created_at) || a.id - b.id,
+              ).at(-1);
+              if (lastComment?.body === commentBody) {
+                core.info(`Watchdog findings are unchanged for issue #${issue.number}.`);
+                return;
+              }
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: issue.number, body: commentBody,
+              });
+              core.warning(`Added watchdog findings to issue #${issue.number}.`);
               return;
             }
 
@@ -169,25 +349,14 @@ jobs:
               "",
               ...findings.map((finding) => `- ${finding}`),
               "",
-              "This issue is updated by the weekly Dependabot watchdog. The workflow does not change dependencies, merge pull requests, or close this issue automatically.",
+              "The weekly Dependabot watchdog may add comments to this issue. The workflow does not change dependencies, merge pull requests, or close this issue automatically.",
             ].join("\n");
             const title = "[Automation] Dependabot maintenance needs attention";
 
-            if (issue) {
-              await github.rest.issues.update({
-                owner,
-                repo,
-                issue_number: issue.number,
-                title,
-                body,
-              });
-              core.warning(`Updated watchdog issue #${issue.number}.`);
-            } else {
-              const { data: created } = await github.rest.issues.create({
-                owner,
-                repo,
-                title,
-                body,
-              });
-              core.warning(`Created watchdog issue ${created.html_url}.`);
-            }
+            const { data: created } = await github.rest.issues.create({
+              owner,
+              repo,
+              title,
+              body,
+            });
+            core.warning(`Created watchdog issue ${created.html_url}.`);

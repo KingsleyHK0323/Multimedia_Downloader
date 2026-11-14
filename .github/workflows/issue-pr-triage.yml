@@ -1,0 +1,240 @@
+name: Issue and PR triage
+
+# OpenAI-Codex_triage_changes: classify metadata only; never execute PR code.
+on:
+  issues:
+    types: [opened, edited, reopened, labeled]
+  pull_request_target:
+    branches: [Source_Code]
+    types: [opened, reopened, synchronize, edited]
+
+permissions: {}
+
+jobs:
+  label-bootstrap:
+    # Do not let bot or automation issues cause label initialization either.
+    if: >-
+      (github.event_name == 'issues' &&
+       github.event.issue.user.type != 'Bot' &&
+       !endsWith(github.event.issue.user.login, '[bot]') &&
+       !startsWith(github.event.issue.title, '[Automation]') &&
+       !startsWith(github.event.issue.title, 'AI model roster:')) ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.user.type != 'Bot' &&
+       !endsWith(github.event.pull_request.user.login, '[bot]'))
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    outputs:
+      ready: ${{ steps.ensure.outputs.ready }}
+    steps:
+      - name: Create missing triage labels without changing existing labels
+        id: ensure
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            // OpenAI-Codex_triage_changes: create only this exact allowlist.
+            const { owner, repo } = context.repo;
+            // OpenAI-Codex_Fork_GitHub_REPO: exclude automation titles case-insensitively.
+            if (context.eventName === 'issues' && /^(\[Automation\]|AI model roster:)/i.test(context.payload.issue?.title || '')) {
+              core.setOutput('ready', 'false');
+              return;
+            }
+            const labels = [
+              { name: 'needs-info', color: 'fbca04', description: 'More information is needed' },
+              { name: 'area:frontend', color: '1d76db', description: 'Frontend or desktop interface' },
+              { name: 'area:engine', color: '0e8a16', description: 'Engine, terminal or backend' },
+              { name: 'area:automation', color: '5319e7', description: 'Repository automation' },
+              { name: 'area:docs', color: '0075ca', description: 'Documentation or translations' },
+            ];
+            let ready = true;
+            for (const label of labels) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: label.name });
+                continue; // Existing label is never modified.
+              } catch (error) {
+                if (error.status !== 404) {
+                  core.warning('Could not inspect label ' + label.name + '; classification will skip.');
+                  ready = false;
+                  continue;
+                }
+              }
+              try {
+                await github.rest.issues.createLabel({ owner, repo, ...label });
+              } catch (error) {
+                if (error.status === 422) {
+                  // Another run may have created the label; do not assume it did.
+                  try {
+                    await github.rest.issues.getLabel({ owner, repo, name: label.name });
+                    continue;
+                  } catch (_) { /* Missing or unreadable: fail closed below. */ }
+                }
+                core.warning('Could not create label ' + label.name + '; classification will skip.');
+                ready = false;
+              }
+            }
+            core.setOutput('ready', String(ready));
+
+  issue-triage:
+    needs: label-bootstrap
+    if: github.event_name == 'issues' && needs.label-bootstrap.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Mark incomplete recognized issue forms
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue = context.payload.issue;
+            if (!issue || issue.pull_request || issue.state !== 'open' ||
+                issue.user?.type === 'Bot' || issue.user?.login?.endsWith('[bot]') ||
+                /^\[Automation\]/i.test(issue.title || '') ||
+                /^AI model roster:/i.test(issue.title || '')) return;
+
+            // The existing forms already add bug/enhancement; do not duplicate them.
+            const labels = new Set((issue.labels || []).map((label) => label.name));
+            const isBug = labels.has('bug');
+            const isFeature = labels.has('enhancement');
+            if (isBug === isFeature || labels.has('needs-info')) return;
+
+            const required = isBug
+              ? ['App version', 'How are you running it?', 'Operating system',
+                 'Steps to reproduce', 'What did you expect to happen, and what happened instead?']
+              : ['What problem would this solve?', 'Proposed solution'];
+            const body = typeof issue.body === 'string' ? issue.body : '';
+            const sections = new Map();
+            let current = null;
+            for (const line of body.split(/\r?\n/)) {
+              if (line.startsWith('### ')) {
+                current = line.slice(4).trim();
+                if (sections.has(current)) return; // Ambiguous form: do not guess.
+                sections.set(current, []);
+              } else if (current !== null) sections.get(current).push(line);
+            }
+            // All expected headings must exist before treating the body as a form.
+            if (!required.every((name) => sections.has(name))) return;
+            const incomplete = required.some((name) => {
+              const value = (sections.get(name) || []).join('\n').trim();
+              return !value || value === '_No response_';
+            });
+            // OpenAI-Codex_Fork_GitHub_REPO: recognize only the exact required form checkbox.
+            const checks = (sections.get('Checks') || []).join('\n').trim();
+            const unchecked = checks === "- [ ] I searched existing issues and this isn't a duplicate.";
+            if (!incomplete && unchecked) {
+              // OpenAI-Codex_Fork_GitHub_REPO: never rely on a missing label.
+              const checkboxLabels = await github.paginate(github.rest.issues.listLabelsForRepo, { owner, repo, per_page: 100 });
+              if (!checkboxLabels.some((label) => label.name === 'needs-info')) return;
+              const { data: latestCheckbox } = await github.rest.issues.get({ owner, repo, issue_number: issue.number });
+              const names = new Set((latestCheckbox.labels || []).map((label) => label.name));
+              if (latestCheckbox.state !== 'open' || latestCheckbox.user?.login !== issue.user?.login ||
+                  latestCheckbox.title !== issue.title || latestCheckbox.body !== issue.body ||
+                  names.has('bug') !== isBug || names.has('enhancement') !== isFeature || names.has('needs-info')) return;
+              await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: ['needs-info'] });
+              return;
+            }
+            if (!incomplete) return;
+            const available = await github.paginate(github.rest.issues.listLabelsForRepo,
+              { owner, repo, per_page: 100 });
+            if (!available.some((label) => label.name === 'needs-info')) {
+              core.notice('Label needs-info is absent; no label was created or applied.');
+              return;
+            }
+            const { data: latest } = await github.rest.issues.get({ owner, repo, issue_number: issue.number });
+            const latestLabels = new Set((latest.labels || []).map((label) => label.name));
+            if (latest.state !== 'open' || latest.user?.login !== issue.user?.login ||
+                latest.body !== issue.body || latestLabels.has('bug') !== isBug ||
+                latestLabels.has('enhancement') !== isFeature || latestLabels.has('needs-info')) {
+              core.notice('Issue changed during triage; skipped.');
+              return;
+            }
+            // OpenAI-Codex_Fork_GitHub_REPO: check title before changing labels.
+            if (latest.title !== issue.title || /^(\[Automation\]|AI model roster:)/i.test(latest.title || '')) {
+              core.notice('Issue title changed or identifies automation; skipped.');
+              return;
+            }
+            // GitHub provides no atomic compare-and-label; state may still change here.
+            await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number,
+              labels: ['needs-info'] });
+            // Do not remove labels or close issues automatically.
+
+  pr-triage:
+    needs: label-bootstrap
+    if: github.event_name == 'pull_request_target' && needs.label-bootstrap.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    steps:
+      - name: Classify changed paths without checking out the PR
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const number = context.payload.pull_request?.number;
+            if (!number) return;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (pr.state !== 'open' || pr.base.ref !== 'Source_Code' || pr.user?.type === 'Bot' ||
+                pr.user?.login?.endsWith('[bot]')) return;
+            const files = await github.paginate(github.rest.pulls.listFiles,
+              { owner, repo, pull_number: number, per_page: 100 });
+            // Fail closed if the API did not return the complete file list.
+            if (files.length !== pr.changed_files) {
+              core.warning('Changed file count is incomplete; no classification was applied.');
+              return;
+            }
+            // OpenAI-Codex_Fork_GitHub_REPO: incomplete rename metadata cannot classify both paths.
+            if (files.some((file) => typeof file.filename !== 'string' || !file.filename ||
+                (file.status === 'renamed' && (typeof file.previous_filename !== 'string' || !file.previous_filename)))) {
+              core.warning('Changed path metadata is incomplete; classification skipped.');
+              return;
+            }
+            // OpenAI-Codex_Fork_GitHub_REPO: duplicate paths cannot establish a complete inventory.
+            if (new Set(files.map((file) => file.filename)).size !== files.length) {
+              core.warning('Duplicate changed paths; classification skipped.');
+              return;
+            }
+            const wanted = new Set();
+            for (const file of files) {
+              // Include both names for renames; deleted files retain filename.
+              for (const path of [file.filename, file.previous_filename].filter((value) => typeof value === 'string')) {
+                if (path.startsWith('frontend/') || path.startsWith('src-tauri/')) wanted.add('area:frontend');
+                if (path.startsWith('engine/') || path.startsWith('tui/') ||
+                    path === 'cli.py' || path === 'engine_sidecar.py' || path === 'web_app.py') wanted.add('area:engine');
+                if (path.startsWith('.github/')) wanted.add('area:automation');
+                if (path.endsWith('.md') || path.startsWith('locales/')) wanted.add('area:docs');
+              }
+            }
+            // OpenAI-Codex_Fork_GitHub_REPO: map tests and maintenance paths too.
+            for (const file of files) {
+              for (const path of [file.filename, file.previous_filename].filter((value) => typeof value === 'string')) {
+                if (path.startsWith('tests/') || path === 'requirements-web.txt') wanted.add('area:engine');
+                if (path.startsWith('scripts/')) wanted.add('area:automation');
+              }
+            }
+            if (!wanted.size) return;
+            const available = await github.paginate(github.rest.issues.listLabelsForRepo,
+              { owner, repo, per_page: 100 });
+            const known = new Set(available.map((label) => label.name));
+            const current = new Set((pr.labels || []).map((label) => label.name));
+            const add = [...wanted].filter((label) => known.has(label) && !current.has(label));
+            for (const label of wanted) {
+              if (!known.has(label)) core.notice('Label ' + label + ' is absent; skipped.');
+            }
+            // A changed head invalidates the file inventory we just classified.
+            const { data: latest } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (latest.state !== 'open' || latest.base.ref !== 'Source_Code' || latest.head.sha !== pr.head.sha ||
+                latest.base.sha !== pr.base.sha ||
+                latest.changed_files !== pr.changed_files) {
+              core.notice('PR changed during triage; skipped.');
+              return;
+            }
+            // OpenAI-Codex_Fork_GitHub_REPO: preserve concurrent label decisions.
+            const latestLabelNames = new Set((latest.labels || []).map((label) => label.name));
+            if (latestLabelNames.size !== current.size || [...current].some((name) => !latestLabelNames.has(name))) {
+              core.notice('PR labels changed during triage; skipped.');
+              return;
+            }
+            if (add.length) await github.rest.issues.addLabels({ owner, repo,
+              issue_number: number, labels: add });
+            // No branch deletion, release label, close or merge operation.

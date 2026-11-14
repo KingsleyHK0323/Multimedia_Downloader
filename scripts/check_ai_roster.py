@@ -10,6 +10,12 @@ role. The free tier churns roughly every couple of months -- three rounds are
 on record -- so this is run on a schedule to surface the drift while it is
 still a maintenance task rather than a user-facing surprise.
 
+Local draft note (OpenAI-Codex_Fork_GitHub_REPO): the CLI wrapper below uses
+0 for no observed substitution, 2 for a normally inconclusive catalogue,
+3 for a substitution, and 5 for caught execution faults or unexpected results.
+The legacy main() function and historical exit-code description below retain
+their earlier contract; do not infer model retirement from a substitution.
+
 Exit codes:
     0  every default is live
     1  at least one default has been retired (details on stdout)
@@ -74,6 +80,50 @@ def main() -> int:
           "above shows what resolve_roster() picks in the meantime.")
     return 1
 
+
+if __name__ == "__main__":
+    # Suppress legacy retirement wording; the check establishes only a substitution.
+    import contextlib
+    import io
+
+    _legacy_roster_main = main
+
+    def main():
+        with contextlib.redirect_stdout(io.StringIO()):
+            return _legacy_roster_main()
+
+# OpenAI-Codex_Fork_GitHub_REPO: distinguish an observed roster substitution
+# from process errors; neither proves that an upstream model was retired.
+if __name__ == "__main__":
+    try:
+        _observed_status = main()
+    except BaseException as _error:
+        print(f"Roster check failed; result is inconclusive ({type(_error).__name__}).", file=sys.stderr)
+        # OpenAI-Codex_Fork_GitHub_REPO: execution faults are not catalogue unavailability.
+        sys.exit(5)
+        sys.exit(2)
+    # OpenAI-Codex_Fork_GitHub_REPO: unexpected return values are execution faults.
+    if _observed_status not in (0, 1, 2):
+        print("Roster check returned an unexpected status.", file=sys.stderr)
+        sys.exit(5)
+    # OpenAI-Codex_Fork_GitHub_REPO: workflow-only completion evidence.
+    _workflow_token = os.environ.get("MMDL_ROSTER_COMPLETION_TOKEN")
+    if _workflow_token:
+        import re
+        if re.fullmatch(r"roster-[0-9]+-[0-9]+-[0-9]+-[0-9]+", _workflow_token) is None:
+            print("Invalid roster completion token.", file=sys.stderr)
+            sys.exit(5)
+        _workflow_status = 3 if _observed_status == 1 else _observed_status
+        print(f"MMDL_ROSTER_COMPLETE {_workflow_token} {_workflow_status}")
+    if _observed_status == 1:
+        print("A default differs from its selected roster candidate; retirement is unverified.")
+    elif _observed_status == 0:
+        print("No default roster substitution was observed.")
+    else:
+        print("Roster state is inconclusive.")
+    if _observed_status == 1:
+        sys.exit(3)
+    sys.exit(_observed_status if _observed_status in (0, 2) else 2)
 
 if __name__ == "__main__":
     sys.exit(main())

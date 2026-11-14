@@ -12,6 +12,10 @@
 
 ### Unreleased
 
+#### Repository automation (draft)
+- Classify issue and pull request metadata, report Dependabot maintenance findings, and keep automated merging on hold until its safety requirements can be verified. (OpenAI-Codex_Fork_GitHub_REPO)
+- Report AI roster substitutions conservatively and distinguish classified outcomes from process failures. (OpenAI-Codex_Fork_GitHub_REPO)
+
 #### Fixed
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
