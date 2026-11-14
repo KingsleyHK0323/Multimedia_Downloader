@@ -14,8 +14,7 @@
   let videoFmt = $state("mp4");
   let audioFmt = $state("mp3");
   let quality = $state("best");
-  // NOTE: bitrate is UI-only for now — the engine currently fixes audio at
-  // 192 kbps (V3.0 parity). TODO(engine): pass preferredquality through.
+  // OpenAI-Codex_app_ui: pass the chosen audio bitrate to the engine.
   let bitrate = $state("192");
   let savePath = $state("");
   let browser = $state("none");
@@ -33,7 +32,7 @@
       await api.startDownload({
         urls: urlList, mode,
         video_fmt: videoFmt, audio_fmt: audioFmt,
-        quality, save_path: savePath, browser,
+        quality, save_path: savePath, browser, bitrate,
       });
       toast(tr("status_all_done_dl", { t: urlList.length }), "ok");
     } catch (e) {

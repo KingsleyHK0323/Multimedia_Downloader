@@ -139,6 +139,19 @@ def _choice(value, allowed, field: str, default: str) -> str:
     return v
 
 
+# OpenAI-Codex_web_ai: validate the audio bitrate before dispatch.
+def _bitrate(value) -> str:
+    if not isinstance(value, str):
+        raise UnsafePath("invalid bitrate")
+    value = value.strip()
+    digits = value.lstrip("0") or "0"
+    if (not value.isascii() or not value.isdecimal() or len(digits) > 4
+            or not 1 <= int(digits) <= 9999):
+        raise UnsafePath("invalid bitrate")
+    return str(int(digits))
+
+
+
 def _confine_all(paths) -> list[str]:
     """Confine a list of client-supplied file paths (conversion inputs)."""
     if ALLOW_ABSOLUTE_PATHS:
@@ -215,6 +228,7 @@ def api_download():
             "quality": _choice(a.get("quality"), set(QUALITY_PRESETS),
                                "quality preset", "best"),
             "browser": _choice(a.get("browser"), set(BROWSERS), "browser", "none"),
+            "bitrate": _bitrate(a.get("bitrate", "192")),
         },
     }
     return _dispatch("download", args)

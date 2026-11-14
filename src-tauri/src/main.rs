@@ -171,6 +171,8 @@ async fn start_download(app: tauri::AppHandle, args: Value) -> Result<Value, Str
             "audio_fmt": args.get("audio_fmt"),
             "quality": args.get("quality"),
             "browser": args.get("browser"),
+            // OpenAI-Codex_Fork_GitHub_REPO: preserve the default for older clients.
+            "bitrate": args.get("bitrate").and_then(Value::as_str).unwrap_or("192"),
         });
         streaming(&app, &engine, "download",
             json!({ "urls": args.get("urls"), "options": options }))

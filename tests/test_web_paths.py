@@ -12,6 +12,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
+from unittest.mock import patch
 
 import _deps
 import _path  # noqa: F401  — puts the project root on sys.path
@@ -239,6 +240,27 @@ class EndpointTests(unittest.TestCase):
                 r = self.client.post("/api/download",
                                      json={"urls": ["u"], field: bad})
                 self.assertEqual(r.status_code, 400)
+
+
+    # OpenAI-Codex_Fork_GitHub_REPO: keep bitrate forwarding and validation covered.
+    def test_download_forwards_audio_bitrate_and_default(self):
+        with patch.object(web_app, "_dispatch", return_value=("", 204)) as dispatch:
+            for supplied, expected in (("0320", "320"), (None, "192")):
+                body = {"urls": ["https://example.com/media"], "mode": "audio"}
+                if supplied is not None:
+                    body["bitrate"] = supplied
+                response = self.client.post("/api/download", json=body)
+                self.assertEqual(response.status_code, 204)
+                self.assertEqual(dispatch.call_args.args[1]["options"]["bitrate"], expected)
+
+    def test_download_rejects_invalid_bitrate(self):
+        with patch.object(web_app, "_dispatch", return_value=("", 204)) as dispatch:
+            for bad in ("0", "10000", "1.5", "１２８", 192, None):
+                with self.subTest(bitrate=bad):
+                    response = self.client.post("/api/download",
+                                                json={"urls": ["https://example.com/media"], "bitrate": bad})
+                    self.assertEqual(response.status_code, 400)
+            dispatch.assert_not_called()
 
 
 if __name__ == "__main__":

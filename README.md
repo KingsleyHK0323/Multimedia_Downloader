@@ -206,6 +206,7 @@ Full walkthrough: [termux/README.md](termux/README.md). The CLI ([`cli.py`](cli.
 also runs on any desktop/server with Python + ffmpeg. For audio downloads,
 `--bitrate` accepts a decimal value in kbps (default `192`). The supported
 encoder ultimately determines which values work.
+The desktop and Web single-download forms also pass their selected bitrate.
 <!-- OpenAI-Codex_Fork_GitHub_REPO -->
 
 ## Run in your terminal (TUI)

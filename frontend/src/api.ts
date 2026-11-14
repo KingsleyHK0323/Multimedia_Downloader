@@ -40,6 +40,8 @@ export type DownloadArgs = {
   quality: string;
   save_path: string;
   browser?: string;
+  // OpenAI-Codex_app_ui: pass the chosen audio bitrate.
+  bitrate?: string;
 };
 
 export type ConvertArgs = {
