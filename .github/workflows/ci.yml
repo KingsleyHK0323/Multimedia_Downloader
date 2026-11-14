@@ -143,6 +143,11 @@ jobs:
         working-directory: src-tauri
         run: cargo clippy --all-targets -- -D warnings
 
+      # OpenAI-Codex_Fork_GitHub_REPO: execute Rust unit tests in CI.
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test --all-targets
+
   weekly-preview-health:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
