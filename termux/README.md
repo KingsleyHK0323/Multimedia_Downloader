@@ -63,8 +63,14 @@ files go to `MMDL_DOWNLOADS` (default `~/storage/downloads`). Override with:
 PORT=8080 MMDL_DOWNLOADS=~/storage/downloads bash termux/run-web.sh
 ```
 
-To reach it from another device on your LAN, start it with `HOST=0.0.0.0`
-(only on networks you trust — the server has no built-in authentication).
+To reach it from another device on your LAN, bind to `0.0.0.0` and set
+`MMDL_TRUSTED_HOSTS` to the server address used by clients. The list replaces
+the loopback defaults. Use trusted networks: there is no built-in authentication.
+
+```bash
+HOST=0.0.0.0 MMDL_TRUSTED_HOSTS='localhost,127.0.0.1,192.168.1.10' bash termux/run-web.sh
+```
+<!-- OpenAI-Codex_Fork_GitHub_REPO -->
 
 ## Notes
 

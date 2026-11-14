@@ -26,8 +26,12 @@ posted on the fix.
   mode the key also passes through the application server. File-touching actions
   require confirmation.
   <!-- OpenAI-Codex_Fork_GitHub_REPO -->
-- The **web version** (`web_app.py`) has **no built-in authentication** — do not
-  expose it to an untrusted network without putting your own auth in front of it.
+- The **web version** (`web_app.py`) defaults to loopback hosts and checks
+  browser origins and JSON command bodies. These checks are not authentication;
+  requests without an Origin header are permitted. Do not expose it to an
+  untrusted network without your own authentication. Explicitly configure trusted
+  hosts/origins and proxy Host/scheme forwarding for LAN or reverse proxies.
+  <!-- OpenAI-Codex_Fork_GitHub_REPO -->
 - The bundled `ffmpeg` is a third-party binary (GPLv3); see
   [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 

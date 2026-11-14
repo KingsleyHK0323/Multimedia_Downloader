@@ -179,7 +179,7 @@ pip install -r requirements-web.txt   # yt-dlp + Flask (ffmpeg on PATH)
 npm run build:frontend:web            # build the frontend in web mode
 npm run web                           # serve on http://127.0.0.1:5000
 # LAN / server:
-HOST=0.0.0.0 PORT=8000 python web_app.py
+HOST=0.0.0.0 PORT=8000 MMDL_TRUSTED_HOSTS=192.168.1.12 python web_app.py
 ```
 
 Because it's a browser app, downloaded/converted files land in a **server-side**
@@ -188,6 +188,14 @@ folder (`MMDL_DOWNLOADS`, default `./downloads`) retrievable at `/files/<name>`
 operation at a time, like V3.0's `web_app.py`); for production put it behind a
 streaming-friendly WSGI worker, e.g. `gunicorn -k gthread -w 1 --threads 8
 web_app:app`, and add your own auth if exposing it beyond localhost.
+
+By default only `localhost`, `127.0.0.1` and `[::1]` hosts are accepted. Set
+`MMDL_TRUSTED_HOSTS` to a comma-separated list of exact hostnames or IPs; it
+replaces the defaults, so include any loopback hosts still needed. Optional
+`MMDL_TRUSTED_ORIGINS` lists extra exact browser origins. Configure a trusted
+proxy to preserve the intended Host and scheme; forwarded headers are not
+automatically trusted. These checks are not authentication.
+<!-- OpenAI-Codex_Fork_GitHub_REPO -->
 
 Paths sent by the browser are confined to that downloads folder, and a request
 pointing outside it is rejected with HTTP 400 — otherwise anyone who can reach

@@ -19,10 +19,14 @@ connected browser via Server-Sent Events.
 
 Deploy notes:
     python web_app.py                       # localhost:5000
-    HOST=0.0.0.0 PORT=8000 python web_app.py # LAN / server
+    HOST=0.0.0.0 PORT=8000 MMDL_TRUSTED_HOSTS=192.168.1.12 python web_app.py # LAN
 For production behind gunicorn, use a streaming-friendly worker for the SSE
 endpoint, e.g. ``gunicorn -k gthread -w 1 --threads 8 web_app:app`` (a single
 worker keeps the one-op-at-a-time model and shared event bus intact).
+
+Hosts default to loopback only. MMDL_TRUSTED_HOSTS replaces that list; extra
+browser origins may be listed in MMDL_TRUSTED_ORIGINS. These checks are not
+authentication. Configure trusted proxies and preserve the intended host/scheme.
 
 Files produced by downloads/conversions land under ``MMDL_DOWNLOADS`` (default
 ``./downloads``) — a server-side directory — and are retrievable at
@@ -31,11 +35,13 @@ Files produced by downloads/conversions land under ``MMDL_DOWNLOADS`` (default
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import queue
 import sys
 import threading
+from urllib.parse import urlsplit
 
 from flask import Flask, Response, jsonify, request, send_from_directory
 
@@ -48,6 +54,90 @@ FRONTEND_DIST = os.path.join(HERE, "frontend", "dist")
 DOWNLOADS_DIR = os.environ.get("MMDL_DOWNLOADS", os.path.join(HERE, "downloads"))
 
 app = Flask(__name__, static_folder=None)
+
+def _configured_trusted_hosts(value):
+    """Use explicit configured hosts, or only loopback hosts by default."""
+    hosts = [host.strip() for host in (value or "").split(",") if host.strip()]
+    return hosts or ["localhost", "127.0.0.1", "[::1]"]
+
+
+def _hostname(authority):
+    """Normalize a single HTTP Host authority without trusting its port."""
+    if (not isinstance(authority, str) or not authority or not authority.isascii()
+            or authority.endswith(":")):
+        return None
+    if any(ord(ch) <= 32 or ord(ch) == 127 or ch in "/\\?#@" for ch in authority):
+        return None
+    if authority.startswith("["):
+        _, closing, suffix = authority.partition("]")
+        if not closing or (suffix and (not suffix.startswith(":") or not suffix[1:].isdecimal())):
+            return None
+    try:
+        parsed = urlsplit("//" + authority)
+        if parsed.username is not None or parsed.password is not None:
+            return None
+        if parsed.path or parsed.query or parsed.fragment or not parsed.hostname:
+            return None
+        _ = parsed.port  # Reject non-numeric and out-of-range ports.
+        hostname = parsed.hostname
+        if ":" in hostname:
+            if not authority.startswith("["):
+                return None
+            return ipaddress.IPv6Address(hostname).compressed.lower()
+        try:
+            return str(ipaddress.IPv4Address(hostname))
+        except ipaddress.AddressValueError:
+            return hostname.encode("idna").decode("ascii").lower()
+    except (ValueError, UnicodeError):
+        return None
+
+
+def _is_trusted_host(authority, trusted_hosts):
+    """Match exact hostnames; this is not a caller authentication check."""
+    name = _hostname(authority)
+    if name is None or not isinstance(trusted_hosts, (list, tuple, set)):
+        return False
+    return any(name == _hostname(host) for host in trusted_hosts)
+
+
+# OpenAI-Codex_web_ai: browser origin checks are defense in depth, not auth.
+app.config["MMDL_TRUSTED_ORIGINS"] = {
+    value.strip().rstrip("/")
+    for value in os.environ.get("MMDL_TRUSTED_ORIGINS", "").split(",")
+    if value.strip()
+}
+# Keep this separate from Flask's TRUSTED_HOSTS: exact IPv6 parsing is enforced
+# below without depending on the installed Werkzeug version's matching rules.
+app.config["MMDL_TRUSTED_HOSTS"] = _configured_trusted_hosts(os.environ.get("MMDL_TRUSTED_HOSTS"))
+
+
+@app.before_request
+def _protect_browser_post():
+    """Reject unexpected hosts, browser origins and non-JSON command bodies.
+
+    Clients without an Origin header remain supported, so this is not an
+    authentication boundary. Operation control requests require JSON bodies.
+    """
+    authority = request.environ.get("HTTP_HOST")
+    if not authority:
+        authority = request.environ.get("SERVER_NAME", "")
+        if authority and ":" in authority and not authority.startswith("["):
+            # WSGI SERVER_NAME may be an unbracketed IPv6 literal.
+            try:
+                authority = f"[{ipaddress.IPv6Address(authority).compressed}]"
+            except ipaddress.AddressValueError:
+                pass
+    if not _is_trusted_host(authority, app.config["MMDL_TRUSTED_HOSTS"]):
+        return jsonify({"error": "untrusted request host"}), 400
+    if request.method != "POST" or not request.path.startswith("/api/"):
+        return None
+    origin = request.headers.get("Origin")
+    allowed = {request.host_url.rstrip("/")} | set(app.config["MMDL_TRUSTED_ORIGINS"] or ())
+    if origin is not None and origin not in allowed:
+        return jsonify({"error": "untrusted request origin"}), 403
+    if not request.is_json:
+        return jsonify({"error": "application/json is required"}), 415
+    return None
 
 # ── Event bus: fan events out to every connected SSE client ──────────────────
 _subscribers: set[queue.Queue] = set()

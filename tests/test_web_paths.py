@@ -210,6 +210,101 @@ class CookieFileTests(unittest.TestCase):
         self.assertEqual(len(got), 1)
 
 
+class TrustedHostTests(unittest.TestCase):
+    # OpenAI-Codex_web_ai: block DNS rebinding without treating Host as auth.
+    def setUp(self):
+        self.previous = web_app.app.config.get("MMDL_TRUSTED_HOSTS")
+        self.previous_origins = web_app.app.config.get("MMDL_TRUSTED_ORIGINS")
+        web_app.app.config["MMDL_TRUSTED_ORIGINS"] = set()
+        web_app.app.config["MMDL_TRUSTED_HOSTS"] = web_app._configured_trusted_hosts(None)
+        self.client = web_app.app.test_client()
+
+    def tearDown(self):
+        web_app.app.config["MMDL_TRUSTED_HOSTS"] = self.previous
+        web_app.app.config["MMDL_TRUSTED_ORIGINS"] = self.previous_origins
+
+    def test_default_hosts_are_only_explicit_loopback_names(self):
+        self.assertEqual(web_app._configured_trusted_hosts(None),
+                         ["localhost", "127.0.0.1", "[::1]"])
+        self.assertEqual(web_app._configured_trusted_hosts("  ,  "),
+                         ["localhost", "127.0.0.1", "[::1]"])
+
+    def test_configured_hosts_replace_default_list(self):
+        self.assertEqual(web_app._configured_trusted_hosts("192.168.1.12, media.example"),
+                         ["192.168.1.12", "media.example"])
+
+    def test_explicit_lan_host_is_allowed_and_unlisted_host_is_rejected(self):
+        web_app.app.config["MMDL_TRUSTED_HOSTS"] = web_app._configured_trusted_hosts("192.168.1.12")
+        with patch.object(web_app, "_dispatch", side_effect=lambda *_args: web_app.jsonify({})):
+            self.assertEqual(self.client.get("/api/formats", headers={"Host": "192.168.1.12:5000"}).status_code, 200)
+            self.assertEqual(self.client.get("/api/formats", headers={"Host": "localhost"}).status_code, 400)
+
+    def test_exact_loopback_host_headers_are_allowed(self):
+        for host in ("localhost", "localhost:5000", "127.0.0.1:5000", "[::1]:5000"):
+            with self.subTest(host=host), \
+                    patch.object(web_app, "_dispatch", side_effect=lambda *_args: web_app.jsonify({})):
+                response = self.client.get("/api/formats", headers={"Host": host})
+                self.assertEqual(response.status_code, 200)
+
+    def test_rebinding_and_other_ipv6_hosts_are_rejected(self):
+        for host in ("attacker.invalid", "127.0.0.2:5000", "[::2]:5000", "::1"):
+            with self.subTest(host=host):
+                response = self.client.get("/api/formats", headers={"Host": host})
+                self.assertEqual(response.status_code, 400)
+
+    def test_spoofed_matching_origin_does_not_authorize_untrusted_host(self):
+        response = self.client.post("/api/download", json={"urls": ["u"]}, headers={
+            "Host": "attacker.invalid", "Origin": "http://attacker.invalid",
+        })
+        self.assertEqual(response.status_code, 400)
+
+    def test_ipv6_and_host_parser_enforces_exact_names(self):
+        allowed = ["localhost", "127.0.0.1", "[::1]"]
+        for host in ("LOCALHOST:5000", "127.0.0.1:5000", "[::1]:5000"):
+            with self.subTest(host=host):
+                self.assertTrue(web_app._is_trusted_host(host, allowed))
+        for host in ("localhost.attacker.invalid", "localhost@attacker.invalid", "[::2]:5000",
+                     "::1", "[::1]attacker", "[::1]:not-a-port", "localhost:5000/path",
+                     "local\u200bhost"):
+            with self.subTest(host=host):
+                self.assertFalse(web_app._is_trusted_host(host, allowed))
+
+    def test_ipv6_suffix_rejected_even_with_lenient_url_parser(self):
+        class Parsed:
+            username = password = None
+            path = query = fragment = ""
+            hostname = "::1"
+            port = 5000
+
+        with patch.object(web_app, "urlsplit", return_value=Parsed()):
+            for authority in ("[::1]junk", "[::1]junk:5000", "[::1]:not-a-port"):
+                with self.subTest(authority=authority):
+                    self.assertIsNone(web_app._hostname(authority))
+
+
+    # OpenAI-Codex_Fork_GitHub_REPO: origins and JSON are checked independently.
+    def test_same_and_missing_origin_are_allowed(self):
+        with patch.object(web_app, "_dispatch", return_value=("", 204)):
+            for headers in ({}, {"Origin": "http://localhost"}):
+                with self.subTest(headers=headers):
+                    response = self.client.post("/api/download", json={"urls": ["u"]}, headers=headers)
+                    self.assertEqual(response.status_code, 204)
+
+    def test_cross_origin_and_non_json_are_rejected(self):
+        response = self.client.post("/api/download", json={"urls": ["u"]},
+                                    headers={"Origin": "http://attacker.invalid"})
+        self.assertEqual(response.status_code, 403)
+        response = self.client.post("/api/download", data="{}", content_type="text/plain")
+        self.assertEqual(response.status_code, 415)
+
+    def test_explicit_extra_origin_is_allowed(self):
+        web_app.app.config["MMDL_TRUSTED_ORIGINS"] = {"https://trusted.example"}
+        with patch.object(web_app, "_dispatch", return_value=("", 204)):
+            response = self.client.post("/api/download", json={"urls": ["u"]},
+                                        headers={"Origin": "https://trusted.example"})
+            self.assertEqual(response.status_code, 204)
+
+
 class EndpointTests(unittest.TestCase):
     """A rejected path must read as a client error, not a server crash."""
 
