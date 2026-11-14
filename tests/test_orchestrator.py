@@ -52,6 +52,21 @@ class ExtractJsonTests(unittest.TestCase):
 
 
 class ValidateTasksTests(unittest.TestCase):
+    # OpenAI-Codex_Fork_GitHub_REPO: planner bitrate normalization and warning.
+    def test_audio_bitrate_plan_values(self):
+        for supplied, expected, warns in (("0320", "320", False), ("0", "192", True),
+                                          (128, "192", True), (None, "192", True)):
+            with self.subTest(bitrate=supplied):
+                task = {"kind": "download", "url": "https://example.com/media",
+                        "options": {"save_path": "out", "mode": "audio", "bitrate": supplied}}
+                clean, warnings = _validate_tasks([task])
+                self.assertEqual(clean[0]["options"]["bitrate"], expected)
+                self.assertEqual(bool(warnings), warns)
+        clean, warnings = _validate_tasks([{"kind": "download", "url": "https://example.com/media",
+                                            "options": {"save_path": "out"}}])
+        self.assertEqual(clean[0]["options"]["bitrate"], "192")
+        self.assertEqual(warnings, [])
+
     def test_valid_download_passes(self):
         tasks, warnings = _validate_tasks([
             {"kind": "download", "label": "x", "url": "http://x",

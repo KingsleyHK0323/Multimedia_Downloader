@@ -28,6 +28,17 @@ web_app = _deps.require("web_app", "requirements-web.txt")
 
 
 class ConfineTests(unittest.TestCase):
+    # OpenAI-Codex_Fork_GitHub_REPO: both path modes preserve the planned bitrate.
+    def test_queue_bitrate_preserved_in_both_path_modes(self):
+        task = {"kind": "download", "url": "https://example.com/media",
+                "options": {"save_path": "out", "mode": "audio", "bitrate": "320"}}
+        for allow in (False, True):
+            with self.subTest(allow_absolute=allow):
+                web_app.ALLOW_ABSOLUTE_PATHS = allow
+                result = web_app._confine_tasks([task])
+                self.assertEqual(result[0]["options"]["bitrate"], "320")
+                self.assertEqual(task["options"]["save_path"], "out")
+
     def setUp(self):
         # Each test starts from the secure default, whatever the environment
         # the suite happens to run in says.

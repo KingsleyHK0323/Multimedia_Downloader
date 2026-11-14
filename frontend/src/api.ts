@@ -63,6 +63,7 @@ export type AiDownloadTask = {
     audio_fmt: string;
     quality: string;
     browser: string;
+    bitrate?: string; // OpenAI-Codex_app_ui
   };
 };
 export type AiConvertTask = {

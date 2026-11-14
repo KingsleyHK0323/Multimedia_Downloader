@@ -111,7 +111,7 @@ _TASK_SCHEMA_HINT = """Return ONLY a JSON object (no prose, no markdown fences) 
   "tasks": [
     {"kind": "download", "label": "...", "url": "...",
      "options": {"save_path": "...", "mode": "video", "video_fmt": "mp4",
-                 "audio_fmt": "mp3", "quality": "best", "browser": "none"}},
+                 "audio_fmt": "mp3", "quality": "best", "browser": "none", "bitrate": "192"}},
     {"kind": "convert", "label": "...", "src_path": "...", "dst_path": "..."}
   ]
 }
@@ -150,12 +150,23 @@ def _validate_tasks(raw_tasks) -> tuple[list[dict], list[str]]:
             audio_fmt = options.get("audio_fmt") if options.get("audio_fmt") in AUDIO_FORMATS else "mp3"
             quality = options.get("quality") if options.get("quality") in QUALITY_PRESETS else "best"
             browser = options.get("browser") if options.get("browser") in BROWSERS else "none"
+            # OpenAI-Codex_web_ai: normalize an audio bitrate before review.
+            bitrate = options.get("bitrate", "192")
+            if isinstance(bitrate, str):
+                bitrate = bitrate.strip()
+            digits = (bitrate.lstrip("0") or "0") if isinstance(bitrate, str) else ""
+            if (not isinstance(bitrate, str) or not bitrate.isascii() or not bitrate.isdecimal()
+                    or len(digits) > 4 or not 1 <= int(digits) <= 9999):
+                warnings.append(f"{label}: invalid bitrate; using 192")
+                bitrate = "192"
+            else:
+                bitrate = str(int(digits))
             clean.append({
                 "kind": "download", "label": label, "url": url,
                 "options": {
                     "save_path": options["save_path"], "mode": mode,
                     "video_fmt": video_fmt, "audio_fmt": audio_fmt,
-                    "quality": quality, "browser": browser,
+                    "quality": quality, "browser": browser, "bitrate": bitrate,
                 },
             })
 
@@ -255,6 +266,7 @@ class Orchestrator:
         return (
             f"Known video formats: {VIDEO_FORMATS}\n"
             f"Known audio formats: {AUDIO_FORMATS}\n"
+            "Audio bitrate: decimal kbps from 1 to 9999, default 192.\n"
             f"Known quality presets: {QUALITY_PRESETS}\n"
             f"Known browsers: {BROWSERS}\n"
             f"Default save_path if the user didn't specify one: {context.get('save_path', '')!r}\n"

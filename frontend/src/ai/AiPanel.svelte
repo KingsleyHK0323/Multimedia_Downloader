@@ -220,6 +220,10 @@
                     {task.kind === "download" ? tr("ai_task_download") : tr("ai_task_convert")}
                   </span>
                   <span class="block truncate font-mono text-zinc-700 dark:text-zinc-300">{taskLine(task)}</span>
+                  {#if task.kind === "download" && task.options.mode === "audio"}
+                    <span class="block text-zinc-500">{tr("lbl_bitrate")}: {task.options.bitrate ?? "192"} kbps</span>
+                  {/if}
+                  <!-- OpenAI-Codex_Fork_GitHub_REPO: show the requested bitrate before confirmation. -->
                 </div>
               </li>
             {/each}

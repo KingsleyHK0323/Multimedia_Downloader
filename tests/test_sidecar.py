@@ -5,6 +5,13 @@ import engine_sidecar as sc
 
 
 class DispatchPureTests(unittest.TestCase):
+    # OpenAI-Codex_Fork_GitHub_REPO: queue preserves bitrate and its default.
+    def test_download_task_bitrate(self):
+        for options, expected in (({"save_path": "out", "bitrate": "320"}, "320"),
+                                  ({"save_path": "out"}, "192")):
+            task = sc.Sidecar._task_from_dict({"kind": "download", "url": "u", "options": options})
+            self.assertEqual(task.options.bitrate, expected)
+
     def setUp(self):
         self.events = []
         self.side = sc.Sidecar(self.events.append)

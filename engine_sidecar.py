@@ -214,7 +214,7 @@ class Sidecar:
     #: which is the wrong default for a field that arrives over the network.
     _DOWNLOAD_OPTION_KEYS = (
         "save_path", "mode", "video_fmt", "audio_fmt", "quality",
-        "cookie_file", "browser",
+        "cookie_file", "browser", "bitrate",  # OpenAI-Codex_web_ai
     )
 
     @classmethod

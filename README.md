@@ -85,7 +85,8 @@ the app.
 3. Describe your task, e.g. *"Download
    https://youtube.com/watch?v=... as mp4"* or *"Convert D:\videos\a.mov and
    b.avi to mp4"*.
-4. Review the generated plan — **nothing runs yet**.
+4. Review the generated plan, including any requested audio bitrate — **nothing runs yet**.
+   <!-- OpenAI-Codex_Fork_GitHub_REPO -->
 5. Click **Confirm** to execute, or **Cancel** / **Regenerate**.
 
 ## Requirements
