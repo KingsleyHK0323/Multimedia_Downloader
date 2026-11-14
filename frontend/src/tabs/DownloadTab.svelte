@@ -5,6 +5,7 @@
   import { api, IS_TAURI, type Formats } from "../api";
   import { t, progress, busy, downloadItems } from "../store";
   import { toast } from "../lib/toast";
+  import { downloadOutcome } from "../lib/downloadOutcome";
 
   let { mode, formats }: { mode: "video" | "audio"; formats: Formats | null } = $props();
 
@@ -26,16 +27,23 @@
     if (urlList.length === 0) return;
     // Lives in the shared store (not local state) so it survives switching
     // away to another tab and back — see store.ts's downloadItems comment.
-    downloadItems.set(urlList.map((url) => ({ url, status: "pending" })));
+    const startedUrls = [...urlList]; // OpenAI-Codex_Fork_GitHub_REPO
+    downloadItems.set(startedUrls.map((url) => ({ url, status: "pending" })));
     busy.set(true);
     progress.set(null);
     try {
-      await api.startDownload({
-        urls: urlList, mode,
+      const response = await api.startDownload({
+        urls: startedUrls, mode,
         video_fmt: videoFmt, audio_fmt: audioFmt,
         quality, save_path: savePath, browser, bitrate, cookie_file: cookieFile,
       });
-      toast(tr("status_all_done_dl", { t: urlList.length }), "ok");
+      const outcome = downloadOutcome(response, startedUrls);
+      if (outcome.kind === "complete") toast(tr("status_all_done_dl", { t: outcome.total }), "ok");
+      else if (outcome.kind === "failed") toast(tr("download_result_failed",
+        { ok: outcome.total - outcome.failed, fail: outcome.failed, total: outcome.total }), "err");
+      else if (outcome.kind === "incomplete") toast(tr("download_result_incomplete",
+        { done: outcome.done, total: outcome.total }), "err");
+      else toast(tr("download_result_unknown"), "err");
     } catch (e) {
       toast(String(e instanceof Error ? e.message : e), "err");
     } finally {

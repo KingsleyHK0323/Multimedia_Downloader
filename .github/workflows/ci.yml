@@ -99,6 +99,10 @@ jobs:
       - name: Check key storage behavior
         run: node --experimental-strip-types frontend/src/lib/keyStorage.behavior.mjs
 
+      # OpenAI-Codex_Fork_GitHub_REPO: classify incomplete replies conservatively.
+      - name: Check download outcome behavior
+        run: node --experimental-strip-types frontend/src/lib/downloadOutcome.behavior.mjs
+
   rust-check:
     runs-on: ubuntu-latest
     steps:

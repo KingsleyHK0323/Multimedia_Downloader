@@ -88,7 +88,7 @@ export type QueueResultTask = { kind: string; label: string; status: string; err
 export interface Api {
   getFormats(): Promise<Formats>;
   getLocales(): Promise<Record<string, string>>;
-  startDownload(args: DownloadArgs): Promise<void>;
+  startDownload(args: DownloadArgs): Promise<unknown>;
   startConvert(args: ConvertArgs): Promise<void>;
   aiPlan(apiKey: string, prompt: string, context: AiContext): Promise<AiPlan>;
   runQueue(tasks: AiTask[]): Promise<{ tasks: QueueResultTask[] }>;
@@ -107,7 +107,7 @@ class TauriApi implements Api {
   }
   getFormats() { return this.invoke<Formats>("get_formats"); }
   getLocales() { return this.invoke<Record<string, string>>("get_locales"); }
-  startDownload(args: DownloadArgs) { return this.invoke<void>("start_download", { args }); }
+  startDownload(args: DownloadArgs) { return this.invoke<unknown>("start_download", { args }); }
   startConvert(args: ConvertArgs) { return this.invoke<void>("start_convert", { args }); }
   aiPlan(apiKey: string, prompt: string, context: AiContext) {
     return this.invoke<AiPlan>("ai_plan", { args: { api_key: apiKey, prompt, context } });
@@ -153,7 +153,7 @@ class WebApi implements Api {
 
   getFormats() { return this.get<Formats>("/api/formats"); }
   getLocales() { return this.get<Record<string, string>>("/api/locales"); }
-  async startDownload(args: DownloadArgs) { await this.post("/api/download", args); }
+  startDownload(args: DownloadArgs) { return this.post<unknown>("/api/download", args); }
   async startConvert(args: ConvertArgs) { await this.post("/api/convert", args); }
   aiPlan(apiKey: string, prompt: string, context: AiContext) {
     return this.post<AiPlan>("/api/ai_plan", { api_key: apiKey, prompt, context });
@@ -193,27 +193,38 @@ class MockApi implements Api {
     return Promise.resolve({ en: "English", zh_tw: "繁體中文", zh_cn: "简体中文" });
   }
 
+  // OpenAI-Codex_Fork_GitHub_REPO: return only results for completed mock items.
   async startDownload(args: DownloadArgs) {
     this.stopped = false;
     const urls = args.urls.filter((u) => u.trim());
     const total = urls.length;
+    const results: Array<[string, boolean, string]> = [];
     this.emit({ type: "log", level: "info", key: "log_start_batch", fmt: { n: total } });
     for (let i = 0; i < total; i++) {
       if (this.stopped) {
         this.emit({ type: "log", level: "warn", key: "log_stopped_dl" });
-        return;
+        return { results };
       }
       const idx = i + 1;
       this.emit({ type: "item_start", index: idx, total, url: urls[i] });
       this.emit({ type: "log", level: "info", key: "log_item_downloading", fmt: { i: idx, t: total, url: urls[i] } });
       for (const pct of [20, 55, 90, 100]) {
-        if (this.stopped) break;
+        if (this.stopped) {
+          this.emit({ type: "log", level: "warn", key: "log_stopped_dl" });
+          return { results };
+        }
         await delay(180);
+        if (this.stopped) {
+          this.emit({ type: "log", level: "warn", key: "log_stopped_dl" });
+          return { results };
+        }
         this.emit({ type: "progress", pct, speed: "3.4MiB/s", eta: pct < 100 ? "00:03" : "--" });
       }
+      results.push([urls[i], true, ""]);
       this.emit({ type: "log", level: "ok", key: "log_item_done", fmt: { i: idx, t: total } });
     }
     this.emit({ type: "log", level: "ok", key: "log_all_done", fmt: { t: total } });
+    return { results };
   }
 
   async startConvert(args: ConvertArgs) {

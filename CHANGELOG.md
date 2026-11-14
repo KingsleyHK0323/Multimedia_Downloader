@@ -16,6 +16,7 @@
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
 #### Changed
+- Check download replies before reporting success; incomplete or malformed replies remain unconfirmed. (OpenAI-Codex_Fork_GitHub_REPO)
 - Accept desktop and Web single-download cookie file paths with platform-specific validation and server confinement by default. (OpenAI-Codex_Fork_GitHub_REPO)
 - Restrict Web request hosts and browser origins by default; LAN and reverse-proxy users must configure trusted hosts as documented. This does not add authentication. (OpenAI-Codex_Fork_GitHub_REPO)
 - Redact selected HTTP(S) URL components in downloader log parameters and error text. (OpenAI-Codex_Fork_GitHub_REPO)
