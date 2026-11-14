@@ -4,7 +4,8 @@
  * just means no update banner, not a broken app.
  */
 
-const REPO = "SpaceSquare640/Multimedia_Downloader";
+// OpenAI-Codex_app_ui: use the repository configured for the current project.
+const REPO = "KingsleyHK0323/Multimedia_Downloader";
 const DISMISSED_KEY = "mmdl_update_dismissed";
 
 export type UpdateInfo = { latest: string; url: string };

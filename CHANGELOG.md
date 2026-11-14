@@ -12,6 +12,9 @@
 
 ### Unreleased
 
+#### Fixed
+- Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
+
 #### Changed
 - Set the current software code license to PolyForm Noncommercial 1.0.0, updated
   the frontend package and lockfile metadata and README, and retained
