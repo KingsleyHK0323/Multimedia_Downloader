@@ -31,6 +31,9 @@ posted on the fix.
   requests without an Origin header are permitted. Do not expose it to an
   untrusted network without your own authentication. Explicitly configure trusted
   hosts/origins and proxy Host/scheme forwarding for LAN or reverse proxies.
+  Single-download cookie file paths refer to the server and are confined to its
+  downloads folder by default; the explicit absolute-path opt-out removes this
+  restriction. Filesystem links may change after validation.
   <!-- OpenAI-Codex_Fork_GitHub_REPO -->
 - The bundled `ffmpeg` is a third-party binary (GPLv3); see
   [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).

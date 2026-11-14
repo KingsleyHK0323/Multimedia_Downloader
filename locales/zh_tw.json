@@ -31,6 +31,8 @@
   "cookie_m1": "方法一 — 從瀏覽器讀取：",
   "cookie_m1_hint": "← 選擇你已登入的瀏覽器",
   "cookie_m2": "方法二 — Cookie 檔案路徑（cookies.txt）：",
+  "cookie_local_hint": "選填目前作業系統的 Cookie 檔案絕對路徑；有效檔案會優先於所選瀏覽器。",
+  "cookie_server_hint": "請輸入應用程式伺服器上的路徑。預設須位於伺服器下載資料夾內；明確設定可允許其他路徑。瀏覽器 Cookie 亦從伺服器讀取。",
   "cookie_export_hint": "💡  如何匯出 cookies.txt：\n   Chrome / Edge / Brave：安裝「Get cookies.txt LOCALLY」擴充功能 → 在網站頁面點 Export\n   Firefox：安裝「cookies.txt」擴充功能 → Export\n   或直接在上方選擇瀏覽器讓 yt-dlp 自動讀取（需在該瀏覽器登入）。",
   "log_auto_toggle": "📄  下載完成後自動儲存日誌",
   "log_save_dir": "日誌存放目錄：",

@@ -2,7 +2,7 @@
   import { Play, Square, Link2, Clock, Loader2, CheckCircle2, XCircle } from "lucide-svelte";
   import Card from "../components/Card.svelte";
   import ProgressBar from "../components/ProgressBar.svelte";
-  import { api, type Formats } from "../api";
+  import { api, IS_TAURI, type Formats } from "../api";
   import { t, progress, busy, downloadItems } from "../store";
   import { toast } from "../lib/toast";
 
@@ -18,6 +18,7 @@
   let bitrate = $state("192");
   let savePath = $state("");
   let browser = $state("none");
+  let cookieFile = $state(""); // OpenAI-Codex_app_ui
 
   const urlList = $derived(urls.split("\n").map((u) => u.trim()).filter(Boolean));
 
@@ -32,7 +33,7 @@
       await api.startDownload({
         urls: urlList, mode,
         video_fmt: videoFmt, audio_fmt: audioFmt,
-        quality, save_path: savePath, browser, bitrate,
+        quality, save_path: savePath, browser, bitrate, cookie_file: cookieFile,
       });
       toast(tr("status_all_done_dl", { t: urlList.length }), "ok");
     } catch (e) {
@@ -108,6 +109,14 @@
           {#each formats?.browsers ?? [] as b}<option>{b}</option>{/each}
         </select>
       </label>
+      <label>
+        <span class={labelCls}>{tr("cookie_m2")}</span>
+        <input class={inputCls} bind:value={cookieFile} autocomplete="off"
+               aria-describedby={`download-cookie-hint-${mode}`} />
+      </label>
+      <p id={`download-cookie-hint-${mode}`} class="text-xs text-zinc-500 dark:text-zinc-400">
+        {tr(IS_TAURI ? "cookie_local_hint" : "cookie_server_hint")}
+      </p>
       <p class="self-end pb-1 text-[11px] leading-snug text-zinc-400 dark:text-zinc-500">
         {tr("cookie_warning")}
       </p>

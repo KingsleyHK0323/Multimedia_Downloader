@@ -144,6 +144,12 @@ class Sidecar:
         return {"lang": lang, "strings": i18n._load_all().get(lang, {})}
 
     def _cmd_download(self, args: dict) -> dict:
+        # OpenAI-Codex_Fork_GitHub_REPO: desktop cookie paths use the sidecar's OS.
+        if args.get("require_absolute_cookie_path"):
+            cookie_file = args["options"].get("cookie_file")
+            if cookie_file is not None and cookie_file != "":
+                if not isinstance(cookie_file, str) or "\x00" in cookie_file or not os.path.isabs(cookie_file):
+                    raise ValueError("cookie file path must be absolute for this system")
         opts = DownloadOptions(**args["options"])
         dl = Downloader(opts, log_cb=self._log_cb,
                         progress_cb=self._progress_cb, item_start_cb=self._item_start_cb)

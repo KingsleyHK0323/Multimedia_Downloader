@@ -31,6 +31,8 @@
   "cookie_m1": "Method 1 — From browser:",
   "cookie_m1_hint": "← Select the browser you are signed in with",
   "cookie_m2": "Method 2 — Cookie file path (cookies.txt):",
+  "cookie_local_hint": "Optional absolute cookie file path for this system. A valid file takes priority over the selected browser.",
+  "cookie_server_hint": "Use a path on the application server. By default it must be inside its downloads folder; an explicit server setting can allow other paths. Browser cookies are read on the server.",
   "cookie_export_hint": "💡  How to export cookies.txt:\n   Chrome / Edge / Brave: install \"Get cookies.txt LOCALLY\" extension → open the site → Export\n   Firefox: install the \"cookies.txt\" extension → Export\n   Or just pick a browser above and yt-dlp will read its cookies directly (requires being signed in).",
   "log_auto_toggle": "📄  Auto-save log after each download session",
   "log_save_dir": "Log save directory:",

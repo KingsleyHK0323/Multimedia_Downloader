@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import _path  # noqa: F401
 import engine_sidecar as sc
@@ -78,6 +79,39 @@ class RoutingTests(unittest.TestCase):
         # a log event was emitted during the op
         self.assertTrue(any(e.get("type") == "log" and e["key"] == "log_start_batch"
                             for e in self.events))
+
+    # OpenAI-Codex_Fork_GitHub_REPO: validate desktop paths before starting Downloader.
+    def test_desktop_cookie_path_rejected_before_download(self):
+        with patch.object(sc, "Downloader") as downloader:
+            for value in ("relative.txt", "bad\x00path", 42):
+                with self.subTest(value=value):
+                    result = self.side.dispatch({"id": "d", "cmd": "download", "args": {
+                        "urls": [], "options": {"save_path": "out", "cookie_file": value},
+                        "require_absolute_cookie_path": True}})
+                    self.assertFalse(result["ok"])
+            downloader.assert_not_called()
+
+    def test_desktop_cookie_absolute_or_empty_is_forwarded(self):
+        import os
+        with patch.object(sc, "Downloader") as downloader:
+            downloader.return_value.download_batch.return_value = []
+            for value in (os.path.abspath("cookies.txt"), "", None):
+                with self.subTest(value=value):
+                    result = self.side.dispatch({"id": "d", "cmd": "download", "args": {
+                        "urls": [], "options": {"save_path": "out", "cookie_file": value},
+                        "require_absolute_cookie_path": True}})
+                    self.assertTrue(result["ok"])
+                    self.assertEqual(downloader.call_args.args[0].cookie_file, value)
+
+    def test_legacy_download_can_use_relative_cookie_and_save_paths(self):
+        with patch.object(sc, "Downloader") as downloader:
+            downloader.return_value.download_batch.return_value = []
+            result = self.side.dispatch({"id": "d", "cmd": "download", "args": {
+                "urls": [], "options": {"save_path": "relative-output", "cookie_file": "relative.txt"}}})
+            self.assertTrue(result["ok"])
+            options = downloader.call_args.args[0]
+            self.assertEqual(options.save_path, "relative-output")
+            self.assertEqual(options.cookie_file, "relative.txt")
 
     def test_stop_calls_active_stop(self):
         # simulate an active op exposing .stop()

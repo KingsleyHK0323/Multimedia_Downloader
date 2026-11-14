@@ -272,7 +272,10 @@ media without an authenticated cookie:
    *Get cookies.txt LOCALLY* for Chrome/Edge/Brave, *cookies.txt* for
    Firefox).
 
-A specified cookie file must exist as a regular file. If it does not, the
+The desktop download form accepts an absolute cookie file path for its system.
+The Web download form accepts a server-side path, confined to its downloads
+folder by default; `MMDL_ALLOW_ABSOLUTE_PATHS=1` permits other paths. It is not
+browser file upload. A specified cookie file must exist as a regular file. If it does not, the
 engine reports an error instead of falling back to browser cookies.
 CLI and TUI log messages and downloader log parameters/error text redact
 HTTP(S) URL userinfo, query and fragment. URL paths, other text and other

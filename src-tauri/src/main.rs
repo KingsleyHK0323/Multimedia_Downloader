@@ -171,11 +171,12 @@ async fn start_download(app: tauri::AppHandle, args: Value) -> Result<Value, Str
             "audio_fmt": args.get("audio_fmt"),
             "quality": args.get("quality"),
             "browser": args.get("browser"),
+            "cookie_file": args.get("cookie_file"), // OpenAI-Codex_Fork_GitHub_REPO
             // OpenAI-Codex_Fork_GitHub_REPO: preserve the default for older clients.
             "bitrate": args.get("bitrate").and_then(Value::as_str).unwrap_or("192"),
         });
         streaming(&app, &engine, "download",
-            json!({ "urls": args.get("urls"), "options": options }))
+            json!({ "urls": args.get("urls"), "options": options, "require_absolute_cookie_path": true }))
     })
     .await
     .map_err(|e| format!("background task failed: {e}"))?

@@ -242,6 +242,17 @@ def _bitrate(value) -> str:
 
 
 
+# OpenAI-Codex_web_ai: validate a server-side cookie path.
+def _cookie_file(value):
+    if value is None:
+        return None
+    if not isinstance(value, str) or "\x00" in value:
+        raise UnsafePath("invalid cookie file path")
+    if not value.strip():
+        return None
+    return value if ALLOW_ABSOLUTE_PATHS else _confine(value)
+
+
 def _confine_all(paths) -> list[str]:
     """Confine a list of client-supplied file paths (conversion inputs)."""
     if ALLOW_ABSOLUTE_PATHS:
@@ -318,6 +329,7 @@ def api_download():
             "quality": _choice(a.get("quality"), set(QUALITY_PRESETS),
                                "quality preset", "best"),
             "browser": _choice(a.get("browser"), set(BROWSERS), "browser", "none"),
+            "cookie_file": _cookie_file(a.get("cookie_file")),
             "bitrate": _bitrate(a.get("bitrate", "192")),
         },
     }

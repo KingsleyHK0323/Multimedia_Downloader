@@ -368,6 +368,32 @@ class EndpointTests(unittest.TestCase):
                     self.assertEqual(response.status_code, 400)
             dispatch.assert_not_called()
 
+    # OpenAI-Codex_Fork_GitHub_REPO: check single-download cookie confinement.
+    def test_download_cookie_path_validation_and_opt_out(self):
+        with patch.object(web_app, "_dispatch", return_value=("", 204)) as dispatch:
+            for value in (None, "", "   "):
+                response = self.client.post("/api/download", json={"urls": ["u"], "cookie_file": value})
+                self.assertEqual(response.status_code, 204)
+                self.assertIsNone(dispatch.call_args.args[1]["options"]["cookie_file"])
+            response = self.client.post("/api/download", json={"urls": ["u"], "cookie_file": "cookies.txt"})
+            self.assertEqual(response.status_code, 204)
+            self.assertEqual(dispatch.call_args.args[1]["options"]["cookie_file"],
+                             os.path.join(os.path.realpath(web_app.DOWNLOADS_DIR), "cookies.txt"))
+            response = self.client.post("/api/download", json={"urls": ["u"], "cookie_file": " spaced.txt "})
+            self.assertEqual(response.status_code, 204)
+            self.assertTrue(dispatch.call_args.args[1]["options"]["cookie_file"].endswith(" spaced.txt "))
+            outside_default = os.path.abspath(os.path.join(web_app.DOWNLOADS_DIR, "..", "outside.txt"))
+            for value in ("../outside.txt", outside_default, "bad\x00path", 42):
+                with self.subTest(value=value):
+                    response = self.client.post("/api/download", json={"urls": ["u"], "cookie_file": value})
+                    self.assertEqual(response.status_code, 400)
+            web_app.ALLOW_ABSOLUTE_PATHS = True
+            outside = os.path.abspath("outside.txt")
+            response = self.client.post("/api/download", json={"urls": ["u"], "cookie_file": outside})
+            self.assertEqual(response.status_code, 204)
+            self.assertEqual(dispatch.call_args.args[1]["options"]["cookie_file"], outside)
+
+
 
 if __name__ == "__main__":
     unittest.main()
