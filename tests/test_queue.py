@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch
 
 import _path  # noqa: F401
 import engine.queue as q
@@ -28,6 +29,10 @@ class _FakeDownloader:
 
     def __init__(self, options, log_cb=None):
         self.options = options
+
+    # OpenAI-Codex_Fork_GitHub_REPO: preserve the fake queue contract.
+    def download_one_with_retry(self, url, index=1, total=1):
+        self.download_one(url)
 
     def download_one(self, url):
         _FakeDownloader.seen.append(url)
@@ -88,6 +93,31 @@ class QueueRunTests(unittest.TestCase):
         tq.run([bad])
         self.assertEqual(bad.status, "error")
         self.assertIn("unknown task kind", bad.error)
+
+
+class QueueRetryTests(unittest.TestCase):
+    # OpenAI-Codex_Fork_GitHub_REPO: verify retries without network or sleeps.
+    def test_transient_failure_retries_and_succeeds(self):
+        from engine.errors import ErrorKind
+        task = download_task("https://example.com/media", DownloadOptions(save_path="out"))
+        with patch.object(q.Downloader, "download_one", side_effect=[RuntimeError("temporary"), None]) as call:
+            with patch("engine.downloader.classify", return_value=ErrorKind.TRANSIENT):
+                with patch("engine.downloader.time.sleep") as sleep:
+                    TaskQueue().run([task])
+        self.assertEqual(task.status, "done")
+        self.assertEqual(call.call_count, 2)
+        sleep.assert_called_once()
+
+    def test_non_transient_failure_does_not_retry(self):
+        from engine.errors import ErrorKind
+        task = download_task("https://example.com/media", DownloadOptions(save_path="out"))
+        with patch.object(q.Downloader, "download_one", side_effect=RuntimeError("permanent")) as call:
+            with patch("engine.downloader.classify", return_value=ErrorKind.UNKNOWN):
+                with patch("engine.downloader.time.sleep") as sleep:
+                    TaskQueue().run([task])
+        self.assertEqual(task.status, "error")
+        self.assertEqual(call.call_count, 1)
+        sleep.assert_not_called()
 
 
 if __name__ == "__main__":

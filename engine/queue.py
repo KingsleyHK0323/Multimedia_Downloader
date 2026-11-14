@@ -129,7 +129,8 @@ class TaskQueue:
                 return
             dl = Downloader(task.options, log_cb=self.log_cb)
             try:
-                dl.download_one(task.url)
+                # OpenAI-Codex_engine_cli: use the batch retry policy.
+                dl.download_one_with_retry(task.url, index=index, total=total)
                 self._set_status(task, "done")
             except Exception as e:
                 self._set_status(task, "error", str(e), kind=classify(e))

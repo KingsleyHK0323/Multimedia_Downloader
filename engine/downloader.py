@@ -136,6 +136,11 @@ class Downloader:
         else:
             self._log("warn", "log_all_done_partial", ok=ok, fail=fail, t=total)
 
+    # OpenAI-Codex_engine_cli: expose the same retry policy to queue downloads.
+    def download_one_with_retry(self, url: str, index: int = 1, total: int = 1) -> None:
+        """Apply the batch retry policy to one queue item."""
+        self._download_one_with_retry(url, index, total)
+
     def _download_one_with_retry(self, url: str, i: int, total: int) -> None:
         """Retry ``download_one`` on transient errors (e.g. YouTube 403s)."""
         for attempt in range(_MAX_RETRIES + 1):

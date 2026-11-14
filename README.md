@@ -49,7 +49,9 @@ built with [Tauri](https://tauri.app), and as a deployable web app.
 - **Cookie support** — read from an installed browser, or supply a
   `cookies.txt` for Douyin / Instagram / login-gated platforms.
 - **Batch queue** — download or convert many items in one go, with live
-  per-item progress and a run log.
+  per-item progress and a run log. Transient download failures use the batch
+  retry policy; stopping may wait for the current item and its retries.
+  <!-- OpenAI-Codex_Fork_GitHub_REPO -->
 - **Built-in User Manual** — a quick reference panel right in the app (header
   book icon), available in all three languages.
 
