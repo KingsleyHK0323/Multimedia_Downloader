@@ -17,6 +17,24 @@ git clone https://github.com/KingsleyHK0323/Multimedia_Downloader.git
 cd Multimedia_Downloader
 ```
 
+## One-time: install dependencies explicitly
+
+The launchers only check dependencies; they do not install or upgrade them.
+On Termux, perform a full package upgrade before installing packages to avoid
+an unsupported partial upgrade:
+
+```bash
+pkg upgrade
+pkg install python ffmpeg
+python -m pip install -r engine/requirements.txt  # CLI
+python -m pip install -r requirements-web.txt     # Web UI, if needed
+```
+
+For the Web UI, build the frontend separately with
+`npm run build:frontend:web`, or obtain and inspect the official
+`frontend-dist.zip` release asset and extract it without overwriting existing
+files. The launcher expects `frontend/dist/index.html`.
+
 ## Option A — CLI (lightest)
 
 ```bash
@@ -26,9 +44,9 @@ bash termux/run-cli.sh convert clip.mkv -o ~/storage/downloads -f mp4
 bash termux/run-cli.sh formats
 ```
 
-The script installs `python` + `ffmpeg` + `yt-dlp` on first run, then calls
+The script checks `python`, `ffmpeg`, and `yt-dlp`, then calls
 [`cli.py`](../cli.py). You can also run `python cli.py --help` directly once the
-deps are installed. Add `--lang zh_tw` (or `zh_cn`) for localized messages.
+dependencies are installed. Add `--lang zh_tw` (or `zh_cn`) for localized messages.
 
 ## Option B — Web UI in your browser
 
@@ -37,8 +55,8 @@ bash termux/run-web.sh
 # then open the printed URL, e.g. http://127.0.0.1:8080, in your phone browser
 ```
 
-This installs deps, downloads the prebuilt web UI (no Node build needed), and
-starts the same Flask + SSE server the desktop web version uses. Downloaded
+This checks the installed dependencies and frontend, then starts the same
+Flask and SSE server the desktop web version uses. Downloaded
 files go to `MMDL_DOWNLOADS` (default `~/storage/downloads`). Override with:
 
 ```bash
@@ -50,11 +68,9 @@ To reach it from another device on your LAN, start it with `HOST=0.0.0.0`
 
 ## Notes
 
-- **Always `pkg upgrade` before installing** — Termux does not support partial
-  upgrades. On a system with outdated packages, a fresh `pkg install ffmpeg`
-  fails to link (e.g. `CANNOT LINK EXECUTABLE ... cannot locate symbol ...
-  referenced by libplacebo.so`). The launcher scripts now run `pkg upgrade -y`
-  first; if you install manually, do the same.
+- **Upgrade before installing** — Termux does not support partial upgrades. Run
+  `pkg upgrade` explicitly before installing packages; the launchers never run
+  package upgrades, dependency installation, or downloads automatically.
 - **ffmpeg** comes from Termux's own package, so conversions and audio
   extraction work natively (arm64).
 - The **AI Assistant** works here too if you set an OpenRouter API key in the
@@ -99,8 +115,7 @@ bash termux/run-web.sh           # 開啟顯示的網址（如 http://127.0.0.1:
 檔案預設存到 `~/storage/downloads`。長時間批次下載時，於 Termux 通知列
 「Acquire wakelock」避免系統休眠中斷。
 
-> ⚠️ **Termux 不支援部分升級**：腳本會先自動 `pkg upgrade`。若你手動裝且看到
-> `CANNOT LINK EXECUTABLE .../ffmpeg`（libplacebo.so 找不到符號），先跑
-> `pkg upgrade -y && apt --fix-broken install` 修好 ffmpeg，再重跑腳本。
+> **Termux package updates:** The launchers do not upgrade packages. If FFmpeg
+> fails to link, follow the explicit troubleshooting steps above.
 
-<!-- Updated by: OpenAI-Codex -->
+<!-- Updated by: OpenAI-Codex_Fork_Source_Code -->

@@ -16,6 +16,7 @@
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
 #### Changed
+- Require explicit Termux dependency setup and frontend provisioning before launch; launchers no longer install packages or download assets. (OpenAI-Codex_Fork_GitHub_REPO)
 - Set the current software code license to PolyForm Noncommercial 1.0.0, updated
   the frontend package and lockfile metadata and README, and retained
   third-party license notices. Earlier copies published with MIT terms remain

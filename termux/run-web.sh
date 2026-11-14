@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Multimedia Downloader — web UI launcher for Android (Termux).
-# Installs deps, fetches the prebuilt web UI (no Node needed), and starts the
-# server. Then open the printed URL in your phone's browser.
+# Checks the installed dependencies and web UI, then starts the server.
 #
 #   bash termux/run-web.sh
 #   PORT=8080 MMDL_DOWNLOADS=~/storage/downloads bash termux/run-web.sh
@@ -9,36 +8,38 @@ set -e
 here="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$here"
 
-if command -v pkg >/dev/null 2>&1; then          # running under Termux
-  # Termux has no partial upgrades: a full upgrade must run BEFORE installing,
-  # or new packages (ffmpeg/libplacebo) fail to link against the old libc++.
-  yes | pkg upgrade -y || pkg upgrade -y
-  pkg install -y python ffmpeg
+if ! command -v python >/dev/null 2>&1; then
+  echo "Python is required. See termux/README.md for explicit setup steps." >&2
+  exit 1
 fi
-python -m pip install --upgrade --quiet flask yt-dlp
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "FFmpeg is required. See termux/README.md for explicit setup steps." >&2
+  exit 1
+fi
+if ! python -B -c 'import importlib.util, sys; sys.exit(any(importlib.util.find_spec(m) is None for m in ("flask", "yt_dlp")))'; then
+  echo "Flask and yt-dlp are required. See termux/README.md for explicit setup steps." >&2
+  exit 1
+fi
 
-# The built web UI isn't in the git repo — fetch the prebuilt bundle once.
+# Do not replace an existing directory or fetch code during normal startup.
 if [ ! -f frontend/dist/index.html ]; then
-  echo "Fetching prebuilt web UI (frontend-dist.zip)…"
-  # Use a writable temp dir. Termux has no /tmp — $TMPDIR points at $PREFIX/tmp.
-  zip="${TMPDIR:-/tmp}/mmdl-dist.zip"
-  curl -L -o "$zip" \
-    "https://github.com/KingsleyHK0323/Multimedia_Downloader/releases/latest/download/frontend-dist.zip"
-  mkdir -p frontend && rm -rf frontend/dist
-  MMDL_ZIP="$zip" python - <<'PY'
-import os, zipfile
-zipfile.ZipFile(os.environ["MMDL_ZIP"]).extractall("frontend")
-PY
-  rm -f "$zip"
+  echo "The web frontend is missing. See termux/README.md for explicit setup steps." >&2
+  exit 1
 fi
 
 export HOST="${HOST:-127.0.0.1}"
 export PORT="${PORT:-8080}"
 export MMDL_DOWNLOADS="${MMDL_DOWNLOADS:-$HOME/storage/downloads}"
+# OpenAI-Codex_web_ai: URLs need brackets around IPv6 literals.
+display_host="$HOST"
+case "$display_host" in
+  \[*\]) ;;
+  *:*) display_host="[$display_host]" ;;
+esac
 echo "──────────────────────────────────────────────"
-echo " Open  http://$HOST:$PORT  in your phone browser"
+echo " Open  http://$display_host:$PORT  in your phone browser"
 echo " Downloads → $MMDL_DOWNLOADS"
 echo "──────────────────────────────────────────────"
 exec python web_app.py
 
-# Updated by: OpenAI-Codex
+# Updated by: OpenAI-Codex_Fork_Source_Code
