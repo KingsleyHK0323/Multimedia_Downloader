@@ -54,6 +54,9 @@ class DownloadTab(VerticalScroll):
         with Vertical(id="audio-fields", classes="field-row"):
             yield Label(tr.t("lbl_audio_fmt"))
             yield Select(((f, f) for f in AUDIO_FORMATS), value=AUDIO_FORMATS[0], id="audio-fmt", allow_blank=False)
+            # OpenAI-Codex_engine_cli: forward the selected audio bitrate.
+            yield Label(tr.t("lbl_bitrate"))
+            yield Select(((f"{v} kbps", v) for v in ("128", "192", "320")), value="192", id="bitrate", allow_blank=False)
 
         yield Label(tr.t("sec_cookie"), classes="section-title")
         with Vertical(classes="field-row"):
@@ -111,6 +114,7 @@ class DownloadTab(VerticalScroll):
             quality=self.query_one("#quality", Select).value,
             cookie_file=self.query_one("#cookie-file", Input).value.strip() or None,
             browser=self.query_one("#browser", Select).value,
+            bitrate=self.query_one("#bitrate", Select).value,
         )
 
         items = self.query_one("#items-list", ListView)

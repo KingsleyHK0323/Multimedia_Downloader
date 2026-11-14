@@ -94,6 +94,21 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
             self.assertFalse(dl.query_one("#audio-fields").display)
             self.assertTrue(dl.query_one("#video-fields").display)
 
+    # OpenAI-Codex_Fork_GitHub_REPO: verify the selected bitrate reaches the worker.
+    async def test_download_audio_bitrate_reaches_worker(self):
+        app = MultimediaDownloaderApp(i18n.Translator("en"))
+        async with app.run_test() as pilot:
+            dl = app.query_one(DownloadTab)
+            dl.mode = "audio"
+            await pilot.pause()
+            bitrate = dl.query_one("#bitrate")
+            self.assertEqual(bitrate.value, "192")
+            bitrate.value = "320"
+            dl.query_one("#urls").text = "https://example.com/media"
+            with patch.object(DownloadTab, "_run_download") as worker:
+                dl._start()
+            self.assertEqual(worker.call_args.args[1].bitrate, "320")
+
     async def test_log_handles_bracket_content_without_crashing(self):
         # yt-dlp/ffmpeg output routinely contains literal "[...]" (site name
         # prefixes, codec/address tags) -- these must never be parsed as Rich
