@@ -1,4 +1,4 @@
-// OpenAI-Codex_Fork_GitHub_REPO: local and CI-independent regression coverage.
+// OpenAI-Codex_Fork_GitHub_REPO: standalone regression coverage.
 import assert from "node:assert/strict";
 import test from "node:test";
 import { classifyReleaseJsonVersionText as text, classifyReleaseJsonVersionBytes as bytes } from "./protected-release-json-policy.mjs";
@@ -55,5 +55,21 @@ test("version change does not allow unrelated edits or duplicate keys", () => {
   assert.equal(byteCheck(encoder.encode(prior), encoder.encode('{"version":"1.2.4","x":1}')).ok, false);
   const duplicate = '{"version":"1.2.3","\\u0076ersion":"1.2.3"}';
   assert.equal(text("package.json", duplicate, duplicate.replaceAll("1.2.3", "1.2.4"), "1.2.3").ok, false);
+});
+
+test("all allowed paths enforce their required version fields", () => {
+  for (const path of ["package.json", "frontend/package.json", "src-tauri/tauri.conf.json"]) {
+    assert.equal(text(path, prior, next, "1.2.3").ok, true, path);
+  }
+  for (const path of ["package-lock.json", "frontend/package-lock.json"]) {
+    const a = '{"version":"1.2.3","packages":{"":{"version":"1.2.3"}}}';
+    const b = a.replaceAll("1.2.3", "1.2.4");
+    assert.equal(text(path, a, b, "1.2.3").ok, true, path);
+    assert.equal(text(path, a, a.replace("1.2.3", "1.2.4"), "1.2.3").ok, false);
+    assert.equal(text(path, prior, next, "1.2.3").ok, false);
+    const mismatch = '{"version":"1.2.3","packages":{"":{"version":"1.2.2"}}}';
+    assert.equal(text(path, mismatch, mismatch.replace("1.2.3", "1.2.4"), "1.2.3").ok, false);
+  }
+  assert.equal(text("unknown.json", prior, next, "1.2.3").ok, false);
 });
 

@@ -10,6 +10,12 @@ function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// OpenAI-Codex_Fork_GitHub_REPO: ambiguous TOML keys require a real parser.
+function hasAmbiguousTomlKey(section) {
+  return /^[ \t]*"[^"\n]*\\[^"\n]*"[ \t]*=/m.test(section) ||
+    /^[ \t]*(?:"(?:[^"\\]|\\.)*"|'[^']*'|[A-Za-z0-9_-]+)[ \t]*\./m.test(section);
+}
+
 export function classifyReleaseVersionText(path, before, after, previousVersion) {
   if (!ALLOWED.has(path) || typeof before !== "string" || typeof after !== "string" ||
       typeof previousVersion !== "string" || before.length > 2_000_000 || after.length > 2_000_000 ||
@@ -76,7 +82,8 @@ export function classifyReleaseVersionText(path, before, after, previousVersion)
     const packageHeader = header.find((entry) => entry[1] === "package");
     const next = header.find((entry) => entry.index > packageHeader.index);
     const section = before.slice(packageHeader.index, next?.index ?? before.length);
-    if ([...section.matchAll(/^version[ \t]*=/gm)].length !== 1) {
+    // OpenAI-Codex_Fork_GitHub_REPO: indentation and quoted keys are valid TOML.
+    if (hasAmbiguousTomlKey(section) || [...section.matchAll(/^[ \t]*(?:version|"version"|'version')[ \t]*=/gm)].length !== 1) {
       return { ok: false, reason: "ambiguous package version declaration" };
     }
   }
@@ -89,7 +96,7 @@ export function classifyReleaseVersionText(path, before, after, previousVersion)
     const prior = headers.filter((header) => header.index < match.index).at(-1);
     const next = headers.find((header) => header.index > prior.index);
     const section = before.slice(prior.index, next?.index ?? before.length);
-    if ([...section.matchAll(/^version[ \t]*=/gm)].length !== 1) {
+    if (hasAmbiguousTomlKey(section) || [...section.matchAll(/^[ \t]*(?:version|"version"|'version')[ \t]*=/gm)].length !== 1) {
       return { ok: false, reason: "ambiguous lockfile version declaration" };
     }
   }
@@ -98,3 +105,4 @@ export function classifyReleaseVersionText(path, before, after, previousVersion)
   if (after !== expected) return { ok: false, reason: "unexpected text change" };
   return { ok: true, path, previousVersion, nextVersion, completeRelease: false, mergeAuthorized: false };
 }
+

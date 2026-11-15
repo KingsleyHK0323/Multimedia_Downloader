@@ -158,3 +158,8 @@ The JSON classifier now accepts only plain safe-integer number tokens; valid fra
 <!-- OpenAI-Codex_Fork_GitHub_REPO: CI test update -->
 
 The draft CI adds the standalone JSON policy regression tests to the existing frontend-check job after Node setup. This supersedes the earlier statement that those tests are not integrated into a workflow, once this draft is deployed. Passing those tests does not authorize merging or prove complete release safety.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: conservative TOML key guards -->
+
+The version text classifier rejects additional indented and quoted version keys, and conservatively rejects escaped quoted keys or dotted keys in the relevant TOML sections. This is not a semantic TOML parser and does not authorize a release or merge. CI runs regression tests for both the JSON and version text classifiers.

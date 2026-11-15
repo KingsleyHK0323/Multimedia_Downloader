@@ -91,7 +91,7 @@ jobs:
 
       # OpenAI-Codex_Fork_GitHub_REPO: run the standalone release policy tests.
       - name: Test release JSON classifier
-        run: node --test .github/scripts/protected-release-json-policy.test.mjs
+        run: node --test .github/scripts/protected-release-json-policy.test.mjs .github/scripts/protected-release-version-policy.test.mjs
 
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend
