@@ -102,6 +102,53 @@ export function createGitHubReleaseAdapter({ fetch: request, token, owner, repo,
       const response = await send('api.github.com', `${prefix}/releases/assets/${assetId}`, {
         headers: { ...headers, Accept: 'application/octet-stream' },
       });
+      // OpenAI-Codex_release_threat: exactly one documented GitHub CDN redirect.
+      // Never send the API token to the CDN; never expose its signed URL.
+      if (response.status === 302) {
+        const location = response.raw.headers?.get('location');
+        if (typeof location !== 'string' || location.length > 8192 || location.trim() !== location ||
+            (!location.startsWith('https://release-assets.githubusercontent.com/') &&
+             !location.startsWith('https://release-assets.githubusercontent.com?')) || location.includes('#')) {
+          throw new Error('untrusted redirect');
+        }
+        let target;
+        try { target = new URL(location); } catch { throw new Error('invalid redirect'); }
+        if (target.protocol !== 'https:' || target.hostname !== 'release-assets.githubusercontent.com' ||
+            target.port || target.username || target.password || target.hash) throw new Error('untrusted redirect');
+        let cdn;
+        try {
+          cdn = await request(target.href, {
+            method: 'GET', redirect: 'manual', credentials: 'omit', referrerPolicy: 'no-referrer',
+            headers: { Accept: 'application/octet-stream' },
+          });
+        } catch { throw new Error('asset request failed'); }
+        if (!cdn || cdn.status !== 200) throw new Error('asset redirect failed');
+        const replyHeaders = cdn.headers;
+        const body = cdn.body;
+        const declared = replyHeaders?.get('content-length');
+        const getReader = body?.getReader;
+        if (!declared || !/^[1-9][0-9]*$/.test(declared) || !Number.isSafeInteger(Number(declared)) ||
+            Number(declared) > maxBytes || typeof getReader !== 'function') throw new Error('invalid asset length');
+        const reader = getReader.call(body);
+        const read = reader.read;
+        if (typeof read !== 'function') throw new Error('invalid asset stream');
+        const chunks = []; let total = 0;
+        try {
+          for (;;) {
+            const { done, value } = await read.call(reader);
+            if (done) break;
+            if (!(value instanceof Uint8Array)) throw new Error('invalid chunk');
+            total += value.byteLength;
+            if (total > maxBytes || total > Number(declared)) throw new Error('asset exceeds limit');
+            chunks.push(value.slice());
+          }
+        } catch { throw new Error('asset download failed'); }
+        if (total !== Number(declared)) throw new Error('asset length mismatch');
+        const bytes = new Uint8Array(total); let offset = 0;
+        for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.length; }
+        return bytes;
+      }
+      // The following legacy guard handles only responses not handled above.
       // GitHub may return 302 with a signed URL. Do not follow or expose it.
       if (response.status !== 200) throw new Error(`asset download unavailable (${response.status})`);
       const replyHeaders = response.raw.headers;

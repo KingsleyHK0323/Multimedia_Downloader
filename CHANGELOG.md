@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation (draft)
+- Allow one strictly validated GitHub asset CDN redirect without forwarding credentials. (OpenAI-Codex_Fork_GitHub_REPO)
 - Add unconnected staged release publisher and GitHub adapter candidates with mocked API tests. (OpenAI-Codex_Fork_GitHub_REPO)
 - Add non-authorizing checks for staged release snapshot consistency. (OpenAI-Codex_Fork_GitHub_REPO)
 - Hold the legacy release path before any setup or publication until staged publication is verified. (OpenAI-Codex_Fork_GitHub_REPO)

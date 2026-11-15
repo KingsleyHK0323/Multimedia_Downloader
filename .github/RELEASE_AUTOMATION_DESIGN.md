@@ -195,3 +195,8 @@ The standalone staged-publish policy compares caller-supplied snapshots of a pre
 <!-- OpenAI-Codex_Fork_GitHub_REPO: unconnected publisher and adapter candidates -->
 
 The draft adds a staged publisher that checks build-supplied asset metadata against actual bytes before requesting a new draft, create-only uploads, downloading and hashing each uploaded asset, then requests publication only after further checks. A separate GitHub REST adapter supplies candidate HTTP methods with default-deny callbacks, no deletion, no clobber or retries, sanitized errors and bounded direct downloads. These modules are not wired together or to a workflow, and neither is production-ready. The adapter deliberately rejects GitHub's possible 302 asset download; a trusted provider, full draft visibility, non-bypassable tag protections and a safe single entrypoint remain unimplemented. Callbacks and manifests are assertions, not provenance; tag and draft checks are not atomic. Existing release and build holds remain in the draft.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: restricted asset redirects -->
+
+The adapter now permits one strictly checked HTTPS redirect to `release-assets.githubusercontent.com`, without forwarding credentials or disclosing the signed URL; other redirects fail closed. This supersedes the earlier statement that all 302 responses are rejected. The actual GitHub download path remains untested, and the adapter remains unconnected: trusted draft visibility, tag protection, provenance, a safe single entrypoint and non-atomic races are unresolved.

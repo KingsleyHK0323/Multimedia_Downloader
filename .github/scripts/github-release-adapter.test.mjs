@@ -155,3 +155,56 @@ test('response status is read once', async () => {
   assert.equal(reads, 1);
 });
 
+
+
+test('trusted CDN follows one credential-free hop and enforces byte bounds', async () => {
+  const calls=[];
+  const fetch=async (url,options)=>{
+    calls.push({url,options});
+    if(calls.length===1) return {status:302,headers:{get:()=> 'https://release-assets.githubusercontent.com/file?sig=private'}};
+    return {status:200,headers:new Headers({'Content-Length':'3'}),body:new ReadableStream({start(c){c.enqueue(new Uint8Array([1,2,3]));c.close();}})};
+  };
+  const a=create({...base,fetch}); assert.deepEqual(await a.downloadAsset(1,3),new Uint8Array([1,2,3]));
+  assert.equal(calls.length,2); assert.equal(calls[1].options.headers.Authorization,undefined);
+  assert.equal(calls[1].options.headers.Cookie,undefined); assert.equal(calls[1].options.credentials,'omit');
+  assert.equal(calls[1].options.redirect,'manual'); assert.equal(calls[1].options.referrerPolicy,'no-referrer');
+  await assert.rejects(create({...base,fetch:async()=>({status:200,headers:new Headers({'Content-Length':'4'}),body:new ReadableStream({start(c){c.enqueue(new Uint8Array([1,2,3]));c.close();}})})}).downloadAsset(1,3));
+});
+test('raw redirects reject aliases, untrusted hosts, second hops and exceptions without leaks', async () => {
+  for (const location of ['https://@release-assets.githubusercontent.com/file?sig=private','https://release-assets.githubusercontent.com:443/file?sig=private','https://release-assets.githubusercontent.com/file?sig=private#','https://release-assets.githubusercontent.com.evil.test/file?sig=private','http://release-assets.githubusercontent.com/file?sig=private']) {
+    let calls=0;const a=create({...base,fetch:async()=>{calls++;return {status:302,headers:{get:()=>location}}}});
+    await assert.rejects(a.downloadAsset(1,10),e=>!e.message.includes('private'));assert.equal(calls,1);
+  }
+  let calls=0;const two=create({...base,fetch:async()=>{calls++;return {status:302,headers:{get:()=> 'https://release-assets.githubusercontent.com/file?sig=private'}}}});
+  await assert.rejects(two.downloadAsset(1,10),e=>!e.message.includes('private'));assert.equal(calls,2);
+  calls=0;const failed=create({...base,fetch:async()=>{calls++;if(calls===1)return {status:302,headers:{get:()=> 'https://release-assets.githubusercontent.com/file?sig=private'}};throw Error('test-only-secret private')}});
+  await assert.rejects(failed.downloadAsset(1,10),e=>!e.message.includes('private')&&!e.message.includes('test-only-secret'));assert.equal(calls,2);
+});
+
+test('redirected CDN body enforces limits and sanitizes stream errors', async () => {
+  for (const mode of ['declared','stream','mismatch']) {
+    let count=0;
+    const fetch=async()=>{
+      if(++count===1) return {status:302,headers:{get:()=> 'https://release-assets.githubusercontent.com/file?sig=private'}};
+      const payload=mode==='mismatch' ? new Uint8Array([1,2]) : new Uint8Array([1,2,3,4]);
+      const body=new ReadableStream({start(c){if(mode==='stream') c.error(Error('test-only-secret private')); else {c.enqueue(payload);c.close();}}});
+      return {status:200,headers:new Headers({'Content-Length':mode==='declared'?'4':'3'}),body};
+    };
+    await assert.rejects(create({...base,fetch}).downloadAsset(1,3),e=>!e.message.includes('private')&&!e.message.includes('secret'));
+    assert.equal(count,2);
+  }
+});
+
+test('redirected response getters cannot leak secrets or signed URLs', async () => {
+  for (const mode of ['status','headers','body']) {
+    let calls=0;const fail=()=>{throw Error('test-only-secret private')};
+    const fetch=async()=>{
+      if(++calls===1)return {status:302,headers:{get:()=> 'https://release-assets.githubusercontent.com/file?sig=private'}};
+      if(mode==='status') return {get status(){return fail()}};
+      if(mode==='headers') return {status:200,get headers(){return fail()}};
+      return {status:200,headers:new Headers({'Content-Length':'1'}),get body(){return fail()}};
+    };
+    await assert.rejects(create({...base,fetch}).downloadAsset(1,1),e=>!e.message.includes('private')&&!e.message.includes('secret'));
+    assert.equal(calls,2);
+  }
+});
