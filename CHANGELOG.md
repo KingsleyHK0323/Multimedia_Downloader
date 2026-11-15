@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation (draft)
+- Restrict JSON numbers to safe integer tokens and add strict UTF-8 byte validation with regression checks. (OpenAI-Codex_Fork_GitHub_REPO)
 - Add a non-authorizing JSON version text classifier and reject ambiguous engine version references. (OpenAI-Codex_Fork_GitHub_REPO)
 - Skip fenced issue bodies, report malformed scan metadata, and reject contradictory release ancestry information. (OpenAI-Codex_Fork_GitHub_REPO)
 - Skip malformed issue metadata and report incomplete Dependabot PR or branch inventory conservatively. (OpenAI-Codex_Fork_GitHub_REPO)

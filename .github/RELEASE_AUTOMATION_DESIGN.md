@@ -148,3 +148,8 @@ The draft preflight rejects missing or contradictory ancestry comparison metadat
 <!-- OpenAI-Codex_Fork_GitHub_REPO: JSON classifier -->
 
 The standalone JSON text classifier checks only exact patch-version substitutions in five selected JSON files, rejects duplicate decoded keys, unpaired surrogates and non-finite JavaScript numbers, and never authorizes merging. It is not integrated into a workflow, does not validate original UTF-8 bytes or a complete release, and does not rule out numeric underflow or rounding. The engine text classifier rejects additional literal version references, but is not a semantic Python parser.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: byte and number policy update -->
+
+The JSON classifier now accepts only plain safe-integer number tokens; valid fractions, exponent notation and negative zero are unsupported. The optional byte entry point snapshots non-shared, non-resizable byte arrays, rejects a UTF-8 BOM and malformed encoding, and verifies UTF-8 round trips before classification. This supersedes the earlier underflow, rounding and unverified-byte limitations only for the byte entry point and its strict number policy. The string entry point still cannot prove original bytes. Neither entry point proves Git object provenance, atomic reads, complete release validity or merge authorization. Regression tests are standalone and not integrated into a workflow.

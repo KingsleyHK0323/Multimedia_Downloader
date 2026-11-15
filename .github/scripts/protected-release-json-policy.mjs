@@ -100,10 +100,11 @@ function parseDocument(text) {
     const literal = /^(?:true|false|null)/.exec(rest);
     if (literal) { pos += literal[0].length; return { type: "literal" }; }
     const number = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?/.exec(rest);
-    // JSON permits large exponents, but downstream JavaScript consumers may
-    // otherwise interpret them as Infinity. Treat that case as unsupported.
+    // OpenAI-Codex_Fork_GitHub_REPO: accept only canonical safe integers.
+    // Valid JSON fractions, exponents and negative zero are unsupported here.
     if (number) {
-      if (!Number.isFinite(Number(number[0]))) fail();
+      const raw = number[0];
+      if (/[.eE]/.test(raw) || !Number.isSafeInteger(Number(raw)) || Object.is(Number(raw), -0)) fail();
       pos += number[0].length;
       return { type: "number" };
     }
@@ -156,6 +157,33 @@ export function classifyReleaseJsonVersionText(path, before, after, previousVers
     return { ok: true, path, previousVersion, nextVersion, completeRelease: false, mergeAuthorized: false };
   } catch {
     return reject("invalid, duplicate or unsupported JSON");
+  }
+}
+
+// OpenAI-Codex_Fork_GitHub_REPO: byte-oriented entry point validates strict
+// UTF-8 before applying the non-authorizing text policy; it performs no I/O.
+export function classifyReleaseJsonVersionBytes(path, before, after, previousVersion) {
+  const reject = () => ({ ok: false, reason: "invalid or unsupported UTF-8 bytes", completeRelease: false, mergeAuthorized: false });
+  try {
+    const decode = (input) => {
+      if (!(input instanceof Uint8Array)) throw new Error("byte array required");
+      // Intrinsic getters avoid user-defined iterator or property overrides.
+      const prototype = Object.getPrototypeOf(Uint8Array.prototype);
+      const get = (name) => Object.getOwnPropertyDescriptor(prototype, name).get.call(input);
+      const buffer = get("buffer"), offset = get("byteOffset"), length = get("byteLength");
+      const resizable = Object.getOwnPropertyDescriptor(ArrayBuffer.prototype, "resizable")?.get;
+      if (!(buffer instanceof ArrayBuffer) || length > MAX_LENGTH || (resizable && resizable.call(buffer))) throw new Error("unsupported buffer");
+      const bytes = new Uint8Array(length);
+      Uint8Array.prototype.set.call(bytes, new Uint8Array(buffer, offset, length));
+      if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) throw new Error("BOM unsupported");
+      const text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+      const encoded = new TextEncoder().encode(text);
+      if (encoded.length !== bytes.length || encoded.some((byte, i) => byte !== bytes[i])) throw new Error("UTF-8 round trip mismatch");
+      return text;
+    };
+    return { ...classifyReleaseJsonVersionText(path, decode(before), decode(after), previousVersion), utf8Validated: true };
+  } catch {
+    return reject();
   }
 }
 
