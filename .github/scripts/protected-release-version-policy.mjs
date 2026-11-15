@@ -33,6 +33,11 @@ export function classifyReleaseVersionText(path, before, after, previousVersion)
   const matches = [...before.matchAll(expression)];
   if (matches.length !== 1) return { ok: false, reason: "ambiguous version location" };
   const match = matches[0];
+  // OpenAI-Codex_Fork_GitHub_REPO: any second spelling is ambiguous, even in
+  // comments or indented code; this is not a semantic Python parser.
+  if (path === "engine/__init__.py" && before.split("__version__").length !== 2) {
+    return { ok: false, reason: "ambiguous engine version reference" };
+  }
   // OpenAI-Codex_Fork_GitHub_REPO: ambiguous multiline source text is unsupported.
   if (path !== "README.md" && (before.includes('"""') || before.includes("'''"))) {
     return { ok: false, reason: "multiline string requires semantic parsing" };

@@ -143,3 +143,8 @@ The watchdog's scan inventory completeness check is documented separately in
 <!-- OpenAI-Codex_Fork_GitHub_REPO: compare consistency -->
 
 The draft preflight rejects missing or contradictory ancestry comparison metadata and remains read-only and unconditionally stopped. This does not lock the base or establish release safety.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: JSON classifier -->
+
+The standalone JSON text classifier checks only exact patch-version substitutions in five selected JSON files, rejects duplicate decoded keys, unpaired surrogates and non-finite JavaScript numbers, and never authorizes merging. It is not integrated into a workflow, does not validate original UTF-8 bytes or a complete release, and does not rule out numeric underflow or rounding. The engine text classifier rejects additional literal version references, but is not a semantic Python parser.
