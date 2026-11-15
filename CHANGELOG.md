@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation (draft)
+- Hold the legacy release path before any setup or publication until staged publication is verified. (OpenAI-Codex_Fork_GitHub_REPO)
 - Add a build-only staged release workflow draft with an unconditional safety hold. (OpenAI-Codex_Fork_GitHub_REPO)
 - Add non-authorizing release asset metadata classification and regression checks. (OpenAI-Codex_Fork_GitHub_REPO)
 - Fail closed on malformed watchdog inventories; require manual review when findings coexist with an open watchdog issue. (OpenAI-Codex_Fork_GitHub_REPO)

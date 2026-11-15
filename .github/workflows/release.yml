@@ -55,6 +55,13 @@ jobs:
       matrix: ${{ steps.m.outputs.matrix }}
       tag: ${{ steps.tag.outputs.tag }}
     steps:
+      # OpenAI-Codex_Fork_GitHub_REPO: block the legacy publication path until
+      # verified staged builds and non-overwriting publication are available.
+      - name: Hold unsafe legacy release path
+        shell: bash
+        run: |
+          echo "::error::Legacy release is disabled pending verified staged publication."
+          exit 1
       - id: tag
         run: echo "tag=${{ inputs.tag || github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
 

@@ -180,3 +180,8 @@ The standalone `release-asset-policy.mjs` checks the supplied six asset names, v
 <!-- OpenAI-Codex_Fork_GitHub_REPO: build-only workflow draft -->
 
 `release-build-only.yml` is a proposed three-platform, read-only workflow that stages artifacts without publishing. Its validation job intentionally fails before any build until authorized source identity, CI binding and supply-chain provenance can be established. The draft is unexecuted, its YAML and platform build behavior are not proven, and its same-run manifest cannot authenticate its own producer. It does not implement a release publication job. GitHub requires a workflow on the default branch before manual dispatch; this draft has not met that prerequisite. No hold should be removed without separately resolving the underlying safety and review requirements.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: legacy release hold -->
+
+The draft adds an unconditional first-step stop to the existing release workflow. If deployed, it stops tag-push, manual, and reusable-call releases before checkout, public release creation or asset upload, including legitimate releases and retries. The already deployed workflow remains unsafe and unchanged until this draft is separately reviewed and deployed. This is containment, not a completed build-first publication workflow, and it does not stop other workflows or API clients.
