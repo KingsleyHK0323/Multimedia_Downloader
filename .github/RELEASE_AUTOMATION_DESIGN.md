@@ -153,3 +153,8 @@ The standalone JSON text classifier checks only exact patch-version substitution
 <!-- OpenAI-Codex_Fork_GitHub_REPO: byte and number policy update -->
 
 The JSON classifier now accepts only plain safe-integer number tokens; valid fractions, exponent notation and negative zero are unsupported. The optional byte entry point snapshots non-shared, non-resizable byte arrays, rejects a UTF-8 BOM and malformed encoding, and verifies UTF-8 round trips before classification. This supersedes the earlier underflow, rounding and unverified-byte limitations only for the byte entry point and its strict number policy. The string entry point still cannot prove original bytes. Neither entry point proves Git object provenance, atomic reads, complete release validity or merge authorization. Regression tests are standalone and not integrated into a workflow.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: CI test update -->
+
+The draft CI adds the standalone JSON policy regression tests to the existing frontend-check job after Node setup. This supersedes the earlier statement that those tests are not integrated into a workflow, once this draft is deployed. Passing those tests does not authorize merging or prove complete release safety.
