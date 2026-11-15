@@ -48,6 +48,17 @@ jobs:
                 per_page: 100,
               },
             );
+            // OpenAI-Codex_Fork_GitHub_REPO: filtered run searches can be truncated.
+            try {
+              const { data: inventory } = await github.rest.actions.listWorkflowRunsForRepo({
+                owner, repo, branch: "Source_Code", event: "dynamic", per_page: 1,
+              });
+              if (!Number.isInteger(inventory.total_count) || inventory.total_count !== updateRuns.length || updateRuns.length >= 1000) {
+                findings.push("Dependabot update-run inventory may be incomplete; scan history is unknown.");
+              }
+            } catch (_) {
+              findings.push("Dependabot update-run inventory count is unavailable; scan history is unknown.");
+            }
             const dependabotRuns = updateRuns.filter(
               (run) => run.path?.startsWith("dynamic/dependabot/"),
             );

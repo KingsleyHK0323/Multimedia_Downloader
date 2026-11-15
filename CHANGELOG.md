@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation (draft)
+- Add a non-authorizing protected-release preflight and narrow version text classifier; report truncated Dependabot scan inventories as unknown. (OpenAI-Codex_Fork_GitHub_REPO)
 - Classify issue and pull request metadata, report Dependabot maintenance findings, and keep automated merging on hold until its safety requirements can be verified. (OpenAI-Codex_Fork_GitHub_REPO)
 - Report AI roster substitutions conservatively and distinguish classified outcomes from process failures. (OpenAI-Codex_Fork_GitHub_REPO)
 

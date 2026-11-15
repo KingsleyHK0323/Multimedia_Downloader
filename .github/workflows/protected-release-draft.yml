@@ -1,0 +1,97 @@
+name: Protected release draft preflight
+
+# OpenAI-Codex_release_candidate: read-only candidate; never performs release writes.
+# This draft is not a replacement for the current automatic release workflow.
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Original merged release:patch pull request number
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Inspect protected-release prerequisites
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          REQUESTED_PR: ${{ inputs.pr_number }}
+        with:
+          script: |
+            // OpenAI-Codex_release_candidate: external text never enters shell or markdown.
+            const { owner, repo } = context.repo;
+            const input = process.env.REQUESTED_PR || '';
+            if (!/^[1-9][0-9]{0,8}$/.test(input)) {
+              core.setFailed('Invalid pull request number.');
+              return;
+            }
+            const number = Number(input);
+            const candidateBranch = `release/patch-pr-${number}`;
+            const marker = `<!-- protected-release-original-pr:${number} -->`;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (!pr.merged_at || pr.base?.ref !== 'Source_Code' ||
+                pr.base?.repo?.full_name?.toLowerCase() !== `${owner}/${repo}`.toLowerCase() ||
+                !/^[0-9a-f]{40}$/.test(pr.merge_commit_sha || '') ||
+                !(pr.labels || []).some((label) => label.name === 'release:patch')) {
+              core.setFailed('Original PR is not a verified labeled merge into Source_Code.');
+              return;
+            }
+            const { data: base } = await github.rest.repos.getBranch({ owner, repo, branch: 'Source_Code' });
+            const baseSha = base.commit?.sha || '';
+            if (!/^[0-9a-f]{40}$/.test(baseSha)) {
+              core.setFailed('Current Source_Code head is unavailable.');
+              return;
+            }
+            const { data: comparison } = await github.request(
+              'GET /repos/{owner}/{repo}/compare/{base}...{head}',
+              { owner, repo, base: pr.merge_commit_sha, head: baseSha },
+            );
+            if (!['ahead', 'identical'].includes(comparison.status) ||
+                comparison.base_commit?.sha !== pr.merge_commit_sha) {
+              core.setFailed('Original merged commit is not proven reachable from the current base.');
+              return;
+            }
+            const allPrs = await github.paginate(github.rest.pulls.list,
+              { owner, repo, state: 'all', per_page: 100 });
+            if (allPrs.some((item) => item.head?.ref === candidateBranch ||
+                (typeof item.body === 'string' && item.body.split(/\r?\n/).includes(marker)))) {
+              core.setFailed('A matching release PR or marker already exists; manual review is required.');
+              return;
+            }
+            try {
+              await github.rest.git.getRef({ owner, repo, ref: `heads/${candidateBranch}` });
+              core.setFailed('The candidate release branch already exists; manual review is required.');
+              return;
+            } catch (error) {
+              if (error.status !== 404) {
+                core.setFailed('Candidate branch absence cannot be verified.');
+                return;
+              }
+            }
+            const { data: latestBase } = await github.rest.repos.getBranch({ owner, repo, branch: 'Source_Code' });
+            const { data: latestPr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            if (latestBase.commit?.sha !== baseSha || latestPr.merged_at !== pr.merged_at ||
+                latestPr.merge_commit_sha !== pr.merge_commit_sha || latestPr.base?.ref !== 'Source_Code' ||
+                !(latestPr.labels || []).some((label) => label.name === 'release:patch')) {
+              core.setFailed('Source branch or source PR changed during preflight.');
+              return;
+            }
+            // OpenAI-Codex_Fork_GitHub_REPO: absence of a new marker is not release history.
+            if (latestPr.base?.repo?.full_name?.toLowerCase() !== `${owner}/${repo}`.toLowerCase()) {
+              core.setFailed('Source PR base repository changed or cannot be verified.');
+              return;
+            }
+            core.warning('Legacy release commits, tags and releases were not checked; prior publication is unknown.');
+            await core.summary.addHeading('Protected release preflight')
+              .addRaw(`Source PR: #${number}\n\nMerged commit: \`${pr.merge_commit_sha}\`\n\nBase commit: \`${baseSha}\`\n\n`)
+              .addRaw('Preflight only. No branch, PR, version change, tag or release was created.\n\n')
+              .write();
+            // Fail closed until version-diff validation, no-bypass identity and server rules exist.
+            core.setFailed('Release creation is intentionally disabled pending verified safety controls.');
