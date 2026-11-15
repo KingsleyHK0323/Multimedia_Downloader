@@ -131,6 +131,13 @@ jobs:
               github.rest.pulls.list,
               { owner, repo, state: "open", base: "Source_Code", per_page: 100 },
             );
+            // OpenAI-Codex_bot_audit: stop when PR identity inventory is incomplete.
+            if (!Array.isArray(pullRequests) || !pullRequests.every((p) =>
+              p && typeof p === "object" && !Array.isArray(p) && Number.isSafeInteger(p.number) && p.number > 0 &&
+              typeof p.user?.login === "string" && p.user.login.length > 0)) {
+              core.setFailed("Open PR inventory incomplete; monitoring stopped.");
+              return;
+            }
             const dependabotPullRequests = pullRequests.filter(
               (pullRequest) => pullRequest.user?.login === "dependabot[bot]",
             );
@@ -263,6 +270,14 @@ jobs:
             const allOpenPullRequests = await github.paginate(github.rest.pulls.list, {
               owner, repo, state: "open", per_page: 100,
             });
+            // OpenAI-Codex_bot_audit: missing head identity cannot establish branch association.
+            if (!Array.isArray(allOpenPullRequests) || !allOpenPullRequests.every((p) =>
+              p && typeof p === "object" && !Array.isArray(p) && Number.isSafeInteger(p.number) && p.number > 0 &&
+              typeof p.head?.ref === "string" && p.head.ref.length > 0 &&
+              typeof p.head?.repo?.full_name === "string" && p.head.repo.full_name.length > 0)) {
+              core.setFailed("Open PR head inventory incomplete; monitoring stopped.");
+              return;
+            }
             const openHeadNames = new Set(
               allOpenPullRequests.map((pr) => pr.head?.ref).filter(Boolean),
             );
@@ -309,6 +324,18 @@ jobs:
               github.rest.issues.listForRepo,
               { owner, repo, state: "all", per_page: 100 },
             );
+            // OpenAI-Codex_bot_audit: uncertain issue identity cannot support deduplication.
+            if (!Array.isArray(issues) || !issues.every((item) =>
+              item && typeof item === "object" && !Array.isArray(item) && Number.isSafeInteger(item.number) && item.number > 0 &&
+              ["open", "closed"].includes(item.state) && typeof item.user?.login === "string" && item.user.login.length > 0 &&
+              (item.body === null || typeof item.body === "string"))) {
+              core.setFailed("Watchdog issue inventory incomplete; monitoring stopped.");
+              return;
+            }
+            const commentsValid = (items) => Array.isArray(items) && items.every((item) =>
+              item && typeof item === "object" && !Array.isArray(item) && Number.isSafeInteger(item.id) && item.id > 0 &&
+              typeof item.user?.login === "string" && item.user.login.length > 0 && typeof item.body === "string" &&
+              typeof item.created_at === "string" && Number.isFinite(Date.parse(item.created_at)));
             const matchingIssues = issues.filter(
               (item) =>
                 !item.pull_request &&
@@ -325,6 +352,8 @@ jobs:
               if (openIssues.length === 1) {
                 const number = openIssues[0].number;
                 const comments = await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
+                // OpenAI-Codex_bot_audit: do not record recovery from ambiguous comment history.
+                if (!commentsValid(comments)) { core.setFailed("Watchdog comment inventory incomplete; monitoring stopped."); return; }
                 const states = comments.filter((item) => item.user?.login === "github-actions[bot]" &&
                   typeof item.body === "string" && [commentMarker, recoveryMarker].includes(item.body.split(/\r?\n/)[0]))
                   .sort((a, b) => a.id - b.id);
@@ -353,6 +382,13 @@ jobs:
               return;
             }
 
+            // OpenAI-Codex_bot_audit: findings on an existing issue require manual review.
+            // The existing code reads comments after committing the summary; stop before
+            // that point until a single-snapshot design is explicitly approved.
+            if (matchingIssues.some((item) => item.state === "open")) {
+              core.setFailed("Existing watchdog issue requires manual findings review.");
+              return;
+            }
             await core.summary.write();
             // OpenAI-Codex_Fork_GitHub_REPO: ignore closed markers in this in-memory selection.
             // Closed issues remain unchanged; a new open issue is created when needed.
@@ -383,6 +419,8 @@ jobs:
               const comments = await github.paginate(github.rest.issues.listComments, {
                 owner, repo, issue_number: issue.number, per_page: 100,
               });
+              // OpenAI-Codex_bot_audit: do not post findings from ambiguous comment history.
+              if (!commentsValid(comments)) { core.setFailed("Watchdog comment inventory incomplete; monitoring stopped."); return; }
               const priorComments = comments.filter((comment) =>
                 comment.user?.login === "github-actions[bot]" &&
                 typeof comment.body === "string" &&

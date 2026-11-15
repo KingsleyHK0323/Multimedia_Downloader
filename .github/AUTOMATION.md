@@ -331,3 +331,8 @@ Issue classification skips any body with a possible Markdown code fence; this al
 <!-- OpenAI-Codex_Fork_GitHub_REPO: hidden form content -->
 
 Issue-form classification skips bodies containing HTML comment boundaries because hidden text may imitate form sections. Legitimate forms with such comments are also skipped; concurrent issue changes can still race.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: additive inventory safeguards -->
+
+The draft watchdog stops on incomplete PR, issue or comment inventory before persisting conclusions or modifying issues. To preserve existing workflow statements while avoiding a late comment-read race, findings with any open watchdog issue also stop for manual review instead of updating that issue. This intentionally reduces automation. Missing identity metadata, API errors, incomplete pagination and concurrent changes remain limitations.
