@@ -190,3 +190,8 @@ The draft adds an unconditional first-step stop to the existing release workflow
 <!-- OpenAI-Codex_Fork_GitHub_REPO: staged publish snapshot checks -->
 
 The standalone staged-publish policy compares caller-supplied snapshots of a previously existing tag, a complete build, absence of an existing release, and create-only draft asset readback. Its only positive result means those untrusted inputs are internally consistent; it never grants publication authority. It does not call APIs, establish that a 404 means absence under current permissions, authenticate a snapshot or hash actual bytes, prevent tag movement, bind build source to an approved commit, or eliminate races. It is not integrated into any release workflow and is not a publish implementation.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: unconnected publisher and adapter candidates -->
+
+The draft adds a staged publisher that checks build-supplied asset metadata against actual bytes before requesting a new draft, create-only uploads, downloading and hashing each uploaded asset, then requests publication only after further checks. A separate GitHub REST adapter supplies candidate HTTP methods with default-deny callbacks, no deletion, no clobber or retries, sanitized errors and bounded direct downloads. These modules are not wired together or to a workflow, and neither is production-ready. The adapter deliberately rejects GitHub's possible 302 asset download; a trusted provider, full draft visibility, non-bypassable tag protections and a safe single entrypoint remain unimplemented. Callbacks and manifests are assertions, not provenance; tag and draft checks are not atomic. Existing release and build holds remain in the draft.

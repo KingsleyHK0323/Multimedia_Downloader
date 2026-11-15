@@ -101,6 +101,10 @@ jobs:
       - name: Test staged publication snapshot policy
         run: node --test .github/scripts/staged-publish-policy.test.mjs
 
+      # OpenAI-Codex_Fork_GitHub_REPO: execute release driver tests with mocked APIs only.
+      - name: Test staged release publisher and adapter
+        run: node --test .github/scripts/staged-release-publisher.test.mjs .github/scripts/github-release-adapter.test.mjs
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend
 
