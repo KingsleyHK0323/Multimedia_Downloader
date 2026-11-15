@@ -326,3 +326,8 @@ prevent a complete or atomic proof.
 <!-- OpenAI-Codex_Fork_GitHub_REPO: conservative input handling -->
 
 Issue classification skips any body with a possible Markdown code fence; this also skips legitimate reports with fenced logs. Malformed Dependabot scan or CI entries are reported unknown. These checks do not eliminate API races.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: hidden form content -->
+
+Issue-form classification skips bodies containing HTML comment boundaries because hidden text may imitate form sections. Legitimate forms with such comments are also skipped; concurrent issue changes can still race.

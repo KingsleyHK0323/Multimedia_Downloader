@@ -163,3 +163,8 @@ The draft CI adds the standalone JSON policy regression tests to the existing fr
 <!-- OpenAI-Codex_Fork_GitHub_REPO: conservative TOML key guards -->
 
 The version text classifier rejects additional indented and quoted version keys, and conservatively rejects escaped quoted keys or dotted keys in the relevant TOML sections. This is not a semantic TOML parser and does not authorize a release or merge. CI runs regression tests for both the JSON and version text classifiers.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: conservative lockfile names -->
+
+The lockfile text classifier requires canonical unescaped package name declarations and rejects ambiguous key forms before assessing a version-only change. This may reject valid TOML and does not replace semantic parsing, provenance checks or merge authorization.

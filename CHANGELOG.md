@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation (draft)
+- Skip hidden HTML issue-form content and reject ambiguous Cargo.lock package names. (OpenAI-Codex_Fork_GitHub_REPO)
 - Reject ambiguous TOML version keys and extend release policy regression coverage in CI. (OpenAI-Codex_Fork_GitHub_REPO)
 - Run release JSON classifier regression tests in the existing frontend CI job. (OpenAI-Codex_Fork_GitHub_REPO)
 - Restrict JSON numbers to safe integer tokens and add strict UTF-8 byte validation with regression checks. (OpenAI-Codex_Fork_GitHub_REPO)

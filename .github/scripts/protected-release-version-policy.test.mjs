@@ -45,6 +45,10 @@ test("rejects ambiguous TOML and lockfile package declarations", () => {
     assert.equal(check("src-tauri/Cargo.toml", '[package]\nversion = "1.2.3"\n' + duplicate).ok, false);
     assert.equal(check("src-tauri/Cargo.lock", '[[package]]\nname = "multimedia-downloader"\nversion = "1.2.3"\n' + duplicate).ok, false);
   }
+  const first = '[[package]]\nname = "multimedia-downloader"\nversion = "1.2.3"\n';
+  for (const name of ["name = 'multimedia-downloader'", '  name = "multimedia-downloader"', '"name" = "multimedia-downloader"', 'name = "multimedia\\u002ddownloader"']) {
+    assert.equal(check("src-tauri/Cargo.lock", first + `[[package]]\n${name}\nversion = "0.0.1"\n`).ok, false, name);
+  }
 });
 
 test("rejects unsupported paths, controls and version strings", () => {

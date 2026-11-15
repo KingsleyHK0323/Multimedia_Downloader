@@ -77,6 +77,14 @@ export function classifyReleaseVersionText(path, before, after, previousVersion)
   if (path === "src-tauri/Cargo.lock" && [...before.matchAll(/^name = "multimedia-downloader"$/gm)].length !== 1) {
     return { ok: false, reason: "ambiguous lockfile package" };
   }
+  // OpenAI-Codex_Fork_GitHub_REPO: require canonical package names everywhere;
+  // quoted keys, escaped values or dotted keys need semantic TOML parsing.
+  if (path === "src-tauri/Cargo.lock") {
+    const names = [...before.matchAll(/^[ \t]*(?:name|"name"|'name')[ \t]*=.*$/gm)];
+    if (hasAmbiguousTomlKey(before) || names.some((entry) => !/^name = "[^"\\]*"$/.test(entry[0]))) {
+      return { ok: false, reason: "unsupported lockfile package name" };
+    }
+  }
   if (path === "src-tauri/Cargo.toml") {
     const header = [...before.matchAll(/^[ \t]*\[([^\]\n]+)\][ \t]*(?:#.*)?$/gm)];
     const packageHeader = header.find((entry) => entry[1] === "package");
