@@ -174,6 +174,13 @@ jobs:
             const number = context.payload.pull_request?.number;
             if (!number) return;
             const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: number });
+            // OpenAI-Codex_Fork_GitHub_REPO: incomplete identity or SHAs cannot authorize classification.
+            if (pr.user?.type !== 'User' || typeof pr.user?.login !== 'string' || !pr.user.login.trim() ||
+                !/^[0-9a-f]{40}$/.test(pr.head?.sha || '') || !/^[0-9a-f]{40}$/.test(pr.base?.sha || '') ||
+                !Number.isSafeInteger(pr.changed_files) || pr.changed_files < 1) {
+              core.warning('PR identity, commit or file count is incomplete; classification skipped.');
+              return;
+            }
             if (pr.state !== 'open' || pr.base.ref !== 'Source_Code' || pr.user?.type === 'Bot' ||
                 pr.user?.login?.endsWith('[bot]')) return;
             const files = await github.paginate(github.rest.pulls.listFiles,

@@ -73,6 +73,12 @@ jobs:
               if (matching.some((run) => !Number.isFinite(Date.parse(run.created_at)))) {
                 findings.push(`The ${label} scan history contains an invalid creation time; newest-run ordering is unknown.`);
               }
+              // OpenAI-Codex_Fork_GitHub_REPO: equal latest timestamps cannot establish run order.
+              if (matching.length > 1 && Number.isFinite(Date.parse(matching[0].created_at)) &&
+                  Date.parse(matching[0].created_at) === Date.parse(matching[1].created_at)) {
+                findings.push(`The ${label} scan has tied latest timestamps; newest run is unknown.`);
+                continue;
+              }
               const latest = matching[0];
               if (!latest) {
                 findings.push(
@@ -171,6 +177,25 @@ jobs:
               if (ciRuns.some((run) => !Number.isFinite(Date.parse(run.created_at)) ||
                   Date.parse(run.created_at) > Date.now() + 5 * 60 * 1000)) {
                 findings.push(`CI run time for Dependabot PR #${pullRequest.number} is invalid or in the future; latest status is unknown.`);
+                continue;
+              }
+              // OpenAI-Codex_Fork_GitHub_REPO: reject ambiguous latest CI ordering.
+              if (ciRuns.length > 1 && Date.parse(ciRuns[0].created_at) === Date.parse(ciRuns[1].created_at)) {
+                findings.push(`CI runs for Dependabot PR #${pullRequest.number} have tied latest timestamps; newest run is unknown.`);
+                continue;
+              }
+              // A fresh PR read narrows, but cannot eliminate, the race after inspection.
+              try {
+                const { data: currentPr } = await github.rest.pulls.get({ owner, repo, pull_number: pullRequest.number });
+                const priorBase = pullRequest.base?.sha || "";
+                if (!/^[0-9a-f]{40}$/.test(pullRequest.head?.sha || "") || !/^[0-9a-f]{40}$/.test(priorBase) ||
+                    currentPr.state !== "open" || currentPr.head?.sha !== pullRequest.head.sha ||
+                    currentPr.base?.ref !== "Source_Code" || currentPr.base?.sha !== priorBase) {
+                  findings.push(`Dependabot PR #${pullRequest.number} changed or lacks exact commit metadata; CI status is unknown.`);
+                  continue;
+                }
+              } catch (_) {
+                findings.push(`Dependabot PR #${pullRequest.number} could not be rechecked; CI status is unknown.`);
                 continue;
               }
               const latest = ciRuns[0];
