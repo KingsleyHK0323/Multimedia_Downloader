@@ -200,3 +200,8 @@ The draft adds a staged publisher that checks build-supplied asset metadata agai
 <!-- OpenAI-Codex_Fork_GitHub_REPO: restricted asset redirects -->
 
 The adapter now permits one strictly checked HTTPS redirect to `release-assets.githubusercontent.com`, without forwarding credentials or disclosing the signed URL; other redirects fail closed. This supersedes the earlier statement that all 302 responses are rejected. The actual GitHub download path remains untested, and the adapter remains unconnected: trusted draft visibility, tag protection, provenance, a safe single entrypoint and non-atomic races are unresolved.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: controlled release entrypoint candidate -->
+
+The unconnected controlled entrypoint keeps its bridge private, snapshots each page and asset entry, and requires an explicit write opt-in plus claimed visibility, inventory, tag protection, actor and build evidence. Tests use mocks only. The required evidence provider is not implemented or verified; boolean assertions do not establish real permissions, complete drafts, non-bypassable tag rules or provenance. Concurrent actors can still change tags and releases. Do not connect this candidate to real publishing or remove the release and build holds until these requirements are independently established.

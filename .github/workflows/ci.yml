@@ -105,6 +105,10 @@ jobs:
       - name: Test staged release publisher and adapter
         run: node --test .github/scripts/staged-release-publisher.test.mjs .github/scripts/github-release-adapter.test.mjs
 
+      # OpenAI-Codex_Fork_GitHub_REPO: test the unconnected controlled release entrypoint.
+      - name: Test controlled release entrypoint
+        run: node --test .github/scripts/staged-release-controlled-v2.test.mjs
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend
 
