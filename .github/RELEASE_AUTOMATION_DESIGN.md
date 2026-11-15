@@ -185,3 +185,8 @@ The standalone `release-asset-policy.mjs` checks the supplied six asset names, v
 <!-- OpenAI-Codex_Fork_GitHub_REPO: legacy release hold -->
 
 The draft adds an unconditional first-step stop to the existing release workflow. If deployed, it stops tag-push, manual, and reusable-call releases before checkout, public release creation or asset upload, including legitimate releases and retries. The already deployed workflow remains unsafe and unchanged until this draft is separately reviewed and deployed. This is containment, not a completed build-first publication workflow, and it does not stop other workflows or API clients.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: staged publish snapshot checks -->
+
+The standalone staged-publish policy compares caller-supplied snapshots of a previously existing tag, a complete build, absence of an existing release, and create-only draft asset readback. Its only positive result means those untrusted inputs are internally consistent; it never grants publication authority. It does not call APIs, establish that a 404 means absence under current permissions, authenticate a snapshot or hash actual bytes, prevent tag movement, bind build source to an approved commit, or eliminate races. It is not integrated into any release workflow and is not a publish implementation.

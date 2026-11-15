@@ -97,6 +97,10 @@ jobs:
       - name: Test release asset policy
         run: node --test .github/scripts/release-asset-policy.test.mjs
 
+      # OpenAI-Codex_Fork_GitHub_REPO: compare untrusted release snapshots without publishing.
+      - name: Test staged publication snapshot policy
+        run: node --test .github/scripts/staged-publish-policy.test.mjs
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend
 
