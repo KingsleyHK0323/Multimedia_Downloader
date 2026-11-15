@@ -93,6 +93,10 @@ jobs:
       - name: Test release JSON classifier
         run: node --test .github/scripts/protected-release-json-policy.test.mjs .github/scripts/protected-release-version-policy.test.mjs
 
+      # OpenAI-Codex_Fork_GitHub_REPO: the asset metadata check never authorizes publishing.
+      - name: Test release asset policy
+        run: node --test .github/scripts/release-asset-policy.test.mjs
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend
 

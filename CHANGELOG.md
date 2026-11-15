@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation (draft)
+- Add non-authorizing release asset metadata classification and regression checks. (OpenAI-Codex_Fork_GitHub_REPO)
 - Fail closed on malformed watchdog inventories; require manual review when findings coexist with an open watchdog issue. (OpenAI-Codex_Fork_GitHub_REPO)
 - Skip hidden HTML issue-form content and reject ambiguous Cargo.lock package names. (OpenAI-Codex_Fork_GitHub_REPO)
 - Reject ambiguous TOML version keys and extend release policy regression coverage in CI. (OpenAI-Codex_Fork_GitHub_REPO)

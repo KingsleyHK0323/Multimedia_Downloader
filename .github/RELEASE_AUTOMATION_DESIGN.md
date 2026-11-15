@@ -168,3 +168,10 @@ The version text classifier rejects additional indented and quoted version keys,
 <!-- OpenAI-Codex_Fork_GitHub_REPO: conservative lockfile names -->
 
 The lockfile text classifier requires canonical unescaped package name declarations and rejects ambiguous key forms before assessing a version-only change. This may reject valid TOML and does not replace semantic parsing, provenance checks or merge authorization.
+
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: staged release proposal -->
+
+A safe future release path needs builds of one verified immutable commit using read-only permissions, then six version-specific nonempty artifacts from the same run and attempt. The independent publish phase must recheck the tag and exact asset inventory, create a new draft only when absence is confirmed, upload without overwriting, verify the uploaded assets, and publish only after all checks succeed. Existing releases, assets and tags must not be overwritten or moved; ambiguous API results stop. This is a proposal, not an implemented release workflow.
+
+The standalone `release-asset-policy.mjs` checks the supplied six asset names, version, identity, sizes and SHA-256 format but never authorizes publication. It does not obtain or hash bytes, authenticate source metadata, validate untrusted dynamic JavaScript objects, prove build provenance, or eliminate races. A future caller must use a trusted snapshot from verified APIs and independently hash actual bytes. Current FFmpeg downloads and dependency versions are not fully pinned or authenticated; runtime, installation and license differences require separate assessment. The existing production release workflow remains unchanged and can publish before builds complete.
