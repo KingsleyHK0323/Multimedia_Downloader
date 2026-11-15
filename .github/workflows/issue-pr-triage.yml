@@ -40,6 +40,14 @@ jobs:
               core.setOutput('ready', 'false');
               return;
             }
+            // OpenAI-Codex_Fork_GitHub_REPO: skip bootstrap on incomplete event identity.
+            const eventItem = context.eventName === 'issues' ? context.payload.issue : context.payload.pull_request;
+            if (!Number.isSafeInteger(eventItem?.number) || eventItem.number < 1 ||
+                eventItem.user?.type !== 'User' || typeof eventItem.user?.login !== 'string' || !eventItem.user.login.trim()) {
+              core.warning('Event identity is incomplete; label initialization skipped.');
+              core.setOutput('ready', 'false');
+              return;
+            }
             const labels = [
               { name: 'needs-info', color: 'fbca04', description: 'More information is needed' },
               { name: 'area:frontend', color: '1d76db', description: 'Frontend or desktop interface' },
@@ -88,6 +96,13 @@ jobs:
           script: |
             const { owner, repo } = context.repo;
             const issue = context.payload.issue;
+            // OpenAI-Codex_Fork_GitHub_REPO: do not classify malformed issue identity or content.
+            if (!Number.isSafeInteger(issue?.number) || issue.number < 1 || issue.user?.type !== 'User' ||
+                typeof issue.user?.login !== 'string' || !issue.user.login.trim() ||
+                typeof issue.title !== 'string' || typeof issue.body !== 'string' || !Array.isArray(issue.labels)) {
+              core.warning('Issue identity or form metadata is incomplete; classification skipped.');
+              return;
+            }
             if (!issue || issue.pull_request || issue.state !== 'open' ||
                 issue.user?.type === 'Bot' || issue.user?.login?.endsWith('[bot]') ||
                 /^\[Automation\]/i.test(issue.title || '') ||

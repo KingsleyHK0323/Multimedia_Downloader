@@ -120,6 +120,14 @@ jobs:
             );
 
             for (const pullRequest of dependabotPullRequests) {
+              // OpenAI-Codex_Fork_GitHub_REPO: malformed PR metadata must not abort monitoring.
+              if (!Number.isSafeInteger(pullRequest.number) || pullRequest.number < 1 ||
+                  !/^[0-9a-f]{40}$/.test(pullRequest.head?.sha || "") ||
+                  typeof pullRequest.head?.ref !== "string" || !pullRequest.head.ref ||
+                  pullRequest.base?.ref !== "Source_Code" || !/^[0-9a-f]{40}$/.test(pullRequest.base?.sha || "")) {
+                findings.push("An open Dependabot PR has incomplete identity or commit metadata; CI status is unknown.");
+                continue;
+              }
               let { data } = await github.rest.actions.listWorkflowRunsForRepo({
                 owner,
                 repo,
@@ -238,6 +246,11 @@ jobs:
             });
             const branchObservations = [];
             for (const branch of branches) {
+              // OpenAI-Codex_Fork_GitHub_REPO: missing branch names make inventory incomplete.
+              if (typeof branch?.name !== "string" || !branch.name) {
+                branchObservations.push("A branch has no usable name; the branch inventory is incomplete.");
+                continue;
+              }
               // OpenAI-Codex_Fork_GitHub_REPO: an unknown head repository is not a fork.
               if (branch.name.startsWith("dependabot/") && allOpenPullRequests.some((pr) =>
                   pr.head?.ref === branch.name && typeof pr.head?.repo?.full_name !== "string")) {
