@@ -59,6 +59,22 @@ jobs:
             } catch (_) {
               findings.push("Dependabot update-run inventory count is unavailable; scan history is unknown.");
             }
+            // OpenAI-Codex_Fork_GitHub_REPO: malformed scan entries must not abort reporting.
+            if (!Array.isArray(updateRuns)) {
+              core.setFailed("Dependabot update-run inventory is not an array; monitoring is unknown.");
+              return;
+            }
+            let invalidUpdateRun = false;
+            for (let index = 0; index < updateRuns.length; index++) {
+              const run = updateRuns[index];
+              if (!run || typeof run !== "object" || Array.isArray(run) ||
+                  (run.path != null && typeof run.path !== "string") ||
+                  (run.name != null && typeof run.name !== "string")) {
+                invalidUpdateRun = true;
+                updateRuns[index] = {}; // In-memory only; never modifies GitHub data.
+              }
+            }
+            if (invalidUpdateRun) findings.push("Dependabot scan inventory contains malformed entries; history is unknown.");
             const dependabotRuns = updateRuns.filter(
               (run) => run.path?.startsWith("dynamic/dependabot/"),
             );
@@ -149,6 +165,14 @@ jobs:
                 findings.push(`CI run inventory for Dependabot PR #${pullRequest.number} is incomplete; latest status is unknown.`);
                 continue;
               }
+              // OpenAI-Codex_Fork_GitHub_REPO: malformed CI entries cannot support a current result.
+              const validRunMetadata = (run) => run && typeof run === "object" && !Array.isArray(run) &&
+                (run.pull_requests == null || (Array.isArray(run.pull_requests) &&
+                 run.pull_requests.every((entry) => entry && typeof entry === "object" && !Array.isArray(entry))));
+              if (!data.workflow_runs.every(validRunMetadata)) {
+                findings.push(`CI run inventory for Dependabot PR #${pullRequest.number} contains malformed entries; status is unknown.`);
+                continue;
+              }
               let ciRuns = data.workflow_runs
                 .filter(matchesCurrentHead)
                 .sort(
@@ -169,6 +193,11 @@ jobs:
                 if (!Number.isInteger(data.total_count) || !Array.isArray(data.workflow_runs) ||
                     data.total_count !== data.workflow_runs.length) {
                   findings.push(`Fallback CI inventory for Dependabot PR #${pullRequest.number} is incomplete; latest status is unknown.`);
+                  continue;
+                }
+                // Apply the same metadata validation to the fallback response.
+                if (!data.workflow_runs.every(validRunMetadata)) {
+                  findings.push(`Fallback CI inventory for Dependabot PR #${pullRequest.number} contains malformed entries; status is unknown.`);
                   continue;
                 }
                 ciRuns = data.workflow_runs

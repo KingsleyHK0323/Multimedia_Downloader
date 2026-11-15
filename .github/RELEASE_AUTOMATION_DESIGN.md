@@ -139,3 +139,7 @@ conservative heuristics, not full Python, TOML, Markdown or byte parsers. Some
 legitimate files may be rejected; an accepted text match remains non-authorizing.
 The watchdog's scan inventory completeness check is documented separately in
 `AUTOMATION.md`; neither local update is present in PR #44.
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: compare consistency -->
+
+The draft preflight rejects missing or contradictory ancestry comparison metadata and remains read-only and unconditionally stopped. This does not lock the base or establish release safety.

@@ -119,6 +119,12 @@ jobs:
                  'Steps to reproduce', 'What did you expect to happen, and what happened instead?']
               : ['What problem would this solve?', 'Proposed solution'];
             const body = typeof issue.body === 'string' ? issue.body : '';
+            // OpenAI-Codex_Fork_GitHub_REPO: fenced text can imitate form headings.
+            // Conservatively skip any body containing a possible Markdown fence.
+            if (body.split(/\r?\n/).some((line) => /^ {0,3}(?:`{3,}|~{3,})/.test(line))) {
+              core.notice('Issue contains a code fence; form classification skipped.');
+              return;
+            }
             const sections = new Map();
             let current = null;
             for (const line of body.split(/\r?\n/)) {

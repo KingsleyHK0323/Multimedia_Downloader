@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation (draft)
+- Skip fenced issue bodies, report malformed scan metadata, and reject contradictory release ancestry information. (OpenAI-Codex_Fork_GitHub_REPO)
 - Skip malformed issue metadata and report incomplete Dependabot PR or branch inventory conservatively. (OpenAI-Codex_Fork_GitHub_REPO)
 - Fail closed on incomplete pull request identity and ambiguous or stale Dependabot monitoring results. (OpenAI-Codex_Fork_GitHub_REPO)
 - Add a non-authorizing protected-release preflight and narrow version text classifier; report truncated Dependabot scan inventories as unknown. (OpenAI-Codex_Fork_GitHub_REPO)

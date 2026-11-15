@@ -322,3 +322,7 @@ query is truncated, when its total count is unavailable, or when a candidate
 run timestamp is invalid or over five minutes in the future. These are
 conservative checks: concurrent API changes and GitHub search limits still
 prevent a complete or atomic proof.
+
+<!-- OpenAI-Codex_Fork_GitHub_REPO: conservative input handling -->
+
+Issue classification skips any body with a possible Markdown code fence; this also skips legitimate reports with fenced logs. Malformed Dependabot scan or CI entries are reported unknown. These checks do not eliminate API races.

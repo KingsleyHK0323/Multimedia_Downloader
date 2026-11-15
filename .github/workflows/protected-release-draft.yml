@@ -58,6 +58,13 @@ jobs:
               core.setFailed('Original merged commit is not proven reachable from the current base.');
               return;
             }
+            // OpenAI-Codex_Fork_GitHub_REPO: reject contradictory compare metadata.
+            if (comparison.merge_base_commit?.sha !== pr.merge_commit_sha || comparison.behind_by !== 0 ||
+                (comparison.status === 'identical' && (baseSha !== pr.merge_commit_sha || comparison.ahead_by !== 0)) ||
+                (comparison.status === 'ahead' && (!Number.isSafeInteger(comparison.ahead_by) || comparison.ahead_by < 1))) {
+              core.setFailed('Commit comparison metadata is missing or inconsistent.');
+              return;
+            }
             const allPrs = await github.paginate(github.rest.pulls.list,
               { owner, repo, state: 'all', per_page: 100 });
             if (allPrs.some((item) => item.head?.ref === candidateBranch ||
