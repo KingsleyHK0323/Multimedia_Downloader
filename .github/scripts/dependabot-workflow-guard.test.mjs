@@ -46,6 +46,9 @@ assert.equal(workflow.split(start).length, 2, 'expected exactly one actual guard
 const actualGuard = workflow.split(start)[1].split('\n')
   .map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
 assert.equal(actualGuard.split(end).length, 2, 'expected exactly one guard terminator');
+const guardEnd = actualGuard.indexOf('\nfi', actualGuard.indexOf(end));
+assert.notEqual(guardEnd, -1, 'expected guard closing fi');
+const actualShellGuard = start + actualGuard.slice(0, guardEnd + '\nfi'.length);
 assert.equal(actualGuard.split("| node -e '\n").length, 2, 'expected actual Node validator');
 assert.equal(actualGuard.split("\n'; then").length, 2, 'expected validator terminator');
 const validator = actualGuard.split("| node -e '\n")[1].split("\n'; then")[0];
@@ -87,5 +90,39 @@ test('API errors, incomplete lists, malformed renames and stale PR identity fail
     [[[normal(0)]], { pr: { base: { ref: 'other' } } }],
     [[], {}],
   ]) assert.equal(check(pages, options), false);
+});
+
+test('Linux shell guard invokes mocked APIs and stops before the merge sentinel', { skip: process.platform !== 'linux' }, () => {
+  const prelude = String.raw`
+    set -euo pipefail
+    GH_REPO=example/repo
+    pr_number=123
+    export HEAD_SHA
+    gh() {
+      if [ "$1" != api ]; then echo UNEXPECTED_GH; return 1; fi
+      if [ "$2" = --paginate ]; then
+        [ "$FAIL_FILES" != 1 ] || return 1
+        printf '%s' "$PAGES"
+      else
+        [ "$FAIL_PR" != 1 ] || return 1
+        printf '%s' "$PR"
+      fi
+    }
+  `;
+  const runShell = (pages, failPr = false, failFiles = false) => {
+    const pr = { state: 'open', base: { ref: 'Source_Code' }, head: { sha }, changed_files: pages.flat().length };
+    const result = spawnSync('bash', ['--noprofile', '--norc', '-c', `${prelude}\n${actualShellGuard}\necho MERGE_SENTINEL`], {
+      encoding: 'utf8', env: { ...process.env, HEAD_SHA: sha, PR: JSON.stringify(pr), PAGES: JSON.stringify(pages), FAIL_PR: failPr ? '1' : '0', FAIL_FILES: failFiles ? '1' : '0' },
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stderr);
+    assert.doesNotMatch(result.stdout, /UNEXPECTED_GH/);
+    return result.stdout.includes('MERGE_SENTINEL');
+  };
+  const normalPages = [Array.from({ length: 100 }, (_, i) => normal(i)), [normal(100)]];
+  assert.equal(runShell(normalPages), true);
+  assert.equal(runShell(normalPages, true), false);
+  assert.equal(runShell(normalPages, false, true), false);
+  assert.equal(runShell([normalPages[0], [{ filename: '.github/workflows/test.yml', status: 'modified' }]]), false);
 });
 
