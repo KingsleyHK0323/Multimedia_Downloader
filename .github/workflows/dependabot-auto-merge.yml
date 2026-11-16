@@ -47,6 +47,37 @@ jobs:
             exit 0
           fi
 
+          # OpenAI-Codex: fail closed on incomplete or protected workflow paths.
+          if ! guard_pr="$(gh api "repos/$GH_REPO/pulls/$pr_number")" ||
+             ! guard_pages="$(gh api --paginate --slurp "repos/$GH_REPO/pulls/$pr_number/files?per_page=100")"; then
+            echo "::warning::Cannot inspect every PR file; skipping merge."
+            exit 0
+          fi
+          if ! printf '%s\0%s' "$guard_pr" "$guard_pages" | node -e '
+            const fs = require("fs");
+            try {
+              const parts = fs.readFileSync(0, "utf8").split("\0");
+              if (parts.length !== 2) process.exit(1);
+              const pr = JSON.parse(parts[0]);
+              const pages = JSON.parse(parts[1]);
+              if (pr.state !== "open" || pr.base?.ref !== "Source_Code" ||
+                  pr.head?.sha !== process.env.HEAD_SHA ||
+                  !Number.isInteger(pr.changed_files) || pr.changed_files < 1 || pr.changed_files > 3000 ||
+                  !Array.isArray(pages) || !pages.every(Array.isArray)) process.exit(1);
+              const files = pages.flat();
+              if (files.length !== pr.changed_files) process.exit(1);
+              const unsafe = p => p.startsWith(".github/workflows/") || p.startsWith(".github/actions/");
+              if (!files.every(f => f && typeof f.filename === "string" && f.filename.length > 0 &&
+                  typeof f.status === "string" && f.status.length > 0 &&
+                  (f.status !== "renamed" || (typeof f.previous_filename === "string" && f.previous_filename.length > 0)) &&
+                  (f.previous_filename === undefined || (typeof f.previous_filename === "string" && f.previous_filename.length > 0)) &&
+                  !unsafe(f.filename) && (f.previous_filename === undefined || !unsafe(f.previous_filename)))) process.exit(1);
+            } catch { process.exit(1); }
+          '; then
+            echo "::warning::PR file list or identity is unsafe or incomplete; skipping merge."
+            exit 0
+          fi
+
           gh pr merge "${pr_number}" --squash
           release_label="$(gh api "repos/${GH_REPO}/pulls/${pr_number}" \
             --jq '[.labels[].name] | any(. == "release:patch")')"
