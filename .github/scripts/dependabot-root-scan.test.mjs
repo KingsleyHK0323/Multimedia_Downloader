@@ -1,0 +1,68 @@
+// OpenAI-Codex_watchdog_scope: execute the actual watchdog script with mock APIs.
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+const workflow = await readFile(new URL('../workflows/weekly-dependabot-watchdog.yml', import.meta.url), 'utf8');
+const marker = '          script: |\n';
+assert.equal(workflow.split(marker).length, 2, 'expected one watchdog script');
+const script = workflow.split(marker)[1].split('\n').map((line) => line.startsWith('            ') ? line.slice(12) : line).join('\n');
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
+const rootOld = ['npm_and_yarn in / - Update #1', 'pip in / - Update #3', 'github_actions in / - Update #6'];
+const rootDot = rootOld.map((name) => name.replace(' in / - ', ' in /. - '));
+const nonRoot = ['npm_and_yarn in /frontend - Update #2', 'pip in /engine - Update #4', 'cargo in /src-tauri - Update #5'];
+
+async function run(names, failureName = null) {
+  const runs = names.map((name, i) => ({
+    name, path: 'dynamic/dependabot/dependabot-updates', created_at: new Date().toISOString(),
+    status: 'completed', conclusion: name === failureName ? 'failure' : 'success',
+    run_number: i + 1, html_url: 'https://example.invalid/run',
+  }));
+  const before = JSON.stringify(runs), calls = [], failures = [];
+  const summary = { addHeading() { return this; }, addRaw() { return this; }, addList() { return this; }, async write() { return this; } };
+  const actions = { listWorkflowRunsForRepo: async () => ({ data: { total_count: runs.length, workflow_runs: [] } }) };
+  const pulls = { list() {} };
+  const repos = { listBranches() {} };
+  const issues = {
+    listForRepo() {},
+    async create(input) { calls.push({ method: 'create', body: input.body }); return { data: { html_url: 'https://example.invalid/issue' } }; },
+    async update(input) { calls.push({ method: 'update', body: input.body }); },
+  };
+  const github = { rest: { actions, pulls, repos, issues }, async paginate(fn) {
+    if (fn === actions.listWorkflowRunsForRepo) return runs;
+    if (fn === pulls.list || fn === repos.listBranches || fn === issues.listForRepo) return [];
+    throw Error('Unexpected API call');
+  } };
+  const core = { summary, warning() {}, info() {}, setFailed(message) { failures.push(message); } };
+  await new AsyncFunction('github', 'core', 'context', script)(github, core, { repo: { owner: 'owner', repo: 'repo' } });
+  assert.deepEqual(failures, [], 'unexpected workflow failure');
+  assert.equal(JSON.stringify(runs), before, 'input response objects changed');
+  return calls;
+}
+
+test('observed root alias and historic root format are accepted without issue writes', async () => {
+  for (const roots of [rootDot, rootOld]) assert.deepEqual(await run([...roots, ...nonRoot]), []);
+});
+
+test('root failure and missing or unknown root scan produce a finding', async () => {
+  for (const [names, failure] of [
+    [[...rootDot, ...nonRoot], rootDot[0]],
+    [[...rootDot.slice(1), ...nonRoot], null],
+    [[rootDot[0].replace('/.', '/.x'), ...rootDot.slice(1), ...nonRoot], null],
+  ]) {
+    const calls = await run(names, failure);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].body, /root npm/);
+  }
+});
+
+test('non-root scan failures remain findings without false root findings', async () => {
+  for (const name of nonRoot) {
+    const calls = await run([...rootDot, ...nonRoot], name);
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].body, /concluded `failure`/);
+    assert.doesNotMatch(calls[0].body, /recent Dependabot scan for (root npm|root pip|GitHub Actions)/);
+  }
+});
+

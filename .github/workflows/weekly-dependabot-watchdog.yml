@@ -50,6 +50,14 @@ jobs:
               (run) => run.path?.startsWith("dynamic/dependabot/"),
             );
 
+            // OpenAI-Codex: recognize GitHub's root directory alias without modifying API data.
+            for (const run of dependabotRuns.slice()) {
+              if (typeof run.name === "string" &&
+                  /^(npm_and_yarn|pip|github_actions) in \/\.( - Update #[0-9]+)$/.test(run.name)) {
+                dependabotRuns.push({ ...run, name: run.name.replace(" in /. - Update #", " in / - Update #") });
+              }
+            }
+
             for (const [label, prefix] of expectedScans) {
               const matching = dependabotRuns
                 .filter((run) => run.name?.startsWith(prefix))
