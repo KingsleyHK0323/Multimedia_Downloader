@@ -108,6 +108,10 @@ jobs:
       - name: Test issue and PR triage
         run: node --test .github/scripts/issue-pr-triage.test.mjs
 
+      # OpenAI-Codex: test Dependabot file-list guard with mocked metadata.
+      - name: Test Dependabot file-list guard
+        run: node --test .github/scripts/dependabot-workflow-guard.test.mjs
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend
 
