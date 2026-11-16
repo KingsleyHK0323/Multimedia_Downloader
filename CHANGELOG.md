@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Fixed
+- Recognize GitHub's root Dependabot scan name alias to prevent false missing-scan reports. (OpenAI-Codex)
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)
 
 #### Changed
