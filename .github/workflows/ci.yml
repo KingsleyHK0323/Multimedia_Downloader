@@ -89,6 +89,10 @@ jobs:
         with:
           node-version: ">=22.13.0 <23"
 
+      # OpenAI-Codex: verify Dependabot scan-name matching with mocked APIs.
+      - name: Test Dependabot watchdog scan names
+        run: node --test .github/scripts/dependabot-root-scan.test.mjs
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend
 
