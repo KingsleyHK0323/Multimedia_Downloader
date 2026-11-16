@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Add a disabled draft release pipeline candidate for staged build and upload review. (OpenAI-Codex)
 - Add a manual build-only workflow that verifies six staged installer artifacts without publishing a release. (OpenAI-Codex)
 - Apply conservative issue completeness and pull request area labels; labels are not automatically removed when content changes. (OpenAI-Codex)
 

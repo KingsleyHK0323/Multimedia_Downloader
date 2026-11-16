@@ -51,6 +51,17 @@ jobs:
       - name: Test release input validation
         run: node --test .github/scripts/release-input-guard.test.mjs
 
+  # OpenAI-Codex: validate the draft pipeline with fake CLI and fixture assets.
+  staged-release-candidate-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Test staged release candidate
+        run: node --test .github/scripts/staged-release-pipeline-candidate.test.mjs
+
   lint:
     runs-on: ubuntu-latest
     steps:
