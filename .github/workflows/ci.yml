@@ -40,6 +40,17 @@ jobs:
       - name: Validate automatic patch version bump
         run: python scripts/bump_patch_version.py --pr-number 0 --dry-run
 
+  # OpenAI-Codex: test the actual release input guard on Linux.
+  release-input-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+      - name: Test release input validation
+        run: node --test .github/scripts/release-input-guard.test.mjs
+
   lint:
     runs-on: ubuntu-latest
     steps:
