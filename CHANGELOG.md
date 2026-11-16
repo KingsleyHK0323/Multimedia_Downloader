@@ -12,6 +12,9 @@
 
 ### Unreleased
 
+#### Repository automation
+- Apply conservative issue completeness and pull request area labels; labels are not automatically removed when content changes. (OpenAI-Codex)
+
 #### Fixed
 - Recognize GitHub's root Dependabot scan name alias to prevent false missing-scan reports. (OpenAI-Codex)
 - Use the current project repository for desktop release update checks. (OpenAI-Codex_Fork_GitHub_REPO)

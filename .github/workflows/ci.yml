@@ -93,6 +93,10 @@ jobs:
       - name: Test Dependabot watchdog scan names
         run: node --test .github/scripts/dependabot-root-scan.test.mjs
 
+      # OpenAI-Codex: exercise issue and PR triage with mocked GitHub APIs.
+      - name: Test issue and PR triage
+        run: node --test .github/scripts/issue-pr-triage.test.mjs
+
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend
 
