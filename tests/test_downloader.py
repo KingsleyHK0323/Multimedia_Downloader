@@ -317,8 +317,8 @@ class IssueRegressionTests(unittest.TestCase):
             with self.subTest(message=message):
                 logs = MagicMock()
                 dl = _make_downloader(log_cb=logs)
-                with patch.object(dl, "download_one", side_effect=RuntimeError(message)), \\
-                     patch("engine.downloader.time.sleep"):
+                with (patch.object(dl, "download_one", side_effect=RuntimeError(message)),
+                      patch("engine.downloader.time.sleep")):
                     result = dl.download_batch(["url"])
                 self.assertFalse(result[0][1])
                 self.assertIn(expected, [call.args[1] for call in logs.call_args_list])
