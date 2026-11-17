@@ -145,10 +145,14 @@ details from the workflow token; confirm that the ruleset has no bypass actors
 in repository Settings. This is a one-time settings check, not an approval
 step for each release.
 
-The build currently downloads FFmpeg from moving latest URLs and installs
-Python packages without a hash-locked dependency set. Artifact provenance
-identifies the workflow and source commit but does not authenticate those
-external inputs.
+FFmpeg builds use fixed release URLs and are checked against pinned SHA-256
+values before extraction. Python 3.12 build requirements, including known
+transitive dependencies, are pinned in
+`.github/requirements/staged-release.txt` and installed with `--no-deps`.
+Python package files are not hash-locked, so their bytes still rely on PyPI
+and TLS rather than a pinned artifact digest. Release attestations identify
+the workflow and source commit; they do not authenticate those Python package
+files.
 
 Put release notes under Unreleased in CHANGELOG.md; the automatic patch
 version bump promotes them to the new version section. Merged pull requests
@@ -162,6 +166,7 @@ requests and also require CI to pass before automatic merging. PRs that change
 files under .github/workflows/ are left for manual merging because GitHub
 requires a separate Workflows permission to merge them.
 
+<!-- OpenAI-Codex: updated release build input documentation. -->
 <!-- OpenAI-Codex_Fork_GitHub_REPO: documented release automation and safeguards. -->
 
 The `CI` workflow runs the existing source checks on pushes and pull requests.

@@ -17,6 +17,7 @@
 - Build all three desktop platforms from the exact version tag, verify artifact attestations and six asset hashes, and publish only after draft readback succeeds. (OpenAI-Codex_Fork_GitHub_REPO)
 - Disable the legacy release workflow that published before builds completed; stop until tag and publish environment protections are configured. (OpenAI-Codex_Fork_GitHub_REPO)
 - Add a manual build-only workflow that verifies six staged installer artifacts without publishing a release. (OpenAI-Codex)
+- Pin Python 3.12 release-build dependency versions and verify SHA-256 values for upstream FFmpeg downloads. (OpenAI-Codex)
 - Apply conservative issue completeness and pull request area labels; labels are not automatically removed when content changes. (OpenAI-Codex)
 
 #### Fixed
