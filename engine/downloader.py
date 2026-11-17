@@ -39,6 +39,11 @@ _MAX_RETRIES = 2
 _RETRY_DELAY_S = 2
 
 
+class _DownloadStopped(Exception):
+    """A cooperative stop interrupted the current download."""
+
+
+# OpenAI-Codex: stop downloads at progress callbacks.
 class Downloader:
     """
     Stateful download orchestrator.
@@ -111,9 +116,21 @@ class Downloader:
                 self._download_one_with_retry(url, i, total)
                 self._log("ok", "log_item_done", i=i, t=total)
                 results.append((url, True, ""))
+            except _DownloadStopped:
+                self._stop = True
+                self._log("warn", "log_stopped_dl")
+                break
             except Exception as e:  # yt-dlp raises DownloadError + others
                 message = redact_sensitive_urls(str(e))
                 self._log("err", "log_item_error", i=i, t=total, err=message)
+                # OpenAI-Codex: show targeted guidance without accessing cookies.
+                lowered = message.lower()
+                if "could not copy chrome cookie database" in lowered:
+                    self._log("warn", "log_hint_cookie_database")
+                elif "http error 567" in lowered:
+                    self._log("warn", "log_hint_http_567")
+                elif "bytes read" in lowered and "more expected" in lowered:
+                    self._log("warn", "log_hint_incomplete_download")
                 results.append((url, False, message))
 
         self._log_batch_summary(results, total)
@@ -129,6 +146,9 @@ class Downloader:
         where every item failed still showed a green checkmark. Mirrors the
         ok/fail reporting :class:`engine.queue.TaskQueue` already does.
         """
+        # OpenAI-Codex: a stopped partial batch must not be logged as complete.
+        if len(results) != total:
+            return
         ok = sum(1 for _, success, _ in results if success)
         fail = len(results) - ok
 
@@ -150,6 +170,8 @@ class Downloader:
             try:
                 self.download_one(url)
                 return
+            except _DownloadStopped:
+                raise
             except Exception as e:
                 is_transient = classify(e) is ErrorKind.TRANSIENT
                 if not is_transient or attempt == _MAX_RETRIES or self._stop:
@@ -226,6 +248,9 @@ class Downloader:
 
     def _ydl_hook(self, d: dict) -> None:
         """yt-dlp progress hook — fans out to the registered progress callback."""
+        # OpenAI-Codex: interrupt at the next download progress callback.
+        if self._stop and d.get("status") == "downloading":
+            raise _DownloadStopped("download stopped")
         info = d.get("info_dict") or {}
         n_entries, idx = info.get("n_entries"), info.get("playlist_index")
         if n_entries and idx and idx != self._playlist_index_logged:

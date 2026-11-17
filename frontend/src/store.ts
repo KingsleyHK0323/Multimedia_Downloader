@@ -49,7 +49,7 @@ export const busy = writable(false);
 // tab component on every switch, which was silently wiping a component-local
 // list (see GitHub issue #9). Updated from App.svelte's global event
 // listener, which — unlike a per-tab onMount — is never torn down.
-export type DownloadItem = { url: string; status: "pending" | "running" | "done" | "error" };
+export type DownloadItem = { url: string; status: "pending" | "running" | "done" | "error" | "skipped" };
 export const downloadItems = writable<DownloadItem[]>([]);
 
 export function markDownloadItem(index: number, status: DownloadItem["status"]): void {

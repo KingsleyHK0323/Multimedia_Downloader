@@ -12,6 +12,9 @@
 
 ### Unreleased
 
+#### Fixed
+- Stop active downloads on the next progress callback and show pending cancellation in the interface; add recovery guidance for browser cookie and transfer errors. Network stalls can delay cancellation. (OpenAI-Codex)
+
 #### Changed
 - Rename the Tauri application identifier to `com.kingsley.multimedia-downloader`. Existing installations may be treated as a separate app and may require manual data migration. (OpenAI-Codex)
 

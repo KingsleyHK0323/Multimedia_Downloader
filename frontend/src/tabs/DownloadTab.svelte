@@ -20,6 +20,7 @@
   let savePath = $state("");
   let browser = $state("none");
   let cookieFile = $state(""); // OpenAI-Codex_app_ui
+  let stopping = $state(false); // OpenAI-Codex
 
   const urlList = $derived(urls.split("\n").map((u) => u.trim()).filter(Boolean));
 
@@ -30,7 +31,9 @@
     const startedUrls = [...urlList]; // OpenAI-Codex_Fork_GitHub_REPO
     downloadItems.set(startedUrls.map((url) => ({ url, status: "pending" })));
     busy.set(true);
+    stopping = false;
     progress.set(null);
+    let stoppedResultConfirmed = false; // OpenAI-Codex
     try {
       const response = await api.startDownload({
         urls: startedUrls, mode,
@@ -38,6 +41,7 @@
         quality, save_path: savePath, browser, bitrate, cookie_file: cookieFile,
       });
       const outcome = downloadOutcome(response, startedUrls);
+      stoppedResultConfirmed = stopping && outcome.kind === "incomplete";
       if (outcome.kind === "complete") toast(tr("status_all_done_dl", { t: outcome.total }), "ok");
       else if (outcome.kind === "failed") toast(tr("download_result_failed",
         { ok: outcome.total - outcome.failed, fail: outcome.failed, total: outcome.total }), "err");
@@ -47,10 +51,21 @@
     } catch (e) {
       toast(String(e instanceof Error ? e.message : e), "err");
     } finally {
+      if (stoppedResultConfirmed) {
+        downloadItems.update((items) => items.map((item) =>
+          item.status === "running" || item.status === "pending" ? { ...item, status: "skipped" as const } : item));
+      }
+      stopping = false;
       busy.set(false);
     }
   }
-  function stop() { api.stop(); busy.set(false); }
+  // OpenAI-Codex: keep the operation busy until its terminal reply arrives.
+  async function stop() {
+    if (stopping) return;
+    stopping = true;
+    try { await api.stop(); }
+    catch (error) { stopping = false; toast(String(error instanceof Error ? error.message : error), "err"); }
+  }
 
   const inputCls =
     "w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2.5 text-sm " +
@@ -135,7 +150,7 @@
     <Card>
       <ProgressBar
         pct={$progress.pct}
-        label={tr("status_progress", { pct: $progress.pct, speed: $progress.speed, eta: $progress.eta })}
+        label={stopping ? tr("stop_requested") : tr("status_progress", { pct: $progress.pct, speed: $progress.speed, eta: $progress.eta })}
       />
     </Card>
   {/if}
@@ -156,9 +171,9 @@
              px-4 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40
              dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
       onclick={stop}
-      disabled={!$busy}
+      disabled={!$busy || stopping}
     >
-      <Square class="size-3.5" aria-hidden="true" />{tr("btn_stop")}
+      <Square class="size-3.5" aria-hidden="true" />{stopping ? tr("stop_requested") : tr("btn_stop")}
     </button>
   </div>
 
@@ -170,6 +185,7 @@
           <li class="flex items-center gap-2.5 rounded-lg bg-zinc-50 px-3 py-2 text-xs dark:bg-zinc-950">
             {#if item.status === "pending"}<Clock class="size-3.5 shrink-0 text-zinc-400" aria-hidden="true" />
             {:else if item.status === "running"}<Loader2 class="size-3.5 shrink-0 animate-spin text-indigo-500" aria-hidden="true" />
+            {:else if item.status === "skipped"}<Clock class="size-3.5 shrink-0 text-amber-500" aria-hidden="true" />
             {:else if item.status === "done"}<CheckCircle2 class="size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
             {:else}<XCircle class="size-3.5 shrink-0 text-red-500" aria-hidden="true" />{/if}
             <span class="truncate font-mono text-zinc-700 dark:text-zinc-300">{item.url}</span>

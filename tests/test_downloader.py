@@ -286,5 +286,43 @@ class CookieFileSelectionTests(unittest.TestCase):
         self.assertEqual(result["cookiesfrombrowser"][0], "chrome")
 
 
+
+
+# OpenAI-Codex: verify cancellation and targeted guidance without network I/O.
+class IssueRegressionTests(unittest.TestCase):
+    def test_stop_during_progress_ends_batch_without_success_summary(self):
+        logs = MagicMock()
+        dl = _make_downloader(log_cb=logs)
+
+        def stop_during_download(_url):
+            dl.stop()
+            dl._ydl_hook({"status": "downloading"})
+
+        with patch.object(dl, "download_one", side_effect=stop_during_download) as download:
+            results = dl.download_batch(["first", "second"])
+        self.assertEqual(results, [])
+        self.assertEqual(download.call_count, 1)
+        keys = [call.args[1] for call in logs.call_args_list]
+        self.assertIn("log_stopped_dl", keys)
+        self.assertNotIn("log_all_done", keys)
+        self.assertNotIn("log_item_error", keys)
+
+    def test_known_errors_emit_targeted_hints(self):
+        cases = (
+            ("Could not copy Chrome cookie database", "log_hint_cookie_database"),
+            ("HTTP Error 567: Unknown Status", "log_hint_http_567"),
+            ("389 bytes read, 747 more expected", "log_hint_incomplete_download"),
+        )
+        for message, expected in cases:
+            with self.subTest(message=message):
+                logs = MagicMock()
+                dl = _make_downloader(log_cb=logs)
+                with patch.object(dl, "download_one", side_effect=RuntimeError(message)), \\
+                     patch("engine.downloader.time.sleep"):
+                    result = dl.download_batch(["url"])
+                self.assertFalse(result[0][1])
+                self.assertIn(expected, [call.args[1] for call in logs.call_args_list])
+
+
 if __name__ == "__main__":
     unittest.main()
