@@ -47,8 +47,12 @@ test('rejects any bypass actor exposed by the API', () => {
   assert.throws(() => validateProtection(config), /bypass actors/);
 });
 
-test('reports when GitHub hides bypass actor details from the workflow token', () => {
-  const config = fixture();
-  delete config.rulesets[0].bypass_actors;
-  assert.match(validateProtection(config).join('\n'), /confirm the active tag ruleset/);
+// OpenAI-Codex: verify missing or malformed bypass details stop publication.
+test('fails closed when GitHub hides or malforms bypass actor details', () => {
+  for (const value of [undefined, null, {}]) {
+    const config = fixture();
+    if (value === undefined) delete config.rulesets[0].bypass_actors;
+    else config.rulesets[0].bypass_actors = value;
+    assert.throws(() => validateProtection(config), /bypass safety cannot be verified/);
+  }
 });

@@ -40,15 +40,14 @@ export function validateProtection({ rulesets, environment, policies }) {
   });
   if (matching.length === 0) fail('An active refs/tags/v* ruleset must block tag updates and deletions.');
 
-  const warnings = [];
+  // OpenAI-Codex: fail closed when the API withholds bypass configuration.
   for (const rule of matching) {
-    if (Array.isArray(rule.bypass_actors)) {
-      if (rule.bypass_actors.length !== 0) fail('The tag protection ruleset has bypass actors.');
-    } else {
-      warnings.push('GitHub did not expose bypass_actors to this workflow token; confirm the active tag ruleset has no bypass actors in repository Settings.');
+    if (!Array.isArray(rule.bypass_actors)) {
+      fail('GitHub did not expose bypass_actors for the active tag ruleset; refusing release because bypass safety cannot be verified.');
     }
+    if (rule.bypass_actors.length !== 0) fail('The tag protection ruleset has bypass actors.');
   }
-  return warnings;
+  return [];
 }
 
 async function getJson(url, token) {
