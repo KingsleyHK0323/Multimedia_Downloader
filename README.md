@@ -147,12 +147,13 @@ step for each release.
 
 FFmpeg builds use fixed release URLs and are checked against pinned SHA-256
 values before extraction. Python 3.12 build requirements, including known
-transitive dependencies, are pinned in
-`.github/requirements/staged-release.txt` and installed with `--no-deps`.
-Python package files are not hash-locked, so their bytes still rely on PyPI
-and TLS rather than a pinned artifact digest. Release attestations identify
-the workflow and source commit; they do not authenticate those Python package
-files.
+transitive dependencies, are pinned to exact versions and PyPI wheel SHA-256
+digests in `.github/requirements/staged-release.txt`. The pip bootstrap is
+pinned separately in `.github/requirements/staged-release-pip.txt`. The
+workflow uses `--no-deps --require-hashes --only-binary=:all:` so each runner
+accepts only a listed wheel and never resolves an unlisted dependency. These
+digests pin package bytes to the corresponding PyPI files; they do not
+independently attest publisher identity.
 
 Put release notes under Unreleased in CHANGELOG.md; the automatic patch
 version bump promotes them to the new version section. Merged pull requests

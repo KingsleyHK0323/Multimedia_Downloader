@@ -1,20 +1,50 @@
-# OpenAI-Codex: pin the full Python 3.12 release-build dependency set.
-# Install with --no-deps so no unlisted transitive version can be resolved.
-pip==26.3
-pyinstaller==6.22.3
-yt-dlp==2026.10.26
-mutagen==1.48.1
-brotli==1.2.1
-certifi==2026.10.23
-requests==2.34.2
-websockets==17.4
-altgraph==0.17.5
-packaging==25.0
-pyinstaller-hooks-contrib==2026.7
-setuptools==81.0.0
-macholib==1.16.4; sys_platform == "darwin"
-pefile==2024.8.26; sys_platform == "win32"
-pywin32-ctypes==0.2.3; sys_platform == "win32"
-charset-normalizer==3.4.4
-idna==3.11
-urllib3==2.5.0
+# OpenAI-Codex: hash-locked Python 3.12 release-build wheel dependencies.
+# Covers ubuntu-22.04 x86_64, macos-15 arm64, and windows-latest x64.
+# Install with --no-deps --require-hashes --only-binary=:all:.
+pip==26.3 \
+  --hash=sha256:f3b60b20ffaadd4415ed7957212a38ac63fa4c5fa375bd0f4a797777940fad13
+pyinstaller==6.22.3 \
+  --hash=sha256:451a4ae14b719365bf1a2f0a99dae7b3463060061c3a394c70d5264cfb439528 \
+  --hash=sha256:052f4a1cd4f81092ccb7a18fe8ebc9ecf832a5917317e39fb3775af4e959b253 \
+  --hash=sha256:500bd58c7bf7e584a8435adccbd763a0b918d5c12b08d74ff50fd79b2915458b
+yt-dlp==2026.10.26 \
+  --hash=sha256:a05c5b5d8562f7e8a62f5334348b406af4930d56d3a65f8021d14af0e22339ae
+mutagen==1.48.1 \
+  --hash=sha256:4f077fe87d3fc7fba259aa63d8c026b18382ca6a42ef37c61e16f1b1b5b82fe7
+brotli==1.2.1 \
+  --hash=sha256:4b9dd0173ca5e01d1eb307d3c184fe8c09bdc168ede560889b1018d216d38c61 \
+  --hash=sha256:3975fb11f63e212b87a087e4a910187b522c6969a4989ca362d6f85f9dc36acd \
+  --hash=sha256:f5342b8256476554b4045db8b7bf4dc4044d0405485f220f0cd80764bc0d7faf
+certifi==2026.10.23 \
+  --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
+requests==2.34.2 \
+  --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0
+websockets==17.4 \
+  --hash=sha256:9ae1429ee9e52b139167ed0169757806a27ed7307e942e8c62037a9184e9843b \
+  --hash=sha256:bcad49104711f88b2b7c3ba166de172857d837248205e541b044a552558fecc3 \
+  --hash=sha256:3d512e3a6c528c42ce220ed9c3caff83c6fdcd98a1b98249f08ccfc66ad111b1 \
+  --hash=sha256:dde9cd67f18803949ebf96de8aba12b8ec5ee3115e34c75a2db85a3b0a6c20d5 \
+  --hash=sha256:c6bd2c9781915592b209160d0f017d4c7c82ad53075e6b0c24d2a89299e7f9e9
+altgraph==0.17.5 \
+  --hash=sha256:f3a22400bce1b0c701683820ac4f3b159cd301acab067c51c653e06961600597
+packaging==25.0 \
+  --hash=sha256:29572ef2b1f17581046b3a2227d5c611fb25ec70ca1ba8554b24b0e69331a484
+pyinstaller-hooks-contrib==2026.7 \
+  --hash=sha256:24257a04c7a5a7a034cf28e39dcee20fbeeb9f043076729480f2e1b69904408a
+setuptools==81.0.0 \
+  --hash=sha256:fdd925d5c5d9f62e4b74b30d6dd7828ce236fd6ed998a08d81de62ce5a6310d6
+macholib==1.16.4; sys_platform == "darwin" \
+  --hash=sha256:da1a3fa8266e30f0ce7e97c6a54eefaae8edd1e5f86f3eb8b95457cae90265ea
+pefile==2024.8.26; sys_platform == "win32" \
+  --hash=sha256:76f8b485dcd3b1bb8166f1128d395fa3d87af26360c2358fb75b80019b957c6f
+pywin32-ctypes==0.2.3; sys_platform == "win32" \
+  --hash=sha256:8a1513379d709975552d202d942d9837758905c8d01eb82b8bcc30918929e7b8
+charset-normalizer==3.4.4 \
+  --hash=sha256:11d694519d7f29d6cd09f6ac70028dba10f92f6cdd059096db198c283794ac86 \
+  --hash=sha256:0a98e6759f854bd25a58a73fa88833fba3b7c491169f86ce1180c948ab3fd394 \
+  --hash=sha256:a79cfe37875f822425b89a82333404539ae63dbdddf97f84dcbc3d339aae9525 \
+  --hash=sha256:7a32c560861a02ff789ad905a2fe94e3f840803362c84fecf1851cb4cf3dc37f
+idna==3.11 \
+  --hash=sha256:771a87f49d9defaf64091e6e6fe9c18d4833f140bd19464795bc32d966ca37ea
+urllib3==2.5.0 \
+  --hash=sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc

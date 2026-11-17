@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process';
 const workflow = readFileSync(resolve('.github/workflows/staged-release-pipeline.yml'), 'utf8');
 const patchWorkflow = readFileSync(resolve('.github/workflows/auto-patch-release.yml'), 'utf8');
 const pythonRequirements = readFileSync(resolve('.github/requirements/staged-release.txt'), 'utf8');
+const pythonPipRequirements = readFileSync(resolve('.github/requirements/staged-release-pip.txt'), 'utf8');
 const publishMarker = '      - name: Publish verified release after draft readback\n';
 const section = workflow.split(publishMarker)[1];
 const runMarker = '        run: |\n';
@@ -99,9 +100,12 @@ function execute(mode) {
   return { status: result.status, error: result.error, stderr: result.stderr, calls, state };
 }
 
-test('release Python dependencies are explicitly version-pinned', () => {
-  assert.ok(workflow.includes('python -m pip install --upgrade pip==26.3'));
-  assert.ok(workflow.includes('python -m pip install --no-deps -r .github/requirements/staged-release.txt'));
+test('release Python dependencies are version and wheel hash locked', () => {
+  assert.ok(workflow.includes('python -m pip install --upgrade --no-deps --only-binary=:all: --require-hashes -r .github/requirements/staged-release-pip.txt'));
+  assert.ok(workflow.includes('python -m pip install --no-deps --only-binary=:all: --require-hashes -r .github/requirements/staged-release.txt'));
+  assert.ok(pythonPipRequirements.includes('pip==26.3'));
+  assert.ok(pythonPipRequirements.includes('--hash=sha256:f3b60b20ffaadd4415ed7957212a38ac63fa4c5fa375bd0f4a797777940fad13'));
+  const normalizedRequirements = pythonRequirements.replace(/\\\r?\n[ \t]*/g, ' ');
   const requiredPins = [
     'pip==26.3',
     'pyinstaller==6.22.3',
@@ -122,10 +126,15 @@ test('release Python dependencies are explicitly version-pinned', () => {
     'idna==3.11',
     'urllib3==2.5.0',
   ];
-  const lines = pythonRequirements.split(/\r?\n/);
-  for (const pin of requiredPins) assert.ok(lines.includes(pin), 'missing exact dependency pin: ' + pin);
+  const requirementLines = normalizedRequirements.split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith('#'));
+  for (const pin of requiredPins) {
+    const line = requirementLines.find(value => value.startsWith(pin));
+    assert.ok(line, 'missing exact dependency pin: ' + pin);
+    assert.match(line, /--hash=sha256:[a-f0-9]{64}/, 'missing wheel hash for: ' + pin);
+  }
+  assert.ok(requirementLines.every(line => /--hash=sha256:[a-f0-9]{64}/.test(line)), 'every dependency must have a SHA-256 hash');
+  assert.equal((normalizedRequirements.match(/--hash=sha256:[a-f0-9]{64}/g) || []).length, 29);
 });
-
 test('FFmpeg downloads use immutable versions and checked SHA-256 values', () => {
   const pinnedInputs = [
     'https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-16-15-29/ffmpeg-N-128959-g4dbee3b241-linux64-gpl.tar.xz',
