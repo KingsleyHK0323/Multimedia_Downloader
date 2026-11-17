@@ -51,6 +51,10 @@ jobs:
       - name: Test release input validation
         run: node --test .github/scripts/release-input-guard.test.mjs
 
+      # OpenAI-Codex: simulate upload collisions without external calls.
+      - name: Test release upload collisions
+        run: node --test .github/scripts/release-upload-create-only.test.mjs
+
   lint:
     runs-on: ubuntu-latest
     steps:

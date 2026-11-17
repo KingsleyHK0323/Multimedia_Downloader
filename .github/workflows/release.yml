@@ -334,4 +334,4 @@ jobs:
           find src-tauri/target/release/bundle -type f \
             \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
                -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) \
-            -print0 | xargs -0 gh release upload "$tag" --clobber --repo "$GITHUB_REPOSITORY"
+            -print0 | xargs -0 gh release upload "$tag" --repo "$GITHUB_REPOSITORY"
