@@ -8,6 +8,7 @@ import { spawnSync } from 'node:child_process';
 
 const workflow = readFileSync(resolve('.github/workflows/staged-release-pipeline.yml'), 'utf8');
 const patchWorkflow = readFileSync(resolve('.github/workflows/auto-patch-release.yml'), 'utf8');
+const pythonRequirements = readFileSync(resolve('.github/requirements/staged-release.txt'), 'utf8');
 const publishMarker = '      - name: Publish verified release after draft readback\n';
 const section = workflow.split(publishMarker)[1];
 const runMarker = '        run: |\n';
@@ -97,6 +98,48 @@ function execute(mode) {
   const calls = readFileSync(join(state, 'calls'), 'utf8').trim().split('\n').filter(Boolean).map(JSON.parse);
   return { status: result.status, error: result.error, stderr: result.stderr, calls, state };
 }
+
+test('release Python dependencies are explicitly version-pinned', () => {
+  assert.ok(workflow.includes('python -m pip install --upgrade pip==26.3'));
+  assert.ok(workflow.includes('python -m pip install --no-deps -r .github/requirements/staged-release.txt'));
+  const requiredPins = [
+    'pip==26.3',
+    'pyinstaller==6.22.3',
+    'yt-dlp==2026.10.26',
+    'mutagen==1.48.1',
+    'brotli==1.2.1',
+    'certifi==2026.10.23',
+    'requests==2.34.2',
+    'websockets==17.4',
+    'altgraph==0.17.5',
+    'packaging==25.0',
+    'pyinstaller-hooks-contrib==2026.7',
+    'setuptools==81.0.0',
+    'macholib==1.16.4; sys_platform == "darwin"',
+    'pefile==2024.8.26; sys_platform == "win32"',
+    'pywin32-ctypes==0.2.3; sys_platform == "win32"',
+    'charset-normalizer==3.4.4',
+    'idna==3.11',
+    'urllib3==2.5.0',
+  ];
+  const lines = pythonRequirements.split(/\r?\n/);
+  for (const pin of requiredPins) assert.ok(lines.includes(pin), 'missing exact dependency pin: ' + pin);
+});
+
+test('FFmpeg downloads use immutable versions and checked SHA-256 values', () => {
+  const pinnedInputs = [
+    'https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-16-15-29/ffmpeg-N-128959-g4dbee3b241-linux64-gpl.tar.xz',
+    '098bdc14d7a5a62d7f5a1452e748a192cef66e045146e869a15ae20d1ab50544',
+    'https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip',
+    'c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924',
+    'https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-16-15-29/ffmpeg-N-128959-g4dbee3b241-win64-gpl.zip',
+    '221c48fac8e679c09a1949ee9509c47bcd8b0ceb3d43129a448da0d468bab86c',
+    'sha256sum --check --status',
+    'shasum -a 256 -c -',
+  ];
+  for (const input of pinnedInputs) assert.ok(workflow.includes(input), 'missing pinned FFmpeg input: ' + input);
+  assert.doesNotMatch(workflow, /releases\/download\/latest|redirect\/latest|ffmpeg-release-amd64-static\.tar\.xz/);
+});
 
 test('publishing job is automatic, protected, and the only contents writer', () => {
   assert.match(workflow, /environment:\s*\n\s*name: staged-release-publish/);
