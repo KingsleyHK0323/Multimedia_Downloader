@@ -1,5 +1,7 @@
 name: Automatic patch release
 
+# OpenAI-Codex_Fork_GitHub_REPO: dispatch the safe release workflow from the pushed tag.
+
 on:
   # This write-enabled event runs only after a merge and checks out the base
   # branch below; it never checks out or executes the PR head.
@@ -14,7 +16,7 @@ on:
         type: number
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: automatic-patch-release-Source_Code
@@ -22,6 +24,8 @@ concurrency:
 
 jobs:
   bump:
+    permissions:
+      contents: write
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
@@ -29,14 +33,15 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release.outputs.tag }}
+      source_sha: ${{ steps.release.outputs.source_sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: Source_Code
           fetch-depth: 0
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
         with:
           python-version: "3.12"
 
@@ -108,13 +113,26 @@ jobs:
             git push origin "refs/tags/$tag"
           fi
 
+          source_sha="$(git rev-parse "$tag^{commit}")"
+          [[ "$source_sha" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Could not resolve the exact tag commit."; exit 1; }
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
 
-  release:
+  dispatch:
     needs: bump
     permissions:
-      contents: write
-    uses: ./.github/workflows/release.yml
-    with:
-      tag: ${{ needs.bump.outputs.tag }}
-      only: all
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch the staged pipeline from the exact version tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.bump.outputs.tag }}
+          SOURCE_SHA: ${{ needs.bump.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run .github/workflows/staged-release-pipeline.yml \
+            --repo "$GITHUB_REPOSITORY" --ref "$TAG" \
+            -f source_sha="$SOURCE_SHA" -f tag="$TAG"

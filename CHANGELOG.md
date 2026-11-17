@@ -13,7 +13,9 @@
 ### Unreleased
 
 #### Repository automation
-- Add a disabled draft release pipeline candidate for staged build and upload review. (OpenAI-Codex)
+- Refuse to overwrite existing release assets during upload. Existing releases may require manual handling when names collide. (OpenAI-Codex)
+- Build all three desktop platforms from the exact version tag, verify artifact attestations and six asset hashes, and publish only after draft readback succeeds. (OpenAI-Codex_Fork_GitHub_REPO)
+- Disable the legacy release workflow that published before builds completed; stop until tag and publish environment protections are configured. (OpenAI-Codex_Fork_GitHub_REPO)
 - Add a manual build-only workflow that verifies six staged installer artifacts without publishing a release. (OpenAI-Codex)
 - Apply conservative issue completeness and pull request area labels; labels are not automatically removed when content changes. (OpenAI-Codex)
 
