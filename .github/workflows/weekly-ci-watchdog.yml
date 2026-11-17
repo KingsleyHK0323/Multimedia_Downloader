@@ -1,4 +1,5 @@
 name: Weekly CI Watchdog
+# OpenAI-Codex: pin actions/github-script v9.0.0 to its release commit.
 
 on:
   schedule:
@@ -130,4 +131,3 @@ jobs:
               core.warning(`Created watchdog issue ${created.html_url}.`);
             }
 
-# OpenAI-Codex: pin actions/github-script v9.0.0 to its release commit.
