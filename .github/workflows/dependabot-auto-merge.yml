@@ -78,7 +78,8 @@ jobs:
             exit 0
           fi
 
-          gh pr merge "${pr_number}" --squash
+          # OpenAI-Codex: merge only the exact commit whose CI run succeeded.
+          gh pr merge "${pr_number}" --squash --match-head-commit "${HEAD_SHA}"
           release_label="$(gh api "repos/${GH_REPO}/pulls/${pr_number}" \
             --jq '[.labels[].name] | any(. == "release:patch")')"
           if [ "${release_label}" = "true" ]; then

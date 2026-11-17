@@ -1,4 +1,4 @@
-// OpenAI-Codex_watchdog_scope: offline mock tests for an append-only guard.
+// OpenAI-Codex: offline tests for the Dependabot auto-merge guard.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
@@ -126,3 +126,9 @@ test('Linux shell guard invokes mocked APIs and stops before the merge sentinel'
   assert.equal(runShell([normalPages[0], [{ filename: '.github/workflows/test.yml', status: 'modified' }]]), false);
 });
 
+
+test('merge requires the exact CI-tested head and does not bypass or delete', () => {
+  assert.ok(workflow.includes('gh pr merge "${pr_number}" --squash --match-head-commit "${HEAD_SHA}"'));
+  assert.equal(workflow.includes('--admin'), false);
+  assert.equal(workflow.includes('--delete-branch'), false);
+});
