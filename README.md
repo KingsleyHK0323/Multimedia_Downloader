@@ -67,6 +67,9 @@ built with [Tauri](https://tauri.app), and as a deployable web app.
 > (see [Run as a web app](#run-as-a-web-app-v41) below). Native mobile apps are
 > planned for **V5.0**.
 
+<!-- OpenAI-Codex: describe the application identifier transition. -->
+> **Installation identity:** Future builds use `com.kingsley.multimedia-downloader`. Existing installations using the previous identifier may be treated as a separate app and may require manual data migration.
+
 ## Install (end users)
 
 1. Download the installer for your platform from the [Releases page](https://github.com/KingsleyHK0323/Multimedia_Downloader/releases/latest) (Windows: `.exe`

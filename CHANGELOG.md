@@ -12,6 +12,9 @@
 
 ### Unreleased
 
+#### Changed
+- Rename the Tauri application identifier to `com.kingsley.multimedia-downloader`. Existing installations may be treated as a separate app and may require manual data migration. (OpenAI-Codex)
+
 ### [4.3.21] — 2026-11-17
 
 #### Repository automation
