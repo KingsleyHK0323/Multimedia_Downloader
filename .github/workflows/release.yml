@@ -27,7 +27,7 @@ on:
         options:
           - all
           - ubuntu-22.04
-          - macos-14
+          - macos-15
           - windows-latest
   workflow_call:
     inputs:
@@ -69,7 +69,7 @@ jobs:
             exit 1
           fi
           case "$RAW_ONLY" in
-            all|ubuntu-22.04|macos-14|windows-latest) ;;
+            all|ubuntu-22.04|macos-15|windows-latest) ;;
             *) printf '%s\n' '::error::Invalid release platform.'; exit 1 ;;
           esac
       # END RELEASE_INPUT_GUARD
@@ -80,7 +80,7 @@ jobs:
         run: |
           only="${{ inputs.only || github.event.inputs.only || 'all' }}"
           if [ "$only" = "all" ]; then
-            echo 'matrix={"platform":["ubuntu-22.04","macos-14","windows-latest"]}' >> "$GITHUB_OUTPUT"
+            echo 'matrix={"platform":["ubuntu-22.04","macos-15","windows-latest"]}' >> "$GITHUB_OUTPUT"
           else
             echo "matrix={\"platform\":[\"$only\"]}" >> "$GITHUB_OUTPUT"
           fi
@@ -96,11 +96,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$SOURCE_REF" == "refs/heads/Source_Code" && "$ONLY" == "all" ]] || { echo "::error::The beta requires Source_Code and all platforms."; exit 1; }
+          [[ "$SOURCE_REF" == "refs/heads/Source_Code" && "$ONLY" == "macos-15" ]] || { echo "::error::The beta recovery requires Source_Code and macos-15."; exit 1; }
           if existing="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/v4.3.22" --jq '.object.sha' 2>/dev/null)"; then
-            [[ "$existing" == "$SOURCE_SHA" ]] || { echo "::error::Beta tag already points to a different commit."; exit 1; }
+            [[ "$existing" == "970479c2d2ffc26cb19df2ccb9c4e1ec69a4b7d0" ]] || { echo "::error::Beta tag already points to a different commit."; exit 1; }
           else
-            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/v4.3.22" -f sha="$SOURCE_SHA" >/dev/null
+            echo "::error::The approved beta tag is missing."; exit 1
           fi
 
       # Verify the version BEFORE the release is created or anything is built.
@@ -269,10 +269,10 @@ jobs:
       # not fail the build at all -- it would ship, and then fail on any user
       # machine without Rosetta. That is worth catching here.
       - name: Stage ffmpeg — macOS
-        if: matrix.platform == 'macos-14'
+        if: matrix.platform == 'macos-15'
         run: |
           set -u
-          arch=$(uname -m)                       # arm64 on macos-14
+          arch=$(uname -m)                       # arm64 on macos-15
           if [ "$arch" = "arm64" ]; then
             a=arm64
             sources="https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip"
