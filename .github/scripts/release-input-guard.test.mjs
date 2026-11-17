@@ -41,7 +41,7 @@ function validate(tag, only) {
 
 test('accepts canonical versions and the four supported platforms', () => {
   for (const tag of ['v0.0.0', 'v4.3.21', 'v123.456.789']) {
-    for (const only of ['all', 'ubuntu-22.04', 'macos-14', 'windows-latest']) {
+    for (const only of ['all', 'ubuntu-22.04', 'macos-15', 'windows-latest']) {
       assert.equal(validate(tag, only).status, 0, `${tag} ${only}`);
     }
   }
