@@ -12,6 +12,8 @@
 
 ### Unreleased
 
+### [4.3.21] — 2026-11-17
+
 #### Repository automation
 - Refuse to overwrite existing release assets during upload. Existing releases may require manual handling when names collide. (OpenAI-Codex)
 - Add a manual build-only workflow that verifies six staged installer artifacts without publishing a release. (OpenAI-Codex)
