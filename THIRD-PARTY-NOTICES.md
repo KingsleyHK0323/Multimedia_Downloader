@@ -1,8 +1,9 @@
+<!-- OpenAI-Codex -->
 # Third-Party Notices
 
 **Language / 語言 / 语言:** [English](#english) · [繁體中文](#繁體中文) · [简体中文](#简体中文)
 
-This project (`SpaceSquare640/Multimedia_Downloader`) is licensed under the
+This project (`KingsleyHK0323/Multimedia_Downloader`) is licensed under the
 MIT License (see `LICENSE`). It bundles or depends on the third-party
 components listed below, each under its **own** license — those components
 are **not** covered by this project's MIT license.
