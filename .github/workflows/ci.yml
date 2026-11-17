@@ -56,8 +56,8 @@ jobs:
       - name: Test release protection preflight
         run: node --test .github/scripts/verify-release-protection.test.mjs
 
-      # OpenAI-Codex: simulate upload collisions without external calls.
-      - name: Test release upload collisions
+      # OpenAI-Codex: verify the legacy publisher is disabled.
+      - name: Test staged release entry point
         run: node --test .github/scripts/release-upload-create-only.test.mjs
 
   staged-release-pipeline-tests:

@@ -1,4 +1,4 @@
-// OpenAI-Codex_Fork_GitHub_REPO: mock-only release pipeline checks.
+// OpenAI-Codex: mock-only release pipeline checks.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync } from 'node:fs';
@@ -37,8 +37,9 @@ const fakeGh = [
   '  const n = fs.existsSync(marker("view")) ? Number(fs.readFileSync(marker("view"), "utf8")) : 0;',
   '  fs.writeFileSync(marker("view"), String(n + 1));',
   '  if (query.includes(".assets[].name")) console.log(assets.sort().join(","));',
-  '  else if (query.includes("length == 0")) console.log(mode === "draft-change" && n > 0 ? "false" : "true");',
+  '  else if (query.includes("isDraft == true")) console.log(mode === "draft-change" && n > 0 ? "false" : "true");',
   '  else if (query.includes("isDraft == false")) console.log("true");',
+  '  else if (query.includes("length == 0")) console.log("true");',
   '  else if (query.includes("length == 6")) console.log("true");',
   '  else process.exit(2);',
   '} else if (a[0] === "release" && a[1] === "upload") {',
