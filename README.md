@@ -1,4 +1,4 @@
-# Multimedia Downloader — V4.3.21
+# Multimedia Downloader — V4.3.22
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/KingsleyHK0323/Multimedia_Downloader?sort=semver)](https://github.com/KingsleyHK0323/Multimedia_Downloader/releases/latest)

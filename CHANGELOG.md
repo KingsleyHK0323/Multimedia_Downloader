@@ -12,6 +12,8 @@
 
 ### Unreleased
 
+### [4.3.22] — 2026-11-18
+
 #### Fixed
 - Stop active downloads on the next progress callback and show pending cancellation in the interface; add recovery guidance for browser cookie and transfer errors. Network stalls can delay cancellation. (OpenAI-Codex)
 

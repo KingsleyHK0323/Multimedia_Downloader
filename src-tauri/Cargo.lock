@@ -2064,7 +2064,7 @@ dependencies = [
 
 [[package]]
 name = "multimedia-downloader"
-version = "4.3.21"
+version = "4.3.22"
 dependencies = [
  "serde",
  "serde_json",

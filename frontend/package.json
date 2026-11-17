@@ -1,6 +1,6 @@
 {
   "name": "multimedia-downloader-frontend",
-  "version": "4.3.21",
+  "version": "4.3.22",
   "description": "Svelte web interface for the Multimedia Downloader desktop and web apps.",
   "type": "module",
   "scripts": {
