@@ -55,7 +55,7 @@ const validator = actualGuard.split("| node -e '\n")[1].split("\n'; then")[0];
 
 function check(pages, options = {}) {
   const files = pages.flat();
-  const pr = { state: 'open', base: { ref: 'Source_Code' }, head: { sha }, changed_files: files.length, ...options.pr };
+  const pr = { state: 'open', user: { login: 'dependabot[bot]' }, base: { ref: 'Source_Code' }, head: { sha, ref: 'dependabot/npm_and_yarn/example-1.2.3' }, changed_files: files.length, ...options.pr };
   // Model the shell's API error short circuit; no API or merge is invoked.
   if (options.failPr || options.failFiles) return false;
   const result = spawnSync(process.execPath, ['-e', validator], {
@@ -86,6 +86,8 @@ test('API errors, incomplete lists, malformed renames and stale PR identity fail
     [[[normal(0)]], { pr: { changed_files: 2 } }],
     [[[normal(0)]], { pr: { changed_files: 3001 } }],
     [[[{ filename: 'deps/new', status: 'renamed' }]], {}],
+    [[[normal(0)]], { pr: { user: { login: 'attacker' } } }],
+    [[[normal(0)]], { pr: { head: { sha, ref: 'feature/other' } } }],
     [[[normal(0)]], { pr: { head: { sha: 'b'.repeat(40) } } }],
     [[[normal(0)]], { pr: { base: { ref: 'other' } } }],
     [[], {}],
@@ -110,7 +112,7 @@ test('Linux shell guard invokes mocked APIs and stops before the merge sentinel'
     }
   `;
   const runShell = (pages, failPr = false, failFiles = false) => {
-    const pr = { state: 'open', base: { ref: 'Source_Code' }, head: { sha }, changed_files: pages.flat().length };
+    const pr = { state: 'open', user: { login: 'dependabot[bot]' }, base: { ref: 'Source_Code' }, head: { sha, ref: 'dependabot/npm_and_yarn/example-1.2.3' }, changed_files: pages.flat().length };
     const result = spawnSync('bash', ['--noprofile', '--norc', '-c', `${prelude}\n${actualShellGuard}\necho MERGE_SENTINEL`], {
       encoding: 'utf8', env: { ...process.env, HEAD_SHA: sha, PR: JSON.stringify(pr), PAGES: JSON.stringify(pages), FAIL_PR: failPr ? '1' : '0', FAIL_FILES: failFiles ? '1' : '0' },
     });
@@ -131,4 +133,21 @@ test('merge requires the exact CI-tested head and does not bypass or delete', ()
   assert.ok(workflow.includes('gh pr merge "${pr_number}" --squash --match-head-commit "${HEAD_SHA}"'));
   assert.equal(workflow.includes('--admin'), false);
   assert.equal(workflow.includes('--delete-branch'), false);
+});
+ 
+// OpenAI-Codex: verify the branch cleanup is leased to the successful CI SHA.
+test('merged Dependabot branch cleanup is exact-head leased and source-only', () => {
+  const merge = 'gh pr merge "${pr_number}" --squash --match-head-commit "${HEAD_SHA}"';
+  const lease = '--force-with-lease="refs/heads/${head_ref}:${HEAD_SHA}"';
+  const mergeAt = workflow.indexOf(merge);
+  const branchValidationAt = workflow.indexOf('git check-ref-format --branch "${head_ref}"');
+  const deleteAt = workflow.indexOf('git push --porcelain');
+  assert.ok(workflow.includes('actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'));
+  assert.ok(workflow.includes('ref: Source_Code'));
+  assert.ok(branchValidationAt >= 0 && branchValidationAt < mergeAt);
+  assert.ok(mergeAt >= 0 && deleteAt > mergeAt);
+  assert.ok(workflow.includes(lease));
+  assert.ok(workflow.includes('origin ":refs/heads/${head_ref}"'));
+  assert.equal(workflow.includes('--delete-branch'), false);
+  assert.equal(workflow.includes('--admin'), false);
 });

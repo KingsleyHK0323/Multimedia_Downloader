@@ -1,8 +1,8 @@
 name: Dependabot auto-merge
 
 # Merge only after the full CI workflow for a Dependabot PR has succeeded.
-# This privileged workflow uses API/CLI operations only and never checks out
-# or executes code from the pull request.
+# OpenAI-Codex: check out only Source_Code to delete an exact merged bot ref;
+# never check out or execute code from the pull request.
 on:
   workflow_run:
     workflows: [CI]
@@ -20,6 +20,10 @@ jobs:
       github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: Source_Code
+          persist-credentials: true
       - name: Merge successful Dependabot PR and request its release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -60,8 +64,10 @@ jobs:
               if (parts.length !== 2) process.exit(1);
               const pr = JSON.parse(parts[0]);
               const pages = JSON.parse(parts[1]);
-              if (pr.state !== "open" || pr.base?.ref !== "Source_Code" ||
+              if (pr.state !== "open" || pr.user?.login !== "dependabot[bot]" ||
+                  pr.base?.ref !== "Source_Code" ||
                   pr.head?.sha !== process.env.HEAD_SHA ||
+                  typeof pr.head?.ref !== "string" || !pr.head.ref.startsWith("dependabot/") ||
                   !Number.isInteger(pr.changed_files) || pr.changed_files < 1 || pr.changed_files > 3000 ||
                   !Array.isArray(pages) || !pages.every(Array.isArray)) process.exit(1);
               const files = pages.flat();
@@ -79,7 +85,22 @@ jobs:
           fi
 
           # OpenAI-Codex: merge only the exact commit whose CI run succeeded.
+          head_ref="$(gh api "repos/${GH_REPO}/pulls/${pr_number}" --jq '.head.ref')"
+          if [[ ! "${head_ref}" =~ ^dependabot/ ]] ||
+             ! git check-ref-format --branch "${head_ref}" >/dev/null; then
+            echo "::warning::The Dependabot branch ref is invalid; skipping merge and deletion."
+            exit 0
+          fi
+
           gh pr merge "${pr_number}" --squash --match-head-commit "${HEAD_SHA}"
+          # OpenAI-Codex: delete only if the remote ref still equals the tested SHA.
+          if git push --porcelain \
+            --force-with-lease="refs/heads/${head_ref}:${HEAD_SHA}" \
+            origin ":refs/heads/${head_ref}"; then
+            echo "Deleted merged Dependabot branch at ${HEAD_SHA}."
+          else
+            echo "::warning::The Dependabot branch moved or disappeared after merge; leaving it untouched."
+          fi
           release_label="$(gh api "repos/${GH_REPO}/pulls/${pr_number}" \
             --jq '[.labels[].name] | any(. == "release:patch")')"
           if [ "${release_label}" = "true" ]; then
