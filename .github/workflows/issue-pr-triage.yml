@@ -30,7 +30,7 @@ jobs:
     steps:
       - name: Create missing triage labels without changing existing labels
         id: ensure
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             // OpenAI-Codex_triage_changes: create only this exact allowlist.
@@ -91,7 +91,7 @@ jobs:
       issues: write
     steps:
       - name: Mark incomplete recognized issue forms
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -193,7 +193,7 @@ jobs:
       pull-requests: write
     steps:
       - name: Classify changed paths without checking out the PR
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
           script: |
             const { owner, repo } = context.repo;
