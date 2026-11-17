@@ -123,27 +123,51 @@ The frontend's TypeScript major version is kept within the range supported by
 `svelte-check`; Dependabot updates to TypeScript 7 are paused until that peer
 dependency supports it.
 
-Only pull requests merged into `Source_Code` with the `release:patch` label
-automatically increment the patch version, create and push the matching
-`vX.Y.Z` tag, and start the three-platform release build. Merged pull requests
-without that label do not create a release. The automatic release workflow can
-also be run manually for a merged pull request. If another pull request
-advances `Source_Code` while a release commit is being pushed, the workflow
-rebases that commit onto the new branch tip and retries. Dependabot groups
-minor and patch updates by ecosystem; its pull requests are merged
-automatically after the full CI workflow passes, but do not trigger a release
-unless they carry the `release:patch` label. Major updates remain separate
-pull requests and also require CI to pass before automatic merging. PRs that
-change files under
-`.github/workflows/` are left for manual merging because GitHub requires a
-separate Workflows permission to merge them. Put release notes under
-`Unreleased` in `CHANGELOG.md`; the release workflow promotes them to the new
-version entry.
+Only pull requests merged into Source_Code with the release:patch label
+automatically increment the patch version and push the matching vX.Y.Z tag.
+Merged pull requests without that label do not create a release. The automatic
+patch workflow dispatches .github/workflows/staged-release-pipeline.yml from
+the exact tag.
 
-Official installers are built and published automatically by GitHub Actions
-(see `.github/workflows/auto-patch-release.yml` and
-`.github/workflows/release.yml`) — no local release build or manual tag is
-needed after a labeled pull request is merged.
+The pipeline builds all three platforms on GitHub-hosted runners, checks the
+tag-to-commit identity and project version, stages exactly six installer files,
+and creates signed artifact provenance. A release is created as a draft only
+after every build and verification succeeds. GitHub Actions uploads the six
+files without replacement, downloads them again and compares their bytes, then
+publishes the release automatically. Failed or incomplete runs do not publish;
+a partial draft is left for maintainer handling.
+
+Automatic publication requires the staged-release-publish environment with
+only the v* tag policy and no required reviewers, plus an active tag ruleset
+for refs/tags/v* that blocks updates and deletions. The pipeline stops when
+these settings are missing or inconsistent. GitHub may hide ruleset bypass
+details from the workflow token; confirm that the ruleset has no bypass actors
+in repository Settings. This is a one-time settings check, not an approval
+step for each release.
+
+FFmpeg builds use fixed release URLs and are checked against pinned SHA-256
+values before extraction. Python 3.12 build requirements, including known
+transitive dependencies, are pinned in
+`.github/requirements/staged-release.txt` and installed with `--no-deps`.
+Python package files are not hash-locked, so their bytes still rely on PyPI
+and TLS rather than a pinned artifact digest. Release attestations identify
+the workflow and source commit; they do not authenticate those Python package
+files.
+
+Put release notes under Unreleased in CHANGELOG.md; the automatic patch
+version bump promotes them to the new version section. Merged pull requests
+can also be released manually through the automatic patch workflow. If another
+pull request advances Source_Code while a release commit is being pushed, the
+workflow rebases that commit onto the new branch tip and retries. Dependabot
+groups minor and patch updates by ecosystem; its pull requests are merged
+automatically after the full CI workflow passes, but do not trigger a release
+unless they carry the release:patch label. Major updates remain separate pull
+requests and also require CI to pass before automatic merging. PRs that change
+files under .github/workflows/ are left for manual merging because GitHub
+requires a separate Workflows permission to merge them.
+
+<!-- OpenAI-Codex: updated release build input documentation. -->
+<!-- OpenAI-Codex_Fork_GitHub_REPO: documented release automation and safeguards. -->
 
 The `CI` workflow runs the existing source checks on pushes and pull requests.
 Every Monday at 00:17 UTC (08:17 Hong Kong time), it also runs those checks on

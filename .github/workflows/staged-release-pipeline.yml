@@ -1,0 +1,355 @@
+name: Staged automatic release
+# OpenAI-Codex: pin release build inputs and verify downloaded FFmpeg assets.
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full lowercase commit SHA resolved from the release tag
+        required: true
+        type: string
+      tag:
+        description: Canonical version tag, for example v4.3.21
+        required: true
+        type: string
+
+run-name: Release ${{ inputs.tag }}
+
+concurrency:
+  group: staged-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-input:
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.validate.outputs.source_sha }}
+      tag: ${{ steps.validate.outputs.tag }}
+      version: ${{ steps.validate.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Validate tag dispatch identity
+        id: validate
+        env:
+          TAG: ${{ inputs.tag }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          WORKFLOW_SHA: ${{ github.sha }}
+          GITHUB_REF: ${{ github.ref }}
+        run: node .github/scripts/release-input-guard.mjs
+      - name: Resolve tag to the exact source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.validate.outputs.tag }}
+          SOURCE_SHA: ${{ steps.validate.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          resolved="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          [[ "$resolved" == "$SOURCE_SHA" ]] || { echo "::error::Release tag does not resolve to the requested source SHA."; exit 1; }
+
+  protection-preflight:
+    needs: validate-input
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.validate-input.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify automatic publication protections
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/verify_release_protection.mjs
+
+  build:
+    needs: [validate-input, protection-preflight]
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [ubuntu-22.04, macos-15, windows-latest]
+    runs-on: ${{ matrix.platform }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.validate-input.outputs.source_sha }}
+          persist-credentials: false
+      - name: Verify checked-out commit
+        env:
+          SOURCE_SHA: ${{ needs.validate-input.outputs.source_sha }}
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22"
+      - uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc
+        with:
+          toolchain: stable
+      - name: Verify project version
+        env:
+          EXPECTED_VERSION: ${{ needs.validate-input.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_version_consistency.py
+          python -c 'import json,os,sys; sys.exit(json.load(open("package.json", encoding="utf-8"))["version"] != os.environ["EXPECTED_VERSION"])'
+      - name: Install Linux dependencies
+        if: matrix.platform == 'ubuntu-22.04'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev libappindicator3-dev patchelf
+      - name: Install pinned Python engine dependencies
+        run: |
+          python -m pip install --upgrade pip==26.3
+          python -m pip install --no-deps -r .github/requirements/staged-release.txt
+          pyinstaller packaging/engine_sidecar.spec --noconfirm --distpath packaging/dist --workpath packaging/build
+      - name: Stage FFmpeg on Linux
+        if: matrix.platform == 'ubuntu-22.04'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg_url='https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-16-15-29/ffmpeg-N-128959-g4dbee3b241-linux64-gpl.tar.xz'
+          ffmpeg_sha256='098bdc14d7a5a62d7f5a1452e748a192cef66e045146e869a15ae20d1ab50544'
+          curl -fL --retry 3 --max-time 300 -o ffmpeg.tar.xz "$ffmpeg_url"
+          printf '%s  %s\n' "$ffmpeg_sha256" ffmpeg.tar.xz | sha256sum --check --status
+          xz -t ffmpeg.tar.xz
+          mkdir ffmpeg-dl
+          tar -xf ffmpeg.tar.xz -C ffmpeg-dl
+          bin="$(find ffmpeg-dl -name ffmpeg -type f | head -1)"
+          test -n "$bin"
+          cp "$bin" packaging/dist/engine_sidecar/ffmpeg
+          chmod +x packaging/dist/engine_sidecar/ffmpeg
+          packaging/dist/engine_sidecar/ffmpeg -version | head -1
+      - name: Stage FFmpeg on macOS
+        if: matrix.platform == 'macos-15'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          ffmpeg_url='https://ffmpeg.martin-riedl.de/download/macos/arm64/1789931890_9.0.2/ffmpeg.zip'
+          ffmpeg_sha256='c8ed4c4e6978a03c485edbfe4e0a5dc2380f8a30bba5150531b31b094492d924'
+          curl -fL --retry 3 --max-time 300 -o ffmpeg.zip "$ffmpeg_url"
+          printf '%s  %s\n' "$ffmpeg_sha256" ffmpeg.zip | shasum -a 256 -c -
+          unzip -tqq ffmpeg.zip
+          mkdir ffmpeg-dl
+          unzip -oq ffmpeg.zip -d ffmpeg-dl
+          bin="$(find ffmpeg-dl -name ffmpeg -type f | head -1)"
+          test -n "$bin"
+          case " $(lipo -archs "$bin") " in *" arm64 "*) ;; *) exit 1 ;; esac
+          cp "$bin" packaging/dist/engine_sidecar/ffmpeg
+          chmod +x packaging/dist/engine_sidecar/ffmpeg
+          packaging/dist/engine_sidecar/ffmpeg -version | head -1
+      - name: Stage FFmpeg on Windows
+        if: matrix.platform == 'windows-latest'
+        shell: bash
+        run: |
+          set -euo pipefail
+          ffmpeg_url='https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-16-15-29/ffmpeg-N-128959-g4dbee3b241-win64-gpl.zip'
+          ffmpeg_sha256='221c48fac8e679c09a1949ee9509c47bcd8b0ceb3d43129a448da0d468bab86c'
+          curl -fL --retry 3 --max-time 300 -o ffmpeg.zip "$ffmpeg_url"
+          printf '%s  %s\n' "$ffmpeg_sha256" ffmpeg.zip | sha256sum --check --status
+          7z t ffmpeg.zip >/dev/null
+          7z x ffmpeg.zip -offmpeg-dl >/dev/null
+          bin="$(find ffmpeg-dl -name ffmpeg.exe -type f | head -1)"
+          test -n "$bin"
+          cp "$bin" packaging/dist/engine_sidecar/ffmpeg.exe
+          packaging/dist/engine_sidecar/ffmpeg.exe -version | head -1
+      - name: Install JavaScript dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund --prefix frontend
+      - name: Build installers without publishing
+        run: npm run build
+      - name: Validate and stage exact platform artifacts
+        env:
+          SOURCE_SHA: ${{ needs.validate-input.outputs.source_sha }}
+          VERSION: ${{ needs.validate-input.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/staged_release_manifest.py stage \
+            --bundle-root src-tauri/target/release/bundle \
+            --output "$RUNNER_TEMP/staged-release-output" \
+            --source-sha "$SOURCE_SHA" --version "$VERSION" \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+            --platform "$PLATFORM"
+      - name: Attest staged files
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6
+        with:
+          subject-path: ${{ runner.temp }}/staged-release-output/*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: staged-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/staged-release-output/
+          if-no-files-found: error
+          retention-days: 7
+  verify-artifacts:
+    needs: [validate-input, build]
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      attestations: read
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.validate-input.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: staged-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: staged-artifacts
+      - name: Verify exact inventory, manifest hashes, and run identity
+        env:
+          SOURCE_SHA: ${{ needs.validate-input.outputs.source_sha }}
+          VERSION: ${{ needs.validate-input.outputs.version }}
+        run: |
+          python .github/scripts/staged_release_manifest.py verify \
+            --root staged-artifacts --source-sha "$SOURCE_SHA" --version "$VERSION" \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+      - name: Verify each signed build attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.validate-input.outputs.source_sha }}
+          TAG: ${{ needs.validate-input.outputs.tag }}
+          VERSION: ${{ needs.validate-input.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          assets=(
+            "Multimedia.Downloader-$VERSION-1.x86_64.rpm"
+            "Multimedia.Downloader_${VERSION}_amd64.AppImage"
+            "Multimedia.Downloader_${VERSION}_amd64.deb"
+            "Multimedia.Downloader_${VERSION}_aarch64.dmg"
+            "Multimedia.Downloader_${VERSION}_x64-setup.exe"
+            "Multimedia.Downloader_${VERSION}_x64_en-US.msi"
+          )
+          for name in "${assets[@]}"; do
+            file="$(find staged-artifacts -type f -name "$name" -print -quit)"
+            test -n "$file"
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/staged-release-pipeline.yml" \
+              --source-digest "$SOURCE_SHA" --source-ref "refs/tags/$TAG" \
+              --deny-self-hosted-runners
+          done
+
+  publish:
+    needs: [validate-input, protection-preflight, verify-artifacts]
+    runs-on: ubuntu-latest
+    environment:
+      name: staged-release-publish
+    permissions:
+      actions: read
+      attestations: read
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.validate-input.outputs.source_sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: staged-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: staged-artifacts
+      - name: Reverify staged files and provenance before publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ needs.validate-input.outputs.source_sha }}
+          TAG: ${{ needs.validate-input.outputs.tag }}
+          VERSION: ${{ needs.validate-input.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python .github/scripts/staged_release_manifest.py verify \
+            --root staged-artifacts --source-sha "$SOURCE_SHA" --version "$VERSION" \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+          assets=(
+            "Multimedia.Downloader-$VERSION-1.x86_64.rpm"
+            "Multimedia.Downloader_${VERSION}_amd64.AppImage"
+            "Multimedia.Downloader_${VERSION}_amd64.deb"
+            "Multimedia.Downloader_${VERSION}_aarch64.dmg"
+            "Multimedia.Downloader_${VERSION}_x64-setup.exe"
+            "Multimedia.Downloader_${VERSION}_x64_en-US.msi"
+          )
+          for name in "${assets[@]}"; do
+            file="$(find staged-artifacts -type f -name "$name" -print -quit)"
+            test -n "$file"
+            gh attestation verify "$file" --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/staged-release-pipeline.yml" \
+              --source-digest "$SOURCE_SHA" --source-ref "refs/tags/$TAG" \
+              --deny-self-hosted-runners
+          done
+      - name: Publish verified release after draft readback
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate-input.outputs.tag }}
+          SOURCE_SHA: ${{ needs.validate-input.outputs.source_sha }}
+          VERSION: ${{ needs.validate-input.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A failure intentionally leaves any draft or uploaded assets for review.
+          resolved="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          [[ "$resolved" == "$SOURCE_SHA" ]] || { echo "::error::Release tag changed before draft creation."; exit 1; }
+
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "$TAG" --generate-notes
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,tagName,assets \
+            --jq '.isDraft == true and .tagName == env.TAG and (.assets | length == 0)' | grep -qx true
+
+          paths=(
+            "staged-artifacts/staged-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-ubuntu-22.04/Multimedia.Downloader-$VERSION-1.x86_64.rpm"
+            "staged-artifacts/staged-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-ubuntu-22.04/Multimedia.Downloader_${VERSION}_amd64.AppImage"
+            "staged-artifacts/staged-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-ubuntu-22.04/Multimedia.Downloader_${VERSION}_amd64.deb"
+            "staged-artifacts/staged-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-macos-15/Multimedia.Downloader_${VERSION}_aarch64.dmg"
+            "staged-artifacts/staged-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-windows-latest/Multimedia.Downloader_${VERSION}_x64-setup.exe"
+            "staged-artifacts/staged-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-windows-latest/Multimedia.Downloader_${VERSION}_x64_en-US.msi"
+          )
+          for path in "${paths[@]}"; do
+            gh release upload "$TAG" "$path" --repo "$GITHUB_REPOSITORY"
+          done
+          readback="$RUNNER_TEMP/draft-readback"
+          mkdir "$readback"
+          for path in "${paths[@]}"; do
+            name="${path##*/}"
+            gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "$name" --dir "$readback"
+            cmp -s "$path" "$readback/$name" || { echo "::error::Draft asset byte readback failed."; exit 1; }
+          done
+
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,tagName,assets \
+            --jq '.isDraft == true and .tagName == env.TAG and (.assets | length == 6)' | grep -qx true
+          actual_names="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name] | sort | join(",")')"
+          expected_names="$(printf '%s\n' "${paths[@]##*/}" | LC_ALL=C sort | paste -sd, -)"
+          [[ "$actual_names" == "$expected_names" ]] || { echo "::error::Draft asset names are incomplete or unexpected."; exit 1; }
+          resolved="$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)"
+          [[ "$resolved" == "$SOURCE_SHA" ]] || { echo "::error::Release tag changed during upload."; exit 1; }
+
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft,tagName,assets,author \
+            --jq '.isDraft == false and .tagName == env.TAG and .author.login == "github-actions[bot]" and (.assets | length == 6)' | grep -qx true
+          actual_names="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[].name] | sort | join(",")')"
+          [[ "$actual_names" == "$expected_names" ]] || { echo "::error::Published release asset names changed."; exit 1; }

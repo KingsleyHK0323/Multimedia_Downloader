@@ -1,0 +1,20 @@
+# OpenAI-Codex: pin the full Python 3.12 release-build dependency set.
+# Install with --no-deps so no unlisted transitive version can be resolved.
+pip==26.3
+pyinstaller==6.22.3
+yt-dlp==2026.10.26
+mutagen==1.48.1
+brotli==1.2.1
+certifi==2026.10.23
+requests==2.34.2
+websockets==17.4
+altgraph==0.17.5
+packaging==25.0
+pyinstaller-hooks-contrib==2026.7
+setuptools==81.0.0
+macholib==1.16.4; sys_platform == "darwin"
+pefile==2024.8.26; sys_platform == "win32"
+pywin32-ctypes==0.2.3; sys_platform == "win32"
+charset-normalizer==3.4.4
+idna==3.11
+urllib3==2.5.0
