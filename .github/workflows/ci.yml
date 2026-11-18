@@ -51,6 +51,10 @@ jobs:
       - name: Test release input validation
         run: node --test .github/scripts/release-input-guard.test.mjs
 
+      # OpenAI-Codex: exercise exact-commit release checks with fake workflow runs.
+      - name: Test release publication guard
+        run: node --test .github/scripts/release-publish-guard.test.mjs
+
       # OpenAI-Codex: simulate upload collisions without external calls.
       - name: Test release upload collisions
         run: node --test .github/scripts/release-upload-create-only.test.mjs
