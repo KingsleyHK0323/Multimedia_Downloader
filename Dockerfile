@@ -4,6 +4,8 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY frontend/ ./
+COPY package.json /app/package.json
+COPY locales/ /app/locales/
 RUN npm run build:web
 
 FROM python:3.12-slim-bookworm
