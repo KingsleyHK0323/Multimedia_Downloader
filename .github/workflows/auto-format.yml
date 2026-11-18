@@ -65,4 +65,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "style: format changed Python files"
           git push origin "HEAD:refs/heads/Source_Code"
+          # OpenAI-Codex: GITHUB_TOKEN commits do not trigger push workflows.
           gh workflow run ci.yml --ref Source_Code
+          gh workflow run python-matrix.yml --ref Source_Code
+          gh workflow run cross-branch-checks.yml --ref Source_Code
+          gh workflow run container.yml --ref Source_Code
