@@ -36,7 +36,7 @@ function harness() {
     rest: {
       issues: { getLabel: async () => ({}), createLabel: async (args) => created.push(args.name),
         listLabelsForRepo: labelsFn, get: async () => ({ data: state.latestIssue }),
-        addLabels: async (args) => applied.push(args.labels) },
+        addLabels: async (args) => applied.push(args.labels), createComment: async () => ({}) },
       pulls: { get: async () => ({ data: state.latestPull }), listFiles: filesFn },
     },
   };

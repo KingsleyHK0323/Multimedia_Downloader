@@ -154,6 +154,8 @@ After a pull request merges, the `Clean merged branches` workflow deletes its un
 
 The `Container image` workflow builds and smoke-tests the web image on GitHub-hosted runners before pushing SHA and `edge` tags to GHCR. The service has no authentication; bind it to localhost unless you provide your own access controls. (OpenAI-Codex)
 
+The issue triage workflow requests missing required form information when it applies the `needs-info` label. (OpenAI-Codex)
+
 The `First interaction` workflow welcomes first-time issue and pull request authors. (OpenAI-Codex)
 
 The `Stale issue and PR management` workflow warns after 30 days of inactivity and closes after 14 additional days. Items with the `keep-open`, `never-stale`, or `security` label, or a milestone, are exempt. (OpenAI-Codex)

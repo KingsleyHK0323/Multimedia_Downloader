@@ -158,6 +158,8 @@ jobs:
                   latestCheckbox.title !== issue.title || latestCheckbox.body !== issue.body ||
                   names.has('bug') !== isBug || names.has('enhancement') !== isFeature || names.has('needs-info')) return;
               await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: ['needs-info'] });
+              // OpenAI-Codex: request the missing information once when applying the label.
+              await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: 'Please complete the required issue form fields or checks so the report can be reviewed. Thank you.' });
               return;
             }
             if (!incomplete) return;
@@ -183,6 +185,8 @@ jobs:
             // GitHub provides no atomic compare-and-label; state may still change here.
             await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number,
               labels: ['needs-info'] });
+            // OpenAI-Codex: request the missing information once when applying the label.
+            await github.rest.issues.createComment({ owner, repo, issue_number: issue.number, body: 'Please complete the required issue form fields or checks so the report can be reviewed. Thank you.' });
             // Do not remove labels or close issues automatically.
 
   pr-triage:
