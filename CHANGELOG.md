@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Fail the Windows release build on FFmpeg HTTP errors or invalid archives before extraction. (OpenAI-Codex)
 - Generate a temporary Python API documentation artifact on relevant source changes. (OpenAI-Codex)
 - Stage future releases as drafts until all installers and exact-commit checks succeed; keep v4.3.3 pending confirmation. (OpenAI-Codex)
 - Add a dynamically updated contributor count badge to the README. (OpenAI-Codex)

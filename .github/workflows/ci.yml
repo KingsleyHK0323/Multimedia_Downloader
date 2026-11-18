@@ -55,6 +55,10 @@ jobs:
       - name: Test release publication guard
         run: node --test .github/scripts/release-publish-guard.test.mjs
 
+      # OpenAI-Codex: verify Windows FFmpeg download failures stop the build.
+      - name: Test Windows FFmpeg download guard
+        run: node --test .github/scripts/release-windows-ffmpeg.test.mjs
+
       # OpenAI-Codex: simulate upload collisions without external calls.
       - name: Test release upload collisions
         run: node --test .github/scripts/release-upload-create-only.test.mjs
