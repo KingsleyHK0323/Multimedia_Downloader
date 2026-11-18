@@ -5,7 +5,7 @@ name: Dependabot auto-merge
 # or executes code from the pull request.
 on:
   workflow_run:
-    workflows: [CI]
+    workflows: [CI, Python matrix tests]
     types: [completed]
 
 permissions:
@@ -37,6 +37,25 @@ jobs:
             | head -n 1)"
           if [ -z "${pr_number}" ]; then
             echo "No open Dependabot PR targeting Source_Code is associated with this successful CI run."
+            exit 0
+          fi
+
+          # OpenAI-Codex: both latest PR test workflows must pass for this head.
+          runs="$(gh api "repos/${GH_REPO}/actions/runs?head_sha=${HEAD_SHA}&event=pull_request&per_page=100")"
+          if ! printf '%s' "$runs" | node -e '
+            const fs = require("fs");
+            try {
+              const data = JSON.parse(fs.readFileSync(0, "utf8"));
+              if (!Array.isArray(data.workflow_runs) || data.total_count > 100) process.exit(1);
+              const runs = data.workflow_runs;
+              for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
+                const latest = runs.filter(r => r.path === path && r.head_sha === process.env.HEAD_SHA)
+                  .sort((a, b) => b.id - a.id)[0];
+                if (!latest || latest.status !== "completed" || latest.conclusion !== "success") process.exit(1);
+              }
+            } catch { process.exit(1); }
+          '; then
+            echo "Waiting for successful CI and Python matrix runs on the same head."
             exit 0
           fi
 
