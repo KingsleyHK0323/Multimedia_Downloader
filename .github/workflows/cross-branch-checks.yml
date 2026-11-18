@@ -1,0 +1,47 @@
+# OpenAI-Codex: cross-check the two permanent branches.
+name: Cross-branch checks
+
+on:
+  push:
+    branches: [Source_Code]
+  workflow_run:
+    workflows: [Build and deploy preview site]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cross-branch-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-version:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: Source_Code
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Check source version consistency
+        run: python scripts/check_version_consistency.py
+
+  preview-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: Multimedia_Downloader_Web_Preview
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install preview dependencies
+        run: npm ci --no-audit --no-fund
+      - name: Build preview
+        run: npm run build

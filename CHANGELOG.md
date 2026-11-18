@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Check source version and build the website preview after source pushes and preview deployment runs. (OpenAI-Codex)
 - Require successful CI and cross-platform Python matrix runs for the same commit before Dependabot auto-merge. (OpenAI-Codex)
 - Remove eligible merged pull request branches while preserving the two permanent branches. (OpenAI-Codex)
 - Run Python tests in parallel across Windows, macOS and Linux with Python 3.10 through 3.14. (OpenAI-Codex)
