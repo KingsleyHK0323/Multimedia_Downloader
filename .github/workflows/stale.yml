@@ -15,6 +15,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      # OpenAI-Codex: create the shared stale label if it does not exist.
+      - name: Ensure stale label exists
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: 'stale' });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              try {
+                await github.rest.issues.createLabel({ owner, repo, name: 'stale', color: 'ededed', description: 'Inactive and awaiting a response' });
+              } catch (createError) {
+                if (createError.status !== 422) throw createError;
+                await github.rest.issues.getLabel({ owner, repo, name: 'stale' });
+              }
+            }
       - uses: actions/stale@v10
         with:
           days-before-issue-stale: 30
