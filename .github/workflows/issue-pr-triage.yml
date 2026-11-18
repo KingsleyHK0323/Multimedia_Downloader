@@ -275,3 +275,33 @@ jobs:
             if (add.length) await github.rest.issues.addLabels({ owner, repo,
               issue_number: number, labels: add });
             // No branch deletion, release label, close or merge operation.
+
+  # OpenAI-Codex: classify issue titles without executing issue content.
+  issue-area-labels:
+    needs: label-bootstrap
+    if: github.event_name == 'issues' && needs.label-bootstrap.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Classify issue title
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue = context.payload.issue;
+            if (!issue || issue.user?.type !== 'User' || issue.state !== 'open' ||
+                typeof issue.title !== 'string' || /^(\[Automation\]|AI model roster:)/i.test(issue.title)) return;
+            const rules = [
+              [/\b(ui|frontend|interface|display)\b/i, 'area:frontend'],
+              [/\b(download|downloader|convert|conversion|engine|cookie)\b/i, 'area:engine'],
+              [/\b(workflow|actions|automation|dependabot)\b/i, 'area:automation'],
+              [/\b(readme|documentation|docs|translation)\b/i, 'area:docs'],
+            ];
+            const wanted = rules.filter(([pattern]) => pattern.test(issue.title)).map(([, label]) => label);
+            if (!wanted.length) return;
+            const latest = (await github.rest.issues.get({ owner, repo, issue_number: issue.number })).data;
+            if (latest.state !== 'open' || latest.title !== issue.title || latest.user?.login !== issue.user.login) return;
+            const current = new Set((latest.labels || []).map(label => label.name));
+            const add = wanted.filter(label => !current.has(label));
+            if (add.length) await github.rest.issues.addLabels({ owner, repo, issue_number: issue.number, labels: add });

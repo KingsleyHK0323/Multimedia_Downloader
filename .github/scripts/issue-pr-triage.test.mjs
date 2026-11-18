@@ -12,7 +12,7 @@ const scripts = workflow.split('          script: |\n').slice(1).map((part) => {
   }
   return lines.join('\n');
 });
-assert.equal(scripts.length, 3, 'expected bootstrap, issue and PR scripts');
+assert.equal(scripts.length, 4, 'expected bootstrap, issue, PR and issue area scripts');
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const ctx = { repo: { owner: 'owner', repo: 'repo' } };
@@ -117,3 +117,16 @@ test('missing labels, bot PRs and incomplete file lists cause no labeling', asyn
   assert.deepEqual(h.applied, []);
 });
 
+
+
+// OpenAI-Codex: verify recognized issue title labels and stale-state guard.
+test('issue title area classification skips changed titles', async () => {
+  const h = harness(), item = { ...issue(), title: 'Download UI problem' };
+  h.state.latestIssue = clone(item);
+  await h.run(3, { ...ctx, payload: { issue: item } });
+  assert.deepEqual(h.applied, [['area:frontend', 'area:engine']]);
+  h.applied.length = 0;
+  h.state.latestIssue = { ...item, title: 'Changed' };
+  await h.run(3, { ...ctx, payload: { issue: item } });
+  assert.deepEqual(h.applied, []);
+});

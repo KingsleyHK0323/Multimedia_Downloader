@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Classify recognized issue title keywords into repository area labels. (OpenAI-Codex)
 - Ask for missing required issue form information when applying the needs-info label. (OpenAI-Codex)
 - Build and smoke-test the web container before pushing it to GitHub Container Registry. (OpenAI-Codex)
 - Welcome first-time issue and pull request authors. (OpenAI-Codex)
