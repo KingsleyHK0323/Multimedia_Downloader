@@ -20,7 +20,8 @@ COPY ai/ ./ai/
 COPY engine/ ./engine/
 COPY i18n/ ./i18n/
 COPY locales/ ./locales/
-COPY engine_sidecar.py web_app.py ./
+COPY engine_sidecar.py web_app.py LICENSE THIRD-PARTY-NOTICES.md ./
+COPY third-party/ ./third-party/
 COPY --from=frontend-build /app/frontend/dist ./frontend/dist
 ENV HOST=0.0.0.0 PORT=5000 MMDL_DOWNLOADS=/data PYTHONDONTWRITEBYTECODE=1
 USER appuser
