@@ -383,7 +383,7 @@ jobs:
     needs: [setup, build]
     if: needs.setup.outputs.tag != 'v4.3.22' && needs.setup.outputs.tag != 'v4.3.3'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -401,8 +401,10 @@ jobs:
           for suffix in '.deb' '.rpm' '.AppImage' '.dmg' '.msi' '-setup.exe'; do
             jq -e --arg suffix "$suffix" 'any(.[]; endswith($suffix))' <<< "$assets" >/dev/null || { echo "::error::Missing $suffix installer."; exit 1; }
           done
-          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100")"
-          SHA="$sha" node -e '
+          verified=false
+          for attempt in $(seq 1 60); do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100")"
+            if SHA="$sha" node -e '
             const fs = require("fs");
             try {
               const data = JSON.parse(fs.readFileSync(0, "utf8"));
@@ -414,5 +416,12 @@ jobs:
                 if (!run || run.status !== "completed" || run.conclusion !== "success") process.exit(1);
               }
             } catch { process.exit(1); }
-          ' <<< "$runs" || { echo "::error::CI and matrix must both pass for the tagged Source_Code commit."; exit 1; }
+            ' <<< "$runs"; then
+              verified=true
+              break
+            fi
+            echo "Waiting for both checks on $sha ($attempt/60)."
+            sleep 10
+          done
+          [ "$verified" = true ] || { echo "::error::CI and matrix must both pass for the tagged Source_Code commit."; exit 1; }
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
