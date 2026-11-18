@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Run Python tests in parallel across Windows, macOS and Linux with Python 3.10 through 3.14. (OpenAI-Codex)
 - Format changed Python files on Source_Code pushes and run CI after formatter commits. (OpenAI-Codex)
 
 ### [4.3.22] — 2026-11-18

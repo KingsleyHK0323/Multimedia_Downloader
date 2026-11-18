@@ -1,0 +1,35 @@
+# OpenAI-Codex: exercise Python across supported desktop runner environments.
+name: Python matrix tests
+
+on:
+  push:
+    branches: [Source_Code]
+  pull_request:
+    branches: [Source_Code]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python-matrix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-15, windows-latest]
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install test dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Run Python tests
+        run: python -m unittest discover -s tests -v
