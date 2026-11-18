@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Declare the repository owner for code ownership review requests. (OpenAI-Codex)
 - Check source version and build the website preview after source pushes and preview deployment runs. (OpenAI-Codex)
 - Require successful CI and cross-platform Python matrix runs for the same commit before Dependabot auto-merge. (OpenAI-Codex)
 - Remove eligible merged pull request branches while preserving the two permanent branches. (OpenAI-Codex)
