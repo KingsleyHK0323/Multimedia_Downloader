@@ -23,7 +23,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: Source_Code
+          # OpenAI-Codex: validate the pushed commit, not a later branch tip.
+          ref: ${{ github.event_name == 'push' && github.sha || 'Source_Code' }}
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
@@ -34,9 +35,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # OpenAI-Codex: do not report a failed website deployment as healthy.
+      - name: Require successful preview deployment
+        if: github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'Multimedia_Downloader_Web_Preview'
+        env:
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+        run: test "$CONCLUSION" = success
       - uses: actions/checkout@v7
         with:
-          ref: Multimedia_Downloader_Web_Preview
+          # OpenAI-Codex: check the deployed website commit for Pages events.
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'Multimedia_Downloader_Web_Preview' && github.event.workflow_run.head_sha || 'Multimedia_Downloader_Web_Preview' }}
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
