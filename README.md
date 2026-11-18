@@ -152,6 +152,8 @@ The `Auto-format Python` workflow formats changed tracked Python files on pushes
 
 After a pull request merges, the `Clean merged branches` workflow deletes its unchanged source branch when it belongs to this repository. It preserves `Source_Code` and `Multimedia_Downloader_Web_Preview`. (OpenAI-Codex)
 
+The `Stale issue and PR management` workflow warns after 30 days of inactivity and closes after 14 additional days. Items with the `keep-open`, `never-stale`, or `security` label, or a milestone, are exempt. (OpenAI-Codex)
+
 The repository owner is listed in `.github/CODEOWNERS` for pull request review requests. GitHub does not request a review from the author of their own pull request. (OpenAI-Codex)
 
 The `Cross-branch checks` workflow checks the current `Source_Code` version and builds the `Multimedia_Downloader_Web_Preview` branch after source pushes or completion of the preview deployment workflow. (OpenAI-Codex)

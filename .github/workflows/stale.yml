@@ -1,0 +1,35 @@
+# OpenAI-Codex: warn before closing inactive issues and pull requests.
+name: Stale issue and PR management
+
+on:
+  schedule:
+    - cron: "41 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/stale@v10
+        with:
+          days-before-issue-stale: 30
+          days-before-pr-stale: 30
+          days-before-issue-close: 14
+          days-before-pr-close: 14
+          stale-issue-label: stale
+          stale-pr-label: stale
+          exempt-issue-labels: keep-open,never-stale,security
+          exempt-pr-labels: keep-open,never-stale,security
+          exempt-all-issue-milestones: true
+          exempt-all-pr-milestones: true
+          stale-issue-message: "This issue has been inactive for 30 days. It will close after another 14 days without activity. Add the keep-open label if it should remain open."
+          stale-pr-message: "This pull request has been inactive for 30 days. It will close after another 14 days without activity. Add the keep-open label if it should remain open."
+          close-issue-message: "Closing after the inactivity notice. Please reopen if the issue still needs attention."
+          close-pr-message: "Closing after the inactivity notice. Please reopen when work resumes."
+          delete-branch: false
+          operations-per-run: 30
