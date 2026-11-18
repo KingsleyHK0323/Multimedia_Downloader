@@ -67,6 +67,10 @@ jobs:
       - name: Test release input validation
         run: node --test .github/scripts/release-input-guard.test.mjs
 
+      # OpenAI-Codex: verify exact release asset names and sizes with fixtures.
+      - name: Test release asset inventory guard
+        run: node --test .github/scripts/verify-release-assets.test.mjs
+
       # OpenAI-Codex: exercise exact-commit release checks with fake workflow runs.
       - name: Test release publication guard
         run: node --test .github/scripts/release-publish-guard.test.mjs

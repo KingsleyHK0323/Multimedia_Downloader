@@ -405,10 +405,9 @@ jobs:
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
-          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[] | select(.size > 0) | .name]')"
-          for suffix in '.deb' '.rpm' '.AppImage' '.dmg' '.msi' '-setup.exe'; do
-            jq -e --arg suffix "$suffix" 'any(.[]; endswith($suffix))' <<< "$assets" >/dev/null || { echo "::error::Missing $suffix installer."; exit 1; }
-          done
+          # OpenAI-Codex: require the expected names and nonempty files for this exact version.
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets > "$RUNNER_TEMP/release-assets.json"
+          node .github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/release-assets.json"
           verified=false
           for attempt in $(seq 1 60); do
             runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100")"
