@@ -156,6 +156,8 @@ After a pull request merges, the `Clean merged branches` workflow deletes its un
 
 Release builds upload installers to a draft. Automatic publication requires all six installer types and successful CI and Python matrix runs for the tagged commit; v4.3.3 remains a draft pending separate confirmation. A failed build or missing verification leaves the release unpublished. (OpenAI-Codex)
 
+The `API documentation build` workflow generates an HTML reference for the Python engine and AI modules as a short-lived GitHub Actions artifact. It does not publish the reference to the site or wiki. (OpenAI-Codex)
+
 The `Container image` workflow builds and smoke-tests the web image on GitHub-hosted runners before pushing SHA and `edge` tags to GHCR. The service has no authentication; bind it to localhost unless you provide your own access controls. (OpenAI-Codex)
 
 The issue triage workflow classifies known area keywords in issue titles and requests missing required form information when it applies the `needs-info` label. (OpenAI-Codex)
