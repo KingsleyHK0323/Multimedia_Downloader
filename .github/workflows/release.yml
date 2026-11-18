@@ -43,6 +43,7 @@ on:
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: release-${{ inputs.tag || github.event.inputs.tag || github.ref_name }}
@@ -153,11 +154,10 @@ jobs:
               gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --prerelease --title "$tag Public Beta" --notes "Public Beta: download cancellation and error guidance improvements. The application identifier changed; existing installations may require manual data migration. Network stalls can delay cancellation."
             fi
           elif gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release $tag already exists — leaving it as-is."
+            # OpenAI-Codex: never attach new builds to a published release.
+            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -qx true
           else
-            echo "No release for $tag yet — creating one (edit notes later with"
-            echo "'gh release edit $tag --notes-file ...' for polished tri-lingual notes)."
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes
+            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --title "$tag" --generate-notes
           fi
 
   build:
@@ -377,3 +377,42 @@ jobs:
             jq -e --arg suffix "$suffix" 'any(.[]; endswith($suffix))' <<< "$assets" >/dev/null || { echo "::error::Missing $suffix installer."; exit 1; }
           done
           gh release edit v4.3.22 --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+
+  # OpenAI-Codex: publish only complete builds of a commit with passing CI.
+  publish-stable:
+    needs: [setup, build]
+    if: needs.setup.outputs.tag != 'v4.3.22' && needs.setup.outputs.tag != 'v4.3.3'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.setup.outputs.tag }}
+      - name: Verify installers and exact-commit tests
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.setup.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git rev-parse HEAD)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          assets="$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[] | select(.size > 0) | .name]')"
+          for suffix in '.deb' '.rpm' '.AppImage' '.dmg' '.msi' '-setup.exe'; do
+            jq -e --arg suffix "$suffix" 'any(.[]; endswith($suffix))' <<< "$assets" >/dev/null || { echo "::error::Missing $suffix installer."; exit 1; }
+          done
+          runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100")"
+          SHA="$sha" node -e '
+            const fs = require("fs");
+            try {
+              const data = JSON.parse(fs.readFileSync(0, "utf8"));
+              if (!Array.isArray(data.workflow_runs) || data.total_count > 100) process.exit(1);
+              for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
+                const run = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.SHA &&
+                  r.head_branch === "Source_Code" && ["push", "workflow_dispatch"].includes(r.event))
+                  .sort((a, b) => b.id - a.id)[0];
+                if (!run || run.status !== "completed" || run.conclusion !== "success") process.exit(1);
+              }
+            } catch { process.exit(1); }
+          ' <<< "$runs" || { echo "::error::CI and matrix must both pass for the tagged Source_Code commit."; exit 1; }
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false

@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Stage future releases as drafts until all installers and exact-commit checks succeed; keep v4.3.3 pending confirmation. (OpenAI-Codex)
 - Add a dynamically updated contributor count badge to the README. (OpenAI-Codex)
 - Classify recognized issue title keywords into repository area labels. (OpenAI-Codex)
 - Ask for missing required issue form information when applying the needs-info label. (OpenAI-Codex)

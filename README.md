@@ -154,6 +154,8 @@ The `Auto-format Python` workflow formats changed tracked Python files on pushes
 
 After a pull request merges, the `Clean merged branches` workflow deletes its unchanged source branch when it belongs to this repository. It preserves `Source_Code` and `Multimedia_Downloader_Web_Preview`. (OpenAI-Codex)
 
+Release builds upload installers to a draft. Automatic publication requires all six installer types and successful CI and Python matrix runs for the tagged commit; v4.3.3 remains a draft pending separate confirmation. A failed build or missing verification leaves the release unpublished. (OpenAI-Codex)
+
 The `Container image` workflow builds and smoke-tests the web image on GitHub-hosted runners before pushing SHA and `edge` tags to GHCR. The service has no authentication; bind it to localhost unless you provide your own access controls. (OpenAI-Codex)
 
 The issue triage workflow classifies known area keywords in issue titles and requests missing required form information when it applies the `needs-info` label. (OpenAI-Codex)

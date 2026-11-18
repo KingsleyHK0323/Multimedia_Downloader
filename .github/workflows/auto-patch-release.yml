@@ -15,6 +15,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: automatic-patch-release-Source_Code
@@ -108,12 +109,16 @@ jobs:
             git push origin "refs/tags/$tag"
           fi
 
+          # OpenAI-Codex: bot pushes do not trigger these verification workflows.
+          gh workflow run ci.yml --ref Source_Code
+          gh workflow run python-matrix.yml --ref Source_Code
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
   release:
     needs: bump
     permissions:
       contents: write
+      actions: read
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.bump.outputs.tag }}
