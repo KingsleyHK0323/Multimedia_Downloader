@@ -70,3 +70,4 @@ jobs:
           gh workflow run python-matrix.yml --ref Source_Code
           gh workflow run cross-branch-checks.yml --ref Source_Code
           gh workflow run container.yml --ref Source_Code
+          gh workflow run api-docs.yml --ref Source_Code
