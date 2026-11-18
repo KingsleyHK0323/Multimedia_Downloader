@@ -29,6 +29,21 @@ jobs:
         run: npm ci
       - name: Build site
         run: npm run build
+      # OpenAI-Codex: publish the approved API modules with the website.
+      - name: Check out application source for API documentation
+        uses: actions/checkout@v6
+        with:
+          ref: Source_Code
+          path: .api-source
+      - name: Set up Python for API documentation
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install API documentation dependencies
+        run: python -m pip install pdoc==15.0.4 -r .api-source/requirements-web.txt
+      - name: Generate API reference
+        working-directory: .api-source
+        run: python -m pdoc -o ../dist/api engine ai i18n
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload Pages artifact
