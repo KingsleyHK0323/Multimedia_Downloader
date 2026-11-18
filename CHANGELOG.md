@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Add a dynamically updated contributor count badge to the README. (OpenAI-Codex)
 - Classify recognized issue title keywords into repository area labels. (OpenAI-Codex)
 - Ask for missing required issue form information when applying the needs-info label. (OpenAI-Codex)
 - Build and smoke-test the web container before pushing it to GitHub Container Registry. (OpenAI-Codex)

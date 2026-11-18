@@ -3,6 +3,8 @@
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/KingsleyHK0323/Multimedia_Downloader?sort=semver)](https://github.com/KingsleyHK0323/Multimedia_Downloader/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/KingsleyHK0323/Multimedia_Downloader/total)](https://github.com/KingsleyHK0323/Multimedia_Downloader/releases)
+[![Contributors](https://img.shields.io/github/contributors/KingsleyHK0323/Multimedia_Downloader)](https://github.com/KingsleyHK0323/Multimedia_Downloader/graphs/contributors)
+<!-- OpenAI-Codex: release, download and contributor badges update dynamically. -->
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Web-blue)](#run-as-a-web-app-v41)
 [![Built with](https://img.shields.io/badge/built%20with-Tauri%20·%20Svelte%20·%20Python-6E56CF)](#project-layout)
 
