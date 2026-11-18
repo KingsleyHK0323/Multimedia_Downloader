@@ -124,21 +124,30 @@ jobs:
               core.notice('Issue contains an HTML comment boundary; form classification skipped.');
               return;
             }
-            // OpenAI-Codex_Fork_GitHub_REPO: fenced text can imitate form headings.
-            // Conservatively skip any body containing a possible Markdown fence.
-            if (body.split(/\r?\n/).some((line) => /^ {0,3}(?:`{3,}|~{3,})/.test(line))) {
-              core.notice('Issue contains a code fence; form classification skipped.');
-              return;
-            }
+            // OpenAI-Codex: fenced logs count as field content, never as form headings.
             const sections = new Map();
             let current = null;
+            let fence = null;
             for (const line of body.split(/\r?\n/)) {
+              const opening = line.match(/^ {0,3}(`{3,}|~{3,})/);
+              if (fence) {
+                if (current !== null) sections.get(current).push(line);
+                const closing = line.match(/^ {0,3}(`+|~+)\s*$/);
+                if (closing && closing[1][0] === fence.char && closing[1].length >= fence.length) fence = null;
+                continue;
+              }
+              if (opening) {
+                fence = { char: opening[1][0], length: opening[1].length };
+                if (current !== null) sections.get(current).push(line);
+                continue;
+              }
               if (line.startsWith('### ')) {
                 current = line.slice(4).trim();
                 if (sections.has(current)) return; // Ambiguous form: do not guess.
                 sections.set(current, []);
               } else if (current !== null) sections.get(current).push(line);
             }
+            if (fence) return; // Unclosed fences make the structure ambiguous.
             // All expected headings must exist before treating the body as a form.
             if (!required.every((name) => sections.has(name))) return;
             const incomplete = required.some((name) => {

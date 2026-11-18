@@ -141,3 +141,19 @@ test('issue area classification considers prose but ignores fenced logs', async 
   await h.run(3, { ...ctx, payload: { issue: item } });
   assert.deepEqual(h.applied, [['area:docs']]);
 });
+
+// OpenAI-Codex: form logs cannot create headings but no longer block triage.
+test('form triage ignores headings inside fenced logs', async () => {
+  const h = harness(), item = issue();
+  item.body += '\n### Logs\n```text\n### App version\nforged\n```\n';
+  h.state.latestIssue = clone(item);
+  await h.run(1, { ...ctx, payload: { issue: item } });
+  assert.deepEqual(h.applied, [['needs-info']]);
+});
+test('form triage rejects an unclosed log fence', async () => {
+  const h = harness(), item = issue();
+  item.body += '\n### Logs\n```text\n### App version\nforged';
+  h.state.latestIssue = clone(item);
+  await h.run(1, { ...ctx, payload: { issue: item } });
+  assert.deepEqual(h.applied, []);
+});
