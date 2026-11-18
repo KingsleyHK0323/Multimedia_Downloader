@@ -160,7 +160,7 @@ The `API documentation build` workflow generates an HTML reference for the Pytho
 
 The `Container image` workflow builds and smoke-tests the web image on GitHub-hosted runners before pushing SHA and `edge` tags to GHCR. The service has no authentication; bind it to localhost unless you provide your own access controls. (OpenAI-Codex)
 
-The issue triage workflow classifies known area keywords in issue titles and requests missing required form information when it applies the `needs-info` label. (OpenAI-Codex)
+The issue triage workflow classifies known area keywords in issue titles and prose (excluding fenced logs) and requests missing required form information when it applies the `needs-info` label. (OpenAI-Codex)
 
 The `First interaction` workflow welcomes first-time issue and pull request authors. (OpenAI-Codex)
 

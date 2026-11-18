@@ -132,3 +132,12 @@ test('issue title area classification skips changed titles', async () => {
   await h.run(3, { ...ctx, payload: { issue: item } });
   assert.deepEqual(h.applied, []);
 });
+
+
+// OpenAI-Codex: ignore log fences while classifying issue prose.
+test('issue area classification considers prose but ignores fenced logs', async () => {
+  const h = harness(), item = { ...issue(), title: 'Question', body: 'Documentation question\n\x60\x60\x60\ndownload error\n\x60\x60\x60' };
+  h.state.latestIssue = clone(item);
+  await h.run(3, { ...ctx, payload: { issue: item } });
+  assert.deepEqual(h.applied, [['area:docs']]);
+});
