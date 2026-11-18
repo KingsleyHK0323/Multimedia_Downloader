@@ -1,6 +1,11 @@
 // OpenAI-Codex: exercise release inventory validation without a GitHub release.
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { validateAssets } from './verify-release-assets.mjs';
 
 const names = [
@@ -22,4 +27,22 @@ test('rejects missing, wrong version, duplicate, empty or invalid assets', () =>
   const empty = assets(); empty[0].size = 0;
   assert.throws(() => validateAssets('v4.3.22', { assets: empty }));
   assert.throws(() => validateAssets('v4.3.22-rc1', { assets: assets() }));
+});
+
+test('CLI rejects invalid inventories and accepts complete ones', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'release-assets-'));
+  try {
+    const file = join(dir, 'assets.json');
+    const script = fileURLToPath(new URL('./verify-release-assets.mjs', import.meta.url));
+    writeFileSync(file, JSON.stringify({ assets: assets().slice(1) }));
+    const invalid = spawnSync(process.execPath, [script, 'v4.3.22', file], { encoding: 'utf8' });
+    assert.equal(invalid.status, 1);
+    assert.match(invalid.stderr, /Release asset validation failed/);
+    writeFileSync(file, JSON.stringify({ assets: assets() }));
+    const valid = spawnSync(process.execPath, [script, 'v4.3.22', file], { encoding: 'utf8' });
+    assert.equal(valid.status, 0);
+    assert.match(valid.stdout, /Verified six version-specific installer assets/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
