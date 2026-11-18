@@ -112,6 +112,10 @@ jobs:
       - name: Test Dependabot watchdog scan names
         run: node --test .github/scripts/dependabot-root-scan.test.mjs
 
+      # OpenAI-Codex: check branch-cleanup decisions without deleting refs.
+      - name: Test merged branch cleanup guard
+        run: node --test .github/scripts/clean-merged-branches.test.mjs
+
       # OpenAI-Codex: exercise issue and PR triage with mocked GitHub APIs.
       - name: Test issue and PR triage
         run: node --test .github/scripts/issue-pr-triage.test.mjs
