@@ -235,6 +235,21 @@ one steers the path straight back out of the folder. Set
 `MMDL_ALLOW_ABSOLUTE_PATHS=1` to lift the restriction when you are running it
 locally for yourself and want to save elsewhere on the machine.
 
+### Run the web app with a container
+
+The GHCR package visibility is controlled by the repository owner. Authenticate
+to GHCR first if the package is private. Bind the service to localhost; it does
+not provide authentication.
+
+```sh
+docker pull ghcr.io/kingsleyhk0323/multimedia_downloader:edge
+docker run --rm -p 127.0.0.1:5000:5000 -v mmdl-data:/data ghcr.io/kingsleyhk0323/multimedia_downloader:edge
+```
+
+Open `http://localhost:5000`. The named volume persists downloaded files.
+The `edge` tag tracks a tested development build, not a versioned release.
+(OpenAI-Codex)
+
 ## Run on Android (Termux)
 
 The desktop app can't run on Android, but the Python engine can — via
