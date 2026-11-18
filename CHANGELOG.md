@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Welcome first-time issue and pull request authors. (OpenAI-Codex)
 - Warn on inactive issues and pull requests, with exemptions for tracked and sensitive items, before closing them. (OpenAI-Codex)
 - Declare the repository owner for code ownership review requests. (OpenAI-Codex)
 - Check source version and build the website preview after source pushes and preview deployment runs. (OpenAI-Codex)
