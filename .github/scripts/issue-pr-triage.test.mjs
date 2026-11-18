@@ -27,7 +27,7 @@ const pull = () => ({ number: 2, user: person, state: 'open', head: { sha: 'a'.r
   base: { sha: 'b'.repeat(40), ref: 'Source_Code' }, changed_files: 1, labels: [] });
 
 function harness() {
-  const applied = [], created = [];
+  const applied = [], created = [], comments = [];
   const labelsFn = () => {}, filesFn = () => {};
   const state = { latestIssue: issue(), latestPull: pull(), files: [{ filename: 'frontend/src/file.ts', status: 'modified' }],
     labels: [{ name: 'needs-info' }, { name: 'area:frontend' }] };
@@ -36,19 +36,21 @@ function harness() {
     rest: {
       issues: { getLabel: async () => ({}), createLabel: async (args) => created.push(args.name),
         listLabelsForRepo: labelsFn, get: async () => ({ data: state.latestIssue }),
-        addLabels: async (args) => applied.push(args.labels), createComment: async () => ({}) },
+        addLabels: async (args) => applied.push(args.labels), createComment: async (args) => comments.push(args.body) },
       pulls: { get: async () => ({ data: state.latestPull }), listFiles: filesFn },
     },
   };
   const core = { setOutput() {}, warning() {}, notice() {} };
   const run = async (index, context) => new AsyncFunction('context', 'github', 'core', scripts[index])(context, github, core);
-  return { applied, created, state, github, run };
+  return { applied, created, comments, state, github, run };
 }
 
 test('incomplete recognized issue receives needs-info', async () => {
   const h = harness(), item = issue();
   await h.run(1, { ...ctx, payload: { issue: item } });
   assert.deepEqual(h.applied, [['needs-info']]);
+  assert.equal(h.comments.length, 1);
+  assert.match(h.comments[0], /complete the required issue form fields/i);
 });
 
 test('bot issue and bot bootstrap do not write', async () => {
