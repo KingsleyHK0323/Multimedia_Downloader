@@ -99,6 +99,8 @@ jobs:
 
           # OpenAI-Codex: merge only the exact commit whose CI run succeeded.
           gh pr merge "${pr_number}" --squash --match-head-commit "${HEAD_SHA}"
+          # OpenAI-Codex: bot merges do not trigger normal PR workflows; request cleanup explicitly.
+          gh workflow run clean-merged-branches.yml --ref Source_Code -f pr_number="${pr_number}"
           release_label="$(gh api "repos/${GH_REPO}/pulls/${pr_number}" \
             --jq '[.labels[].name] | any(. == "release:patch")')"
           if [ "${release_label}" = "true" ]; then

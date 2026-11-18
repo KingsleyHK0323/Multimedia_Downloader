@@ -4,6 +4,12 @@ name: Clean merged branches
 on:
   pull_request_target:
     types: [closed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Merged pull request number'
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,16 +17,23 @@ permissions:
 
 jobs:
   cleanup:
-    if: github.event.pull_request.merged == true
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Delete unchanged merged branch
         uses: actions/github-script@v8
+        env:
+          MANUAL_PR: ${{ inputs.pr_number }}
         with:
           script: |
-            const pr = context.payload.pull_request;
             const { owner, repo } = context.repo;
+            let pr = context.payload.pull_request;
+            if (context.eventName === 'workflow_dispatch') {
+              if (!/^[1-9][0-9]{0,9}$/.test(process.env.MANUAL_PR)) throw new Error('Invalid PR number');
+              pr = (await github.rest.pulls.get({ owner, repo, pull_number: Number(process.env.MANUAL_PR) })).data;
+            }
+            if (!pr || !pr.merged) throw new Error('PR is not merged');
             const branch = pr.head.ref;
             if (!pr.head.repo || pr.head.repo.full_name !== context.payload.repository.full_name) {
               core.info('External fork; no branch will be deleted.');
