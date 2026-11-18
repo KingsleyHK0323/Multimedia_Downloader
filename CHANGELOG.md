@@ -12,6 +12,9 @@
 
 ### Unreleased
 
+#### Repository automation
+- Format changed Python files on Source_Code pushes and run CI after formatter commits. (OpenAI-Codex)
+
 ### [4.3.22] — 2026-11-18
 
 #### Fixed
