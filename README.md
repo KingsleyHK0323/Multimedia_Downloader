@@ -150,6 +150,8 @@ needed after a labeled pull request is merged.
 
 The `Auto-format Python` workflow formats changed tracked Python files on pushes to `Source_Code` with Black and commits formatting changes back to that branch. It requests a fresh CI run after its commit; a concurrent branch update causes its push to fail safely. (OpenAI-Codex)
 
+After a pull request merges, the `Clean merged branches` workflow deletes its unchanged source branch when it belongs to this repository. It preserves `Source_Code` and `Multimedia_Downloader_Web_Preview`. (OpenAI-Codex)
+
 The `Python matrix tests` workflow runs the Python suite on Windows, macOS, and Linux with Python 3.10 through 3.14. (OpenAI-Codex)
 
 The `CI` workflow runs the existing source checks on pushes and pull requests.

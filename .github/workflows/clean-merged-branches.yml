@@ -1,0 +1,47 @@
+# OpenAI-Codex: preserve both permanent branches when cleaning merged heads.
+name: Clean merged branches
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Delete unchanged merged branch
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const { owner, repo } = context.repo;
+            const branch = pr.head.ref;
+            if (!pr.head.repo || pr.head.repo.full_name !== context.payload.repository.full_name) {
+              core.info('External fork; no branch will be deleted.');
+              return;
+            }
+            if (['Source_Code', 'Multimedia_Downloader_Web_Preview'].includes(branch)) {
+              core.info('Permanent project branch; no deletion.');
+              return;
+            }
+            let ref;
+            try {
+              ref = await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
+            } catch (error) {
+              if (error.status === 404) {
+                core.info('Branch already absent.');
+                return;
+              }
+              throw error;
+            }
+            if (ref.data.object.sha !== pr.head.sha) {
+              core.warning('Branch advanced after merge; preserving it.');
+              return;
+            }
+            await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });

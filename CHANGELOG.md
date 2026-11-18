@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Remove eligible merged pull request branches while preserving the two permanent branches. (OpenAI-Codex)
 - Run Python tests in parallel across Windows, macOS and Linux with Python 3.10 through 3.14. (OpenAI-Codex)
 - Format changed Python files on Source_Code pushes and run CI after formatter commits. (OpenAI-Codex)
 
