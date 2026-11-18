@@ -152,6 +152,8 @@ The `Auto-format Python` workflow formats changed tracked Python files on pushes
 
 After a pull request merges, the `Clean merged branches` workflow deletes its unchanged source branch when it belongs to this repository. It preserves `Source_Code` and `Multimedia_Downloader_Web_Preview`. (OpenAI-Codex)
 
+The `Container image` workflow builds and smoke-tests the web image on GitHub-hosted runners before pushing SHA and `edge` tags to GHCR. The service has no authentication; bind it to localhost unless you provide your own access controls. (OpenAI-Codex)
+
 The `First interaction` workflow welcomes first-time issue and pull request authors. (OpenAI-Codex)
 
 The `Stale issue and PR management` workflow warns after 30 days of inactivity and closes after 14 additional days. Items with the `keep-open`, `never-stale`, or `security` label, or a milestone, are exempt. (OpenAI-Codex)

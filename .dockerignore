@@ -1,0 +1,11 @@
+# OpenAI-Codex: exclude repository metadata, secrets, dependencies and outputs.
+.git
+.github
+.env
+*.key
+config.local.json
+**/node_modules
+**/__pycache__
+**/target
+downloads
+*.log

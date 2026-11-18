@@ -1,0 +1,59 @@
+# OpenAI-Codex: publish only after a local-to-runner web smoke test.
+name: Container image
+
+on:
+  push:
+    branches: [Source_Code]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ghcr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+      - name: Derive image name
+        id: image
+        env:
+          REPOSITORY: ${{ github.repository }}
+          COMMIT: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]]
+          echo "name=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "tag=sha-$COMMIT" >> "$GITHUB_OUTPUT"
+      - name: Build web image
+        run: docker build --tag mmdl-smoke-test .
+      - name: Smoke-test web image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cid="$(docker run -d --rm -p 127.0.0.1:18500:5000 mmdl-smoke-test)"
+          trap 'docker stop "$cid" >/dev/null 2>&1 || true' EXIT
+          curl --fail --silent --show-error --retry 15 --retry-connrefused --retry-delay 2 http://127.0.0.1:18500/ -o /tmp/mmdl-index.html
+          grep -qi '<html' /tmp/mmdl-index.html
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push tested image
+        env:
+          IMAGE: ${{ steps.image.outputs.name }}
+          IMAGE_TAG: ${{ steps.image.outputs.tag }}
+        run: |
+          set -euo pipefail
+          docker tag mmdl-smoke-test "$IMAGE:$IMAGE_TAG"
+          docker tag mmdl-smoke-test "$IMAGE:edge"
+          docker push "$IMAGE:$IMAGE_TAG"
+          docker push "$IMAGE:edge"
