@@ -1,0 +1,63 @@
+# OpenAI-Codex: persist the latest scheduled CI health without generating noise.
+name: Update automation health
+on:
+  schedule:
+    - cron: "25 13 * * 2"
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: write
+concurrency:
+  group: automation-health-report
+  cancel-in-progress: false
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Update report when scheduled CI changes
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // OpenAI-Codex: write only a deterministic, public CI run summary.
+            const { owner, repo } = context.repo;
+            const branch = 'Source_Code';
+            const path = '.github/automation/ci-health.json';
+            const response = await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: 'ci.yml', branch, event: 'schedule', per_page: 1,
+            });
+            const run = response.data?.workflow_runs?.[0];
+            if (!run || !Number.isSafeInteger(run.id) ||
+                typeof run.status !== 'string' || typeof run.html_url !== 'string') {
+              core.notice('No usable scheduled CI run; report unchanged.');
+              return;
+            }
+            const report = JSON.stringify({
+              generated_by: 'OpenAI-Codex',
+              workflow: 'ci.yml',
+              event: 'schedule',
+              branch,
+              run_id: run.id,
+              status: run.status,
+              conclusion: run.conclusion ?? null,
+              url: run.html_url,
+            }, null, 2) + '\n';
+            let existing;
+            try {
+              existing = (await github.rest.repos.getContent({ owner, repo, path, ref: branch })).data;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            if (existing && (existing.type !== 'file' || existing.encoding !== 'base64' || typeof existing.sha !== 'string')) {
+              throw new Error('Existing report cannot be safely read.');
+            }
+            if (existing && Buffer.from(existing.content, 'base64').toString('utf8') === report) {
+              core.info('CI health report unchanged.');
+              return;
+            }
+            await github.rest.repos.createOrUpdateFileContents({
+              owner, repo, path, branch,
+              message: 'chore: update scheduled CI health report',
+              content: Buffer.from(report).toString('base64'),
+              ...(existing ? { sha: existing.sha } : {}),
+            });

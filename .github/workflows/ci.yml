@@ -140,6 +140,10 @@ jobs:
       - name: Test merged branch cleanup guard
         run: node --test .github/scripts/clean-merged-branches.test.mjs
 
+      # OpenAI-Codex: test scheduled health reporting with mocked GitHub APIs.
+      - name: Test self-commit health report
+        run: node --test .github/scripts/automation-health.test.mjs
+
       # OpenAI-Codex: exercise issue and PR triage with mocked GitHub APIs.
       - name: Test issue and PR triage
         run: node --test .github/scripts/issue-pr-triage.test.mjs
