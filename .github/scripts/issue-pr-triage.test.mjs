@@ -157,3 +157,11 @@ test('form triage rejects an unclosed log fence', async () => {
   await h.run(1, { ...ctx, payload: { issue: item } });
   assert.deepEqual(h.applied, []);
 });
+
+// OpenAI-Codex: info strings inside logs cannot end the surrounding fence.
+test('issue classifier ignores false closing fences within logs', async () => {
+  const h = harness(), item = { ...issue(), title: 'Question', body: 'Documentation question\n```text\n```not-a-close\ndownload engine error\n```' };
+  h.state.latestIssue = clone(item);
+  await h.run(3, { ...ctx, payload: { issue: item } });
+  assert.deepEqual(h.applied, [['area:docs']]);
+});
