@@ -52,22 +52,27 @@ def collect() -> dict[str, str]:
         "src-tauri/tauri.conf.json": _json_version("src-tauri/tauri.conf.json"),
         # [package] version — the first `version = "..."` in the file, which sits
         # above any [dependencies] section.
-        "src-tauri/Cargo.toml": _search("src-tauri/Cargo.toml", r'^version\s*=\s*"([^"]+)"'),
+        "src-tauri/Cargo.toml": _search(
+            "src-tauri/Cargo.toml", r'^version\s*=\s*"([^"]+)"'
+        ),
         # The lockfile's entry for this crate; cargo rewrites it otherwise.
         "src-tauri/Cargo.lock": _search(
             "src-tauri/Cargo.lock",
             r'^name = "multimedia-downloader"\nversion = "([^"]+)"',
         ),
         # README title, e.g. `# Multimedia Downloader — V4.3.10`
-        "README.md (title)": _search("README.md", r"^#\s+Multimedia Downloader\s+—\s+V(\S+)"),
+        "README.md (title)": _search(
+            "README.md", r"^#\s+Multimedia Downloader\s+—\s+V(\S+)"
+        ),
         # Newest CHANGELOG entry, e.g. `### [4.3.10] — 2026-09-13`
         "CHANGELOG.md (newest entry)": _search("CHANGELOG.md", r"^###\s+\[([^\]]+)\]"),
         # Nothing reads this one, which is exactly why it rotted: it sat at
         # "4.0.0-dev" through every 4.x release. An unread constant with no
         # mechanism watching it is the same failure as Cargo.toml, minus the
         # symptom that eventually gave Cargo.toml away.
-        "engine/__init__.py": _search("engine/__init__.py",
-                                      r'^__version__\s*=\s*"([^"]+)"'),
+        "engine/__init__.py": _search(
+            "engine/__init__.py", r'^__version__\s*=\s*"([^"]+)"'
+        ),
     }
 
 
@@ -88,8 +93,10 @@ def main() -> int:
     for source, version in versions.items():
         mark = " " if version == expected else "<"
         print(f"  {mark} {source:<{width}}  {version}", file=sys.stderr)
-    print(f"\nMost sources say {expected!r}; the lines marked '<' disagree.",
-          file=sys.stderr)
+    print(
+        f"\nMost sources say {expected!r}; the lines marked '<' disagree.",
+        file=sys.stderr,
+    )
     print("Bumping a release means updating every file listed above.", file=sys.stderr)
     return 1
 
