@@ -20,6 +20,7 @@ import os
 import re
 import sys
 
+# OpenAI-Codex: verify all version markers before automated releases.
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 #: A version we failed to find at all — distinct from finding a wrong one, since
