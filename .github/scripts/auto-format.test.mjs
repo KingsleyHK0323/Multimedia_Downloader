@@ -1,6 +1,6 @@
 // OpenAI-Codex: run the actual formatter selection in a temporary Git repository.
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -54,5 +54,17 @@ test('rejects a missing base commit', () => {
   const { root, head } = fixture();
   const result = run(root, '0'.repeat(40), head);
   assert.notEqual(result.status, 0);
+  assert.equal(git(root, 'diff', '--cached', '--name-only'), '');
+});
+
+// OpenAI-Codex: changed symlinks must never cause another file to be formatted.
+test('does not follow changed Python symlinks', () => {
+  const { root, head } = fixture();
+  symlinkSync('untouched.py', join(root, 'link.py'));
+  git(root, 'add', 'link.py');
+  git(root, 'commit', '-qm', 'add symlink');
+  const result = run(root, head, git(root, 'rev-parse', 'HEAD'));
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(join(root, 'untouched.py'), 'utf8'), 'untouched=  2\n');
   assert.equal(git(root, 'diff', '--cached', '--name-only'), '');
 });

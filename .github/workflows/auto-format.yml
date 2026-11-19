@@ -46,7 +46,10 @@ jobs:
               "git", "diff", "--name-only", "-z", "--diff-filter=ACMR",
               before, head, "--", "*.py",
           ]).split(b"\0")
-          files = [os.fsdecode(path) for path in changed if path and Path(os.fsdecode(path)).is_file()]
+          # OpenAI-Codex: do not follow changed symlinks outside the checkout.
+          files = [os.fsdecode(path) for path in changed if path
+                   and not Path(os.fsdecode(path)).is_symlink()
+                   and Path(os.fsdecode(path)).is_file()]
           for offset in range(0, len(files), 50):
               group = files[offset:offset + 50]
               subprocess.run(["python", "-m", "black", "--", *group], check=True)
