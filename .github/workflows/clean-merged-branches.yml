@@ -10,6 +10,11 @@ on:
         description: 'Merged pull request number'
         required: true
         type: string
+      dry_run:
+        description: 'Inspect cleanup without deleting a branch'
+        required: true
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -25,6 +30,7 @@ jobs:
         uses: actions/github-script@v8
         env:
           MANUAL_PR: ${{ inputs.pr_number }}
+          DRY_RUN: ${{ inputs.dry_run }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -55,6 +61,11 @@ jobs:
             }
             if (ref.data.object.sha !== pr.head.sha) {
               core.warning('Branch advanced after merge; preserving it.');
+              return;
+            }
+            // OpenAI-Codex: manual verification defaults to preserving the branch.
+            if (context.eventName === 'workflow_dispatch' && process.env.DRY_RUN !== 'false') {
+              core.info('Dry run: eligible branch will be preserved.');
               return;
             }
             await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });

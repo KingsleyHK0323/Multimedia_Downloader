@@ -13,7 +13,7 @@ const sha = 'a'.repeat(40);
 function makePr(branch = 'feature') {
   return { merged: true, head: { ref: branch, sha, repo: { full_name: 'owner/repo' } } };
 }
-async function invoke(pr, actualSha = sha, dispatch = false) {
+async function invoke(pr, actualSha = sha, dispatch = false, dryRun = 'true') {
   const deleted = [];
   const context = { eventName: dispatch ? 'workflow_dispatch' : 'pull_request_target',
     repo: { owner: 'owner', repo: 'repo' },
@@ -23,7 +23,7 @@ async function invoke(pr, actualSha = sha, dispatch = false) {
     deleteRef: async ({ ref }) => deleted.push(ref),
   } } };
   const core = { info() {}, warning() {} };
-  if (dispatch) process.env.MANUAL_PR = '12';
+  if (dispatch) { process.env.MANUAL_PR = '12'; process.env.DRY_RUN = dryRun; }
   await fn(context, github, core);
   return deleted;
 }
@@ -41,4 +41,10 @@ test('never deletes either permanent branch', async () => {
 test('manual cleanup rejects unmerged pull requests', async () => {
   const pr = makePr(); pr.merged = false;
   await assert.rejects(() => invoke(pr, sha, true));
+});
+
+// OpenAI-Codex: verify dispatch defaults to inspection and explicit cleanup remains available.
+test('manual dry run preserves eligible branches', async () => {
+  assert.deepEqual(await invoke(makePr(), sha, true), []);
+  assert.deepEqual(await invoke(makePr(), sha, true, 'false'), ['heads/feature']);
 });
