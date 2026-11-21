@@ -72,3 +72,28 @@ test('package publication rejects newer failures or incomplete API results', () 
   assert.notEqual(verifyPackage([run(ci), run(matrix)], 101), 0);
   assert.notEqual(verifyPackage([run(ci), run(matrix, { id: null })]), 0);
 });
+
+// OpenAI-Codex: beta releases must meet the same exact-commit requirements.
+const betaJob = workflow.split('  publish-beta:\n')[1].split('  # OpenAI-Codex: publish only complete builds')[0];
+assert.ok(betaJob.includes('verify-release-assets.mjs v4.3.22'));
+const betaStart = 'if BETA_SHA="$sha" node -e \x27\n';
+const betaEnd = '\n            \x27 <<< "$runs"; then';
+assert.equal(betaJob.split(betaStart).length, 2);
+const betaScript = betaJob.split(betaStart)[1].split(betaEnd)[0];
+function verifyBeta(runs, total = runs.length) {
+  const result = spawnSync(process.execPath, ['-e', betaScript], {
+    input: JSON.stringify({ total_count: total, workflow_runs: runs }),
+    encoding: 'utf8', env: { ...process.env, BETA_SHA: sha }, timeout: 5000,
+  });
+  assert.equal(result.error, undefined);
+  return result.status;
+}
+test('beta publication requires passing CI and matrix for its exact commit', () => {
+  assert.equal(verifyBeta([run(ci), run(matrix)]), 0);
+  assert.notEqual(verifyBeta([run(ci)]), 0);
+  assert.notEqual(verifyBeta([run(ci), run(matrix, { head_sha: 'b'.repeat(40) })]), 0);
+  assert.notEqual(verifyBeta([run(ci), run(matrix, { status: 'in_progress', conclusion: null })]), 0);
+  assert.notEqual(verifyBeta([run(ci), run(matrix, { conclusion: 'failure' })]), 0);
+  assert.notEqual(verifyBeta([run(ci), run(matrix), run(matrix, { id: 2, conclusion: 'failure' })]), 0);
+  assert.notEqual(verifyBeta([run(ci), run(matrix)], 3), 0);
+});

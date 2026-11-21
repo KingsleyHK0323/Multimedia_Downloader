@@ -154,7 +154,7 @@ The `Auto-format Python` workflow formats changed tracked Python files on pushes
 
 After a pull request merges, the `Clean merged branches` workflow deletes its unchanged source branch when it belongs to this repository. It preserves `Source_Code` and `Multimedia_Downloader_Web_Preview`. (OpenAI-Codex)
 
-Release builds upload installers to a draft. Automatic publication requires all six installer types and successful CI and Python matrix runs for the tagged commit; v4.3.3 remains a draft pending separate confirmation. A failed build or missing verification leaves the release unpublished. (OpenAI-Codex)
+Release builds upload installers to a draft. Automatic publication requires the six expected nonempty installers and successful CI and Python matrix runs for the tagged commit. The workflow does not automatically publish v4.3.3; a historical v4.3.3 release already exists. A failed build or missing verification leaves a draft unpublished. (OpenAI-Codex)
 
 The `API documentation build` workflow generates an HTML reference for the Python engine, AI and internationalization modules as a short-lived GitHub Actions artifact and refreshes the [published API reference](https://kingsleyhk0323.github.io/Multimedia_Downloader/api/) on GitHub Pages. (OpenAI-Codex)
 

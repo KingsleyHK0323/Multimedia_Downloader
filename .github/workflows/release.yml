@@ -368,22 +368,60 @@ jobs:
                -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) \
             -print0 | xargs -0 gh release upload "$tag" --repo "$GITHUB_REPOSITORY"
 
-  # OpenAI-Codex: publish this beta only after all six installer types exist.
+  # OpenAI-Codex: apply the same asset and exact-commit checks to beta publication.
   publish-beta:
     needs: [setup, build]
     if: needs.setup.outputs.tag == 'v4.3.22'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Verify assets and publish prerelease
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: automation
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: v4.3.22
+          path: beta-source
+          persist-credentials: false
+      - name: Verify exact beta assets and checks before publication
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
-          assets="$(gh release view v4.3.22 --repo "$GITHUB_REPOSITORY" --json assets --jq '[.assets[] | select(.size > 0) | .name]')"
-          for suffix in '.deb' '.rpm' '.AppImage' '.dmg' '.msi' '-setup.exe'; do
-            jq -e --arg suffix "$suffix" 'any(.[]; endswith($suffix))' <<< "$assets" >/dev/null || { echo "::error::Missing $suffix installer."; exit 1; }
+          gh release view v4.3.22 --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease > "$RUNNER_TEMP/beta-release.json"
+          jq -e '.isDraft == true and .isPrerelease == true' "$RUNNER_TEMP/beta-release.json" >/dev/null
+          node automation/.github/scripts/verify-release-assets.mjs v4.3.22 "$RUNNER_TEMP/beta-release.json"
+          sha="$(git -C beta-source rev-parse HEAD)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          verified=false
+          for attempt in $(seq 1 60); do
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100")"
+            if BETA_SHA="$sha" node -e '
+            const fs = require("fs");
+            try {
+              const data = JSON.parse(fs.readFileSync(0, "utf8"));
+              if (!/^[0-9a-f]{40}$/.test(process.env.BETA_SHA || "") ||
+                  !Array.isArray(data.workflow_runs) || !Number.isSafeInteger(data.total_count) ||
+                  data.total_count > 100 || data.total_count !== data.workflow_runs.length) process.exit(1);
+              for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
+                const matching = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.BETA_SHA &&
+                  r.head_branch === "Source_Code" && ["push", "workflow_dispatch"].includes(r.event));
+                if (matching.some(r => !Number.isSafeInteger(r.id) || r.id < 1)) process.exit(1);
+                const run = matching.sort((a, b) => b.id - a.id)[0];
+                if (!run || run.status !== "completed" || run.conclusion !== "success") process.exit(1);
+              }
+            } catch { process.exit(1); }
+            ' <<< "$runs"; then
+              verified=true
+              break
+            fi
+            echo "Waiting for beta CI and matrix on $sha ($attempt/60)."
+            sleep 10
           done
+          [[ "$verified" == true ]] || { echo "::error::Beta CI and matrix must pass for the tagged Source_Code commit."; exit 1; }
           gh release edit v4.3.22 --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
 
   # OpenAI-Codex: publish only complete builds of a commit with passing CI.
