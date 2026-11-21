@@ -79,12 +79,19 @@ jobs:
             *) printf '%s\n' '::error::Invalid release platform.'; exit 1 ;;
           esac
       # END RELEASE_INPUT_GUARD
+      # OpenAI-Codex: keep validated user input out of generated shell code.
       - id: tag
-        run: echo "tag=${{ inputs.tag || github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+        env:
+          RELEASE_TAG: ${{ inputs.tag || github.event.inputs.tag || github.ref_name }}
+        shell: bash
+        run: printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - id: m
+        env:
+          RELEASE_ONLY: ${{ inputs.only || github.event.inputs.only || 'all' }}
+        shell: bash
         run: |
-          only="${{ inputs.only || github.event.inputs.only || 'all' }}"
+          only="$RELEASE_ONLY"
           if [ "$only" = "all" ]; then
             echo 'matrix={"platform":["ubuntu-22.04","macos-15","windows-latest"]}' >> "$GITHUB_OUTPUT"
           else

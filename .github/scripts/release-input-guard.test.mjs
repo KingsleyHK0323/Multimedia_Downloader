@@ -96,3 +96,41 @@ test('verification-only mode isolates release and package publication paths', ()
   assert.match(verification, /contents: read/);
   assert.doesNotMatch(verification, /gh release|npm publish|contents: write/);
 });
+
+// OpenAI-Codex: test that release inputs remain data, not generated shell code.
+test('release tag and platform inputs cannot inject shell commands', () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const tagBlock = source.split('      - id: tag\n')[1]?.split('\n      - id: m\n')[0];
+  const matrixBlock = source.split('      - id: m\n')[1]?.split('\n      # OpenAI-Codex: verification')[0];
+  assert.ok(tagBlock && matrixBlock);
+  assert.ok(tagBlock.includes('          RELEASE_TAG: ${{ inputs.tag || github.event.inputs.tag || github.ref_name }}\n'));
+  assert.ok(matrixBlock.includes("          RELEASE_ONLY: ${{ inputs.only || github.event.inputs.only || 'all' }}\n"));
+  const tagScript = tagBlock.match(/^        run: (.+)$/m)?.[1];
+  const matrixBody = matrixBlock.split('        run: |\n')[1];
+  assert.ok(tagScript && matrixBody);
+  const matrixScript = matrixBody.split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  assert.doesNotMatch(tagScript + matrixScript, /\$\{\{/);
+
+  function run(script, envInput) {
+    const env = { ...process.env, ...envInput, GITHUB_OUTPUT: '/dev/stdout' };
+    delete env.BASH_ENV;
+    delete env.ENV;
+    const result = spawnSync(process.env.RELEASE_GUARD_BASH || 'bash', ['--noprofile', '--norc', '-c', script], {
+      env, encoding: 'utf8', timeout: 5000,
+    });
+    if (result.error) throw result.error;
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout;
+  }
+
+  assert.equal(run(tagScript, { RELEASE_TAG: 'v4.3.22' }), 'tag=v4.3.22\n');
+  const tagAttack = 'v1.2.3$(printf INJECTED)';
+  assert.equal(run(tagScript, { RELEASE_TAG: tagAttack }), 'tag=' + tagAttack + '\n');
+  assert.equal(run(matrixScript, { RELEASE_ONLY: 'all' }),
+    'matrix={"platform":["ubuntu-22.04","macos-15","windows-latest"]}\n');
+  assert.equal(run(matrixScript, { RELEASE_ONLY: 'macos-15' }),
+    'matrix={"platform":["macos-15"]}\n');
+  const platformAttack = 'all$(printf INJECTED)';
+  assert.equal(run(matrixScript, { RELEASE_ONLY: platformAttack }),
+    'matrix={"platform":["' + platformAttack + '"]}\n');
+});
