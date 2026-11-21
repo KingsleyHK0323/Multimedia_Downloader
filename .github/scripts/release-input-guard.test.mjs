@@ -2,7 +2,9 @@
 // This does not execute a GitHub workflow or contact any external service.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 // Extract the exact proposed guard from release.yml, not a duplicate copy.
@@ -112,7 +114,9 @@ test('release tag and platform inputs cannot inject shell commands', () => {
   assert.doesNotMatch(tagScript + matrixScript, /\$\{\{/);
 
   function run(script, envInput) {
-    const env = { ...process.env, ...envInput, GITHUB_OUTPUT: '/dev/stdout' };
+    const directory = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), 'release-input-guard-'));
+    const output = join(directory, 'github-output');
+    const env = { ...process.env, ...envInput, GITHUB_OUTPUT: output };
     delete env.BASH_ENV;
     delete env.ENV;
     const result = spawnSync(process.env.RELEASE_GUARD_BASH || 'bash', ['--noprofile', '--norc', '-c', script], {
@@ -120,7 +124,7 @@ test('release tag and platform inputs cannot inject shell commands', () => {
     });
     if (result.error) throw result.error;
     assert.equal(result.status, 0, result.stderr);
-    return result.stdout;
+    return readFileSync(output, 'utf8');
   }
 
   assert.equal(run(tagScript, { RELEASE_TAG: 'v4.3.22' }), 'tag=v4.3.22\n');
