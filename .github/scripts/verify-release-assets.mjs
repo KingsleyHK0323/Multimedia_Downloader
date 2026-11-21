@@ -28,10 +28,22 @@ export function validateAssets(tag, response) {
   }
   if (names.size !== expected.size) throw new Error('Incomplete installer inventory');
 }
+// OpenAI-Codex: map the staged Tauri product name to GitHub's release asset name.
+export function normalizeStagedAssets(response) {
+  if (!response || !Array.isArray(response.assets)) throw new Error('Invalid asset response');
+  return {
+    ...response,
+    assets: response.assets.map(item => item && typeof item.name === 'string'
+      ? { ...item, name: item.name.replace(/^Multimedia Downloader(?=[_-])/, 'Multimedia.Downloader') }
+      : item),
+  };
+}
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    const [tag, file] = process.argv.slice(2);
-    validateAssets(tag, JSON.parse(readFileSync(file, 'utf8')));
+    const [tag, file, mode = 'release'] = process.argv.slice(2);
+    if (!['release', 'staged'].includes(mode)) throw new Error('Invalid validation mode');
+    const response = JSON.parse(readFileSync(file, 'utf8'));
+    validateAssets(tag, mode === 'staged' ? normalizeStagedAssets(response) : response);
     console.log('Verified six version-specific installer assets.');
   } catch (error) {
     console.error('::error::Release asset validation failed:', error.message);

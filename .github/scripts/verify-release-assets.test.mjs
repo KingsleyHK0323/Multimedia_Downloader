@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { validateAssets } from './verify-release-assets.mjs';
+import { normalizeStagedAssets, validateAssets } from './verify-release-assets.mjs';
 
 const names = [
   'Multimedia.Downloader-4.3.22-1.x86_64.rpm',
@@ -19,6 +19,16 @@ const names = [
 const assets = () => names.map(name => ({ name, size: 123 }));
 test('accepts the six expected nonempty installers and supplemental checksums', () => {
   assert.doesNotThrow(() => validateAssets('v4.3.22', { assets: [...assets(), { name: 'SHA256SUMS', size: 10 }] }));
+});
+// OpenAI-Codex: validate pre-upload Tauri names without weakening release checks.
+test('staged names normalize exactly and duplicate names still fail', () => {
+  const staged = assets().map(item => ({ ...item, name: item.name.replace('Multimedia.Downloader', 'Multimedia Downloader') }));
+  assert.throws(() => validateAssets('v4.3.22', { assets: staged }));
+  assert.doesNotThrow(() => validateAssets('v4.3.22', normalizeStagedAssets({ assets: staged })));
+  const mixed = [...staged.slice(0, 5), assets()[0]];
+  assert.throws(() => validateAssets('v4.3.22', normalizeStagedAssets({ assets: mixed })));
+  const wrong = [...staged.slice(0, 5), { ...staged[5], name: staged[5].name.replace('Downloader', 'Other') }];
+  assert.throws(() => validateAssets('v4.3.22', normalizeStagedAssets({ assets: wrong })));
 });
 test('rejects missing, wrong version, duplicate, empty or invalid assets', () => {
   assert.throws(() => validateAssets('v4.3.22', { assets: assets().slice(1) }));
@@ -42,6 +52,11 @@ test('CLI rejects invalid inventories and accepts complete ones', () => {
     const valid = spawnSync(process.execPath, [script, 'v4.3.22', file], { encoding: 'utf8' });
     assert.equal(valid.status, 0);
     assert.match(valid.stdout, /Verified six version-specific installer assets/);
+    writeFileSync(file, JSON.stringify({ assets: assets().map(item => ({ ...item, name: item.name.replace('Multimedia.Downloader', 'Multimedia Downloader') })) }));
+    const staged = spawnSync(process.execPath, [script, 'v4.3.22', file, 'staged'], { encoding: 'utf8' });
+    assert.equal(staged.status, 0, staged.stderr);
+    const wrongMode = spawnSync(process.execPath, [script, 'v4.3.22', file, 'other'], { encoding: 'utf8' });
+    assert.equal(wrongMode.status, 1);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

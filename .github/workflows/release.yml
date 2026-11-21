@@ -464,7 +464,7 @@ jobs:
           walk(root);
           fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'release-verify-assets.json'), JSON.stringify({ assets }));
           NODE
-          node automation/.github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/release-verify-assets.json"
+          node automation/.github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/release-verify-assets.json" staged
 
   # OpenAI-Codex: apply the same asset and exact-commit checks to beta publication.
   publish-beta:

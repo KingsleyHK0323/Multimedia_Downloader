@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Normalize staged installer names before verification while retaining strict published asset checks. (OpenAI-Codex)
 - Add a verification-only mode to build and validate release installers without modifying a Release. (OpenAI-Codex)
 - Check the tested base and merge commit before Dependabot auto-merge, and reject changes under .github. (OpenAI-Codex)
 - Require exact installer inventory and passing exact-commit checks before beta publication. (OpenAI-Codex)
