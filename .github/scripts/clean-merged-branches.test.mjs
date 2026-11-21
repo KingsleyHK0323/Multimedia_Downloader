@@ -8,13 +8,27 @@ const marker = '          script: |\n';
 assert.equal(workflow.split(marker).length, 2);
 const script = workflow.split(marker)[1].split('\n').map(line => line.startsWith('            ') ? line.slice(12) : line).join('\n');
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const fn = new AsyncFunction('context', 'github', 'core', script);
+const fn = new AsyncFunction('context', 'github', 'core', 'require', script);
 const sha = 'a'.repeat(40);
 function makePr(branch = 'feature') {
   return { merged: true, head: { ref: branch, sha, repo: { full_name: 'owner/repo' } } };
 }
 async function invoke(pr, actualSha = sha, dispatch = false, dryRun = 'true') {
   const deleted = [];
+  const fakeRequire = name => {
+    if (name === 'node:child_process') return { execFileSync: (command, args) => {
+      assert.equal(command, 'git');
+      if (args.includes('push')) {
+        assert.ok(args.includes(`--force-with-lease=refs/heads/${pr.head.ref}:${pr.head.sha}`));
+        deleted.push(`heads/${pr.head.ref}`);
+      }
+    } };
+    if (name === 'node:fs') return { mkdtempSync: () => '/fake/git' };
+    if (name === 'node:os') return { tmpdir: () => '/fake' };
+    if (name === 'node:path') return { join: (...parts) => parts.join('/') };
+    throw new Error('Unexpected dependency');
+  };
+  process.env.CLEANUP_TOKEN = 'test-token';
   const context = { eventName: dispatch ? 'workflow_dispatch' : 'pull_request_target',
     repo: { owner: 'owner', repo: 'repo' },
     payload: { repository: { full_name: 'owner/repo' }, pull_request: pr } };
@@ -24,7 +38,7 @@ async function invoke(pr, actualSha = sha, dispatch = false, dryRun = 'true') {
   } } };
   const core = { info() {}, warning() {} };
   if (dispatch) { process.env.MANUAL_PR = '12'; process.env.DRY_RUN = dryRun; }
-  await fn(context, github, core);
+  await fn(context, github, core, fakeRequire);
   return deleted;
 }
 test('deletes only a merged, unchanged local feature branch', async () => {
