@@ -83,9 +83,7 @@ function ensureRelease(exists, draft, previous) {
   assert.equal(workflow.split(marker).length, 2);
   const block = workflow.split(marker)[1].split('\n  build:')[0];
   assert.equal(block.split('        run: |\n').length, 2);
-  const shell = block.split('        run: |\n')[1].replace(/^          /gm, '')
-    .replaceAll('${{ steps.tag.outputs.tag }}', 'v1.0.1')
-    .replaceAll('${{ steps.release_notes.outputs.previous_tag }}', previous);
+  const shell = block.split('        run: |\n')[1].replace(/^          /gm, '');
   assert.ok(!shell.includes('${{'));
   const dir = mkdtempSync(join(tmpdir(), 'release-create-'));
   const bin = join(dir, 'bin');
@@ -103,7 +101,8 @@ function ensureRelease(exists, draft, previous) {
     cwd: dir,
     encoding: 'utf8',
     env: { ...process.env, PATH: bin + ':' + process.env.PATH, GITHUB_REPOSITORY: 'example/project',
-      RUNNER_TEMP: dir, GH_LOG: log, FAKE_EXISTS: String(exists), FAKE_DRAFT: String(draft) },
+      RUNNER_TEMP: dir, GH_LOG: log, RELEASE_TAG: 'v1.0.1', PREVIOUS_TAG: previous,
+      FAKE_EXISTS: String(exists), FAKE_DRAFT: String(draft) },
   });
   if (result.error) throw result.error;
   return { result, args: existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [] };
