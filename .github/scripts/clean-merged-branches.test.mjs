@@ -48,3 +48,10 @@ test('manual dry run preserves eligible branches', async () => {
   assert.deepEqual(await invoke(makePr(), sha, true), []);
   assert.deepEqual(await invoke(makePr(), sha, true, 'false'), ['heads/feature']);
 });
+
+// OpenAI-Codex: a deleted source repository must never authorize cleanup.
+test('preserves a branch when the PR source repository is unavailable', async () => {
+  const pr = makePr();
+  pr.head.repo = null;
+  assert.deepEqual(await invoke(pr), []);
+});
