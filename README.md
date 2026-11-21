@@ -135,13 +135,12 @@ without that label do not create a release. The automatic release workflow can
 also be run manually for a merged pull request. If another pull request
 advances `Source_Code` while a release commit is being pushed, the workflow
 rebases that commit onto the new branch tip and retries. Dependabot groups
-minor and patch updates by ecosystem; its pull requests are merged
-automatically after the full CI workflow passes, but do not trigger a release
-unless they carry the `release:patch` label. Major updates remain separate
-pull requests and also require CI to pass before automatic merging. PRs that
-change files under
-`.github/workflows/` are left for manual merging because GitHub requires a
-separate Workflows permission to merge them. Put release notes under
+minor and patch updates by ecosystem. Eligible pull requests merge after CI and
+the Python matrix pass for the same head, base and merge commit; a changed base
+or missing context prevents automatic merging. The merge does not trigger a
+release unless it carries the `release:patch` label. Major updates remain
+separate pull requests and follow the same checks. Pull requests changing files
+under `.github/` are left for manual review and merging. Put release notes under
 `Unreleased` in `CHANGELOG.md`; the release workflow promotes them to the new
 version entry.
 

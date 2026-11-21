@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Check the tested base and merge commit before Dependabot auto-merge, and reject changes under .github. (OpenAI-Codex)
 - Require exact installer inventory and passing exact-commit checks before beta publication. (OpenAI-Codex)
 - Create one linked bug issue when an authorized collaborator marks an open discussion as confirmed, preserving the discussion. (OpenAI-Codex)
 - Build and smoke-test an installable web package before publishing development or verified stable versions to GitHub Packages. (OpenAI-Codex)

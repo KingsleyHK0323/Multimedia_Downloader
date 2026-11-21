@@ -16,6 +16,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # OpenAI-Codex: expose the tested PR merge context through the GitHub job name.
+  dependabot-merge-context:
+    name: dependabot-context-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.sha }}
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Validate context values
+        env:
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+          BASE: ${{ github.event.pull_request.base.sha || github.sha }}
+          MERGE: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$HEAD" =~ ^[0-9a-f]{40}$ && "$BASE" =~ ^[0-9a-f]{40}$ && "$MERGE" =~ ^[0-9a-f]{40}$ ]]
+
   python-tests:
     strategy:
       fail-fast: false

@@ -13,6 +13,11 @@ permissions:
   contents: write
   pull-requests: write
 
+# OpenAI-Codex: serialize successful checks for the same dependency PR head.
+concurrency:
+  group: dependabot-auto-merge-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
 jobs:
   auto-merge:
     if: >-
@@ -85,7 +90,7 @@ jobs:
                   !Array.isArray(pages) || !pages.every(Array.isArray)) process.exit(1);
               const files = pages.flat();
               if (files.length !== pr.changed_files) process.exit(1);
-              const unsafe = p => p.startsWith(".github/workflows/") || p.startsWith(".github/actions/");
+              const unsafe = p => p.startsWith(".github/");
               if (!files.every(f => f && typeof f.filename === "string" && f.filename.length > 0 &&
                   typeof f.status === "string" && f.status.length > 0 &&
                   (f.status !== "renamed" || (typeof f.previous_filename === "string" && f.previous_filename.length > 0)) &&
@@ -94,6 +99,76 @@ jobs:
             } catch { process.exit(1); }
           '; then
             echo "::warning::PR file list or identity is unsafe or incomplete; skipping merge."
+            exit 0
+          fi
+
+          # OpenAI-Codex: require both workflows to have tested the current merge context.
+          if ! selected="$(printf '%s' "$runs" | node -e '
+            const fs = require("fs");
+            try {
+              const data = JSON.parse(fs.readFileSync(0, "utf8"));
+              if (!Array.isArray(data.workflow_runs) || !Number.isSafeInteger(data.total_count) ||
+                  data.total_count > 100 || data.total_count !== data.workflow_runs.length) process.exit(1);
+              const values = [];
+              for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
+                const matches = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.HEAD_SHA);
+                if (matches.some(r => !Number.isSafeInteger(r.id) || r.id < 1)) process.exit(1);
+                const run = matches.sort((a, b) => b.id - a.id)[0];
+                if (!run || run.status !== "completed" || run.conclusion !== "success" ||
+                    !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) process.exit(1);
+                values.push(run.id, run.run_attempt);
+              }
+              console.log(values.join(" "));
+            } catch { process.exit(1); }
+          ')"; then
+            echo "::warning::Unable to identify complete exact-head test runs; skipping merge."
+            exit 0
+          fi
+          read -r ci_id ci_attempt matrix_id matrix_attempt <<< "$selected"
+          if ! ci_jobs="$(gh api "repos/$GH_REPO/actions/runs/$ci_id/attempts/$ci_attempt/jobs?per_page=100")" ||
+             ! matrix_jobs="$(gh api "repos/$GH_REPO/actions/runs/$matrix_id/attempts/$matrix_attempt/jobs?per_page=100")" ||
+             ! current_pr="$(gh api "repos/$GH_REPO/pulls/$pr_number")" ||
+             ! base_head="$(gh api "repos/$GH_REPO/git/ref/heads/Source_Code" --jq '.object.sha')" ||
+             ! latest_runs="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100")"; then
+            echo "::warning::Cannot recheck the PR, base branch and tested merge context; skipping merge."
+            exit 0
+          fi
+          if ! printf '%s\0%s\0%s\0%s' "$current_pr" "$latest_runs" "$ci_jobs" "$matrix_jobs" |
+            PR_NUMBER="$pr_number" BASE_HEAD="$base_head" CI_ID="$ci_id" CI_ATTEMPT="$ci_attempt" MATRIX_ID="$matrix_id" MATRIX_ATTEMPT="$matrix_attempt" \
+            node -e '
+              const fs = require("fs");
+              try {
+                const input = fs.readFileSync(0, "utf8").split("\0");
+                if (input.length !== 4) process.exit(1);
+                const [pr, data, ci, matrix] = input.map(JSON.parse);
+                const sha = value => typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
+                if (!sha(process.env.BASE_HEAD) || pr.number !== Number(process.env.PR_NUMBER) ||
+                    pr.state !== "open" || pr.user?.login !== "dependabot[bot]" || pr.mergeable !== true ||
+                    pr.base?.ref !== "Source_Code" || pr.base?.sha !== process.env.BASE_HEAD ||
+                    pr.head?.sha !== process.env.HEAD_SHA || !sha(pr.merge_commit_sha)) process.exit(1);
+                const contextName = "dependabot-context-" + pr.base.sha + "-" + pr.head.sha + "-" + pr.merge_commit_sha;
+                for (const response of [ci, matrix]) {
+                  if (!Array.isArray(response.jobs) || !Number.isSafeInteger(response.total_count) ||
+                      response.total_count > 100 || response.total_count !== response.jobs.length) process.exit(1);
+                  const contexts = response.jobs.filter(j => j.name === contextName);
+                  if (contexts.length !== 1 || contexts[0].status !== "completed" || contexts[0].conclusion !== "success") process.exit(1);
+                }
+                if (!Array.isArray(data.workflow_runs) || !Number.isSafeInteger(data.total_count) ||
+                    data.total_count > 100 || data.total_count !== data.workflow_runs.length) process.exit(1);
+                const expected = [
+                  [".github/workflows/ci.yml", Number(process.env.CI_ID), Number(process.env.CI_ATTEMPT)],
+                  [".github/workflows/python-matrix.yml", Number(process.env.MATRIX_ID), Number(process.env.MATRIX_ATTEMPT)],
+                ];
+                for (const [path, id, attempt] of expected) {
+                  const matches = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.HEAD_SHA);
+                  if (matches.some(r => !Number.isSafeInteger(r.id) || r.id < 1)) process.exit(1);
+                  const run = matches.sort((a, b) => b.id - a.id)[0];
+                  if (!run || run.id !== id || run.run_attempt !== attempt ||
+                      run.status !== "completed" || run.conclusion !== "success") process.exit(1);
+                }
+              } catch { process.exit(1); }
+            '; then
+            echo "::warning::The PR, base branch, merge commit or test runs changed; skipping merge."
             exit 0
           fi
 

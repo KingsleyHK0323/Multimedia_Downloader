@@ -24,7 +24,7 @@ if ! printf '%s\0%s' "$guard_pr" "$guard_pages" | node -e '
         !Array.isArray(pages) || !pages.every(Array.isArray)) process.exit(1);
     const files = pages.flat();
     if (files.length !== pr.changed_files) process.exit(1);
-    const unsafe = p => p.startsWith(".github/workflows/") || p.startsWith(".github/actions/");
+    const unsafe = p => p.startsWith(".github/");
     if (!files.every(f => f && typeof f.filename === "string" && f.filename.length > 0 &&
         typeof f.status === "string" && f.status.length > 0 &&
         (f.status !== "renamed" || (typeof f.previous_filename === "string" && f.previous_filename.length > 0)) &&
@@ -75,6 +75,7 @@ test('workflow and action paths are rejected on any page and either side of a re
   for (const file of [
     { filename: '.github/workflows/test.yml', status: 'added' },
     { filename: '.github/actions/task/action.yml', status: 'modified' },
+    { filename: '.github/scripts/unsafe.mjs', status: 'modified' },
     { filename: 'deps/new', previous_filename: '.github/workflows/old.yml', status: 'renamed' },
     { filename: '.github/workflows/new.yml', previous_filename: 'deps/old', status: 'renamed' },
   ]) assert.equal(check([Array.from({ length: 100 }, (_, i) => normal(i)), [file]]), false);
@@ -158,7 +159,7 @@ test('both latest workflow runs must succeed for the exact PR head', () => {
 
 
 // OpenAI-Codex: run the actual auto-merge shell with a fully mocked GitHub CLI.
-test('auto-merge only merges an eligible exact-head dependency PR', { skip: process.platform !== 'linux' }, async () => {
+test('auto-merge requires the exact tested head, base and merge context', { skip: process.platform !== 'linux' }, async () => {
   const fs = await import('node:fs');
   const os = await import('node:os');
   const path = await import('node:path');
@@ -167,13 +168,20 @@ test('auto-merge only merges an eligible exact-head dependency PR', { skip: proc
   const actual = workflow.split(marker)[1].split('\n')
     .map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-workflow-test-'));
-  const run = ({ failure = false, protectedFile = false, noPr = false } = {}) => {
+  const base = 'b'.repeat(40), merge = 'c'.repeat(40), moved = 'd'.repeat(40);
+  const run = ({ failure = false, protectedFile = false, noPr = false,
+    baseMoved = false, badContext = false, noJobs = false, badAttempt = false } = {}) => {
     const log = path.join(root, Math.random().toString(36).slice(2));
-    const pr = { state: 'open', base: { ref: 'Source_Code' }, head: { sha }, changed_files: 1 };
+    const pr = { number: 66, state: 'open', user: { login: 'dependabot[bot]' }, mergeable: true,
+      base: { ref: 'Source_Code', sha: base }, head: { sha }, merge_commit_sha: merge, changed_files: 1 };
     const runs = { total_count: 2, workflow_runs: [
-      { id: 1, path: '.github/workflows/ci.yml', head_sha: sha, status: 'completed', conclusion: failure ? 'failure' : 'success' },
-      { id: 2, path: '.github/workflows/python-matrix.yml', head_sha: sha, status: 'completed', conclusion: 'success' },
+      { id: 1, run_attempt: badAttempt ? null : 1, path: '.github/workflows/ci.yml', head_sha: sha,
+        status: 'completed', conclusion: failure ? 'failure' : 'success' },
+      { id: 2, run_attempt: 1, path: '.github/workflows/python-matrix.yml', head_sha: sha,
+        status: 'completed', conclusion: 'success' },
     ] };
+    const contextName = ['dependabot-context', base, sha, badContext ? moved : merge].join('-');
+    const jobs = { total_count: 1, jobs: [{ name: contextName, status: 'completed', conclusion: 'success' }] };
     const pages = [[{ filename: protectedFile ? '.github/actions/unsafe/action.yml' : 'requirements.txt', status: 'modified' }]];
     const prelude = String.raw`
       gh() {
@@ -185,6 +193,10 @@ test('auto-merge only merges an eligible exact-head dependency PR', { skip: proc
           "api --paginate --slurp repos/example/repo/pulls/66/files?per_page=100") printf '%s' "$PAGES" ;;
           "api repos/example/repo/pulls/66 --jq "*) printf 'false\n' ;;
           "api repos/example/repo/pulls/66") printf '%s' "$PR" ;;
+          "api repos/example/repo/git/ref/heads/Source_Code --jq .object.sha") printf '%s\n' "$BASE_HEAD" ;;
+          "api repos/example/repo/actions/runs/1/attempts/1/jobs?per_page=100"|"api repos/example/repo/actions/runs/2/attempts/1/jobs?per_page=100")
+            [ "$NO_JOBS" != 1 ] || return 1
+            printf '%s' "$JOBS" ;;
           "pr merge 66 "*) : ;;
           "workflow run clean-merged-branches.yml "*) : ;;
           *) printf 'Unexpected gh call: %s\n' "$*" >&2; return 1 ;;
@@ -193,8 +205,9 @@ test('auto-merge only merges an eligible exact-head dependency PR', { skip: proc
     `;
     const result = spawnSync('bash', ['--noprofile', '--norc', '-c', prelude + '\n' + actual], {
       encoding: 'utf8', env: { ...process.env, GH_REPO: 'example/repo', GH_TOKEN: 'fixture',
-        GH_LOG: log, HEAD_SHA: sha, PR: JSON.stringify(pr), RUNS: JSON.stringify(runs),
-        PAGES: JSON.stringify(pages), NO_PR: noPr ? '1' : '0' },
+        RUNNER_TEMP: root, GH_LOG: log, HEAD_SHA: sha, PR: JSON.stringify(pr),
+        RUNS: JSON.stringify(runs), PAGES: JSON.stringify(pages), JOBS: JSON.stringify(jobs),
+        BASE_HEAD: baseMoved ? moved : base, NO_PR: noPr ? '1' : '0', NO_JOBS: noJobs ? '1' : '0' },
     });
     assert.equal(result.error, undefined);
     assert.equal(result.status, 0, result.stderr);
@@ -203,7 +216,22 @@ test('auto-merge only merges an eligible exact-head dependency PR', { skip: proc
   const success = run();
   assert.match(success, /pr merge 66 --squash --match-head-commit/);
   assert.match(success, /workflow run clean-merged-branches\.yml/);
-  for (const variant of [{ failure: true }, { protectedFile: true }, { noPr: true }]) {
+  for (const variant of [{ failure: true }, { protectedFile: true }, { noPr: true },
+    { baseMoved: true }, { badContext: true }, { noJobs: true }, { badAttempt: true }]) {
     assert.doesNotMatch(run(variant), /pr merge 66/);
   }
+});
+
+// OpenAI-Codex: both PR test workflows publish their context as a GitHub job name.
+test('CI and matrix expose the same non-checkout merge context job', async () => {
+  const ciWorkflow = await readFile(new URL('../workflows/ci.yml', import.meta.url), 'utf8');
+  const matrixWorkflow = await readFile(new URL('../workflows/python-matrix.yml', import.meta.url), 'utf8');
+  const getJob = text => text.split('  dependabot-merge-context:\n')[1].split(/\n  [A-Za-z][\w-]*:/)[0];
+  const ciJob = getJob(ciWorkflow), matrixJob = getJob(matrixWorkflow);
+  assert.equal(ciJob, matrixJob);
+  assert.match(ciJob, /dependabot-context-/);
+  assert.match(ciJob, /github\.event\.pull_request\.base\.sha/);
+  assert.match(ciJob, /github\.event\.pull_request\.head\.sha/);
+  assert.match(ciJob, /github\.sha/);
+  assert.doesNotMatch(ciJob, /actions\/checkout/);
 });
