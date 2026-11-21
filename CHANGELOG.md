@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Create one linked bug issue when an authorized collaborator marks an open discussion as confirmed, preserving the discussion. (OpenAI-Codex)
 - Build and smoke-test an installable web package before publishing development or verified stable versions to GitHub Packages. (OpenAI-Codex)
 - Correct the published API documentation location. (OpenAI-Codex)
 - Correct first-contribution welcomes, prevent duplicate messages on retries, and allow read-only previews. (OpenAI-Codex)

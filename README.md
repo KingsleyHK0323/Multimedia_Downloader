@@ -164,6 +164,8 @@ The `npm web package` workflow builds and smoke-tests an installable web package
 
 The issue triage workflow classifies known area keywords in issue titles and prose (excluding fenced logs) and requests missing required form information when it applies the `needs-info` label. (OpenAI-Codex)
 
+When an authorized repository collaborator applies `confirmed-bug` to an open Discussion, the discussion triage workflow creates one linked bug Issue. The original Discussion remains available, including its full conversation; this is not GitHub's native issue-to-discussion conversion. (OpenAI-Codex)
+
 The `First interaction` workflow welcomes first-time issue and pull request authors. (OpenAI-Codex)
 
 The `Stale issue and PR management` workflow warns after 30 days of inactivity and closes after 14 additional days. Items with the `keep-open`, `never-stale`, or `security` label, or a milestone, are exempt. (OpenAI-Codex)

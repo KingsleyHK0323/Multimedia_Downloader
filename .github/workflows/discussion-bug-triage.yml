@@ -1,0 +1,109 @@
+# OpenAI-Codex: link confirmed bug discussions to tracked issues.
+name: Discussion bug triage
+
+on:
+  push:
+    branches: [Source_Code]
+    paths: [.github/workflows/discussion-bug-triage.yml]
+  workflow_dispatch:
+  discussion:
+    types: [labeled]
+
+permissions: {}
+
+jobs:
+  ensure-label:
+    if: github.event_name != 'discussion' && github.ref == 'refs/heads/Source_Code'
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Ensure confirmed-bug label exists
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // OpenAI-Codex: create one explicit opt-in label without changing existing labels.
+            const { owner, repo } = context.repo;
+            try {
+              await github.rest.issues.getLabel({ owner, repo, name: 'confirmed-bug' });
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              try {
+                await github.rest.issues.createLabel({ owner, repo, name: 'confirmed-bug',
+                  color: 'b60205', description: 'Create a linked issue from a confirmed bug discussion' });
+              } catch (createError) {
+                if (createError.status !== 422) throw createError;
+                await github.rest.issues.getLabel({ owner, repo, name: 'confirmed-bug' });
+              }
+            }
+
+  create-linked-issue:
+    if: github.event_name == 'discussion' && github.event.label.name == 'confirmed-bug'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    concurrency:
+      group: discussion-bug-${{ github.event.discussion.number }}
+      cancel-in-progress: false
+    permissions:
+      discussions: read
+      issues: write
+    steps:
+      - name: Create a linked issue for a confirmed bug
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // OpenAI-Codex: promote confirmed discussions without changing the original thread.
+            const { owner, repo } = context.repo;
+            const actor = context.payload.sender;
+            const event = context.payload.discussion;
+            if (context.eventName !== 'discussion' || context.payload.action !== 'labeled' ||
+                context.payload.label?.name !== 'confirmed-bug' || actor?.type !== 'User' ||
+                typeof actor.login !== 'string' || !actor.login.trim() ||
+                !Number.isSafeInteger(event?.number) || event.number < 1 || typeof event.node_id !== 'string') return;
+            const access = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: actor.login });
+            if (!['admin', 'write'].includes(access.data?.permission) &&
+                !['maintain', 'triage'].includes(access.data?.role_name)) {
+              core.notice('The actor is not a repository maintainer; no issue was created.');
+              return;
+            }
+            const query = `
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  discussion(number: $number) {
+                    id number url title closed locked labels(first: 100) {
+                      nodes { name }
+                      pageInfo { hasNextPage }
+                    }
+                  }
+                }
+              }`;
+            async function loadDiscussion() {
+              const result = await github.graphql(query, { owner, repo, number: event.number });
+              return result?.repository?.discussion;
+            }
+            function eligible(item) {
+              const expectedUrl = 'https://github.com/' + owner + '/' + repo + '/discussions/' + event.number;
+              return item?.id === event.node_id && item.number === event.number && item.url === expectedUrl &&
+                item.closed === false && item.locked === false && typeof item.title === 'string' && !!item.title.trim() &&
+                Array.isArray(item.labels?.nodes) && item.labels.pageInfo?.hasNextPage === false &&
+                item.labels.nodes.some(label => label?.name === 'confirmed-bug');
+            }
+            const first = await loadDiscussion();
+            if (!eligible(first)) return;
+            const marker = '<!-- mmdl-discussion-bug:' + event.number + ' -->';
+            const existing = await github.paginate(github.rest.issues.listForRepo,
+              { owner, repo, state: 'all', creator: 'github-actions[bot]', per_page: 100 });
+            if (!Array.isArray(existing)) throw new Error('Could not establish existing linked issues.');
+            if (existing.some(item => !item.pull_request && item.user?.login === 'github-actions[bot]' &&
+                typeof item.body === 'string' && item.body.includes(marker))) return;
+            await github.rest.issues.getLabel({ owner, repo, name: 'bug' });
+            const latest = await loadDiscussion();
+            if (!eligible(latest) || latest.title !== first.title) {
+              core.notice('The discussion changed during triage; no issue was created.');
+              return;
+            }
+            const safeTitle = latest.title.replace(/[\r\n]+/g, ' ').replace(/@/g, '@\u200b').trim().slice(0, 200);
+            const title = '[Discussion ' + event.number + '] ' + safeTitle;
+            const body = 'This issue tracks a confirmed bug from the original discussion: ' + latest.url +
+              '\n\nRead the linked discussion for the report and its full context.\n\n' + marker;
+            await github.rest.issues.create({ owner, repo, title, body, labels: ['bug'] });

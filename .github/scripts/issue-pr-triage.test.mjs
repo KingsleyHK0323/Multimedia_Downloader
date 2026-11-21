@@ -290,3 +290,80 @@ test('manual preview never posts for first, existing or invalid contributions', 
     else process.env.PREVIEW_ITEM = saved;
   }
 });
+
+// OpenAI-Codex: exercise discussion-to-issue triage with in-memory GitHub mocks.
+const discussionFlow = await readFile(new URL('../workflows/discussion-bug-triage.yml', import.meta.url), 'utf8');
+const discussionScripts = discussionFlow.split('          script: |\n').slice(1).map((part) => {
+  const lines = [];
+  for (const line of part.split('\n')) {
+    if (line !== '' && !line.startsWith('            ')) break;
+    lines.push(line.slice(12));
+  }
+  return lines.join('\n');
+});
+assert.equal(discussionScripts.length, 2);
+const bootstrapDiscussion = new AsyncFunction('context', 'github', 'core', discussionScripts[0]);
+const promoteDiscussion = new AsyncFunction('context', 'github', 'core', discussionScripts[1]);
+function discussionHarness() {
+  const item = { id: 'D_example', number: 17, url: 'https://github.com/owner/repo/discussions/17',
+    title: 'A bug @someone', closed: false, locked: false,
+    labels: { nodes: [{ name: 'confirmed-bug' }], pageInfo: { hasNextPage: false } } };
+  const state = { item, second: null, reads: 0, existing: [], created: [], role: 'admin',
+    permission: 'admin', knownLabels: ['bug', 'confirmed-bug'] };
+  const context = { ...ctx, eventName: 'discussion', payload: { action: 'labeled',
+    sender: { type: 'User', login: 'maintainer' }, label: { name: 'confirmed-bug' },
+    discussion: { number: 17, node_id: 'D_example' } } };
+  const github = { graphql: async () => ({ repository: { discussion:
+    clone(state.reads++ > 0 && state.second !== null ? state.second : state.item) } }),
+    paginate: async () => state.existing,
+    rest: { repos: { getCollaboratorPermissionLevel: async () => ({ data:
+      { permission: state.permission, role_name: state.role } }) },
+    issues: {
+      listForRepo: async () => {},
+      getLabel: async ({ name }) => { if (!state.knownLabels.includes(name)) throw { status: 404 }; },
+      createLabel: async (label) => { state.knownLabels.push(label.name); },
+      create: async (issue) => {
+        state.created.push(issue);
+        state.existing.push({ user: { login: 'github-actions[bot]' }, body: issue.body });
+      },
+    } } };
+  return { state, context, github, run: () => promoteDiscussion(context, github, { notice() {} }) };
+}
+test('confirmed discussion creates one linked issue without modifying the discussion', async () => {
+  const h = discussionHarness();
+  await h.run();
+  await h.run();
+  assert.equal(h.state.created.length, 1);
+  assert.deepEqual(h.state.created[0].labels, ['bug']);
+  assert.ok(h.state.created[0].body.includes(h.state.item.url));
+  assert.ok(h.state.created[0].body.includes('<!-- mmdl-discussion-bug:17 -->'));
+  assert.ok(h.state.created[0].title.includes('@\u200bsomeone'));
+});
+test('untrusted actors and non-confirmation events cannot create an issue', async () => {
+  const h = discussionHarness();
+  h.state.permission = 'read'; h.state.role = 'read';
+  await h.run(); assert.equal(h.state.created.length, 0);
+  h.state.permission = 'admin'; h.context.payload.sender.type = 'Bot';
+  await h.run(); assert.equal(h.state.created.length, 0);
+  h.context.payload.sender.type = 'User'; h.context.payload.label.name = 'bug';
+  await h.run(); assert.equal(h.state.created.length, 0);
+});
+test('closed, changed or incompletely labelled discussions fail closed', async () => {
+  for (const change of [
+    { closed: true }, { locked: true }, { id: 'D_other' },
+    { labels: { nodes: [{ name: 'confirmed-bug' }], pageInfo: { hasNextPage: true } } },
+    { labels: { nodes: [], pageInfo: { hasNextPage: false } } },
+  ]) {
+    const h = discussionHarness();
+    h.state.second = { ...clone(h.state.item), ...change };
+    await h.run(); assert.equal(h.state.created.length, 0);
+  }
+});
+test('label bootstrap preserves an existing label and creates only a missing one', async () => {
+  const h = discussionHarness();
+  await bootstrapDiscussion(ctx, h.github, { notice() {} });
+  assert.equal(h.state.knownLabels.filter(name => name === 'confirmed-bug').length, 1);
+  h.state.knownLabels = ['bug'];
+  await bootstrapDiscussion(ctx, h.github, { notice() {} });
+  assert.deepEqual(h.state.knownLabels, ['bug', 'confirmed-bug']);
+});
