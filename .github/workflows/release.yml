@@ -130,7 +130,21 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
+          fetch-depth: 0
           persist-credentials: false
+
+      # OpenAI-Codex: use the workflow revision to generate full commit notes.
+      - uses: actions/checkout@v7
+        if: inputs.verify_only != true && steps.tag.outputs.tag != 'v4.3.22'
+        with:
+          ref: ${{ github.sha }}
+          path: release-automation
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        if: inputs.verify_only != true && steps.tag.outputs.tag != 'v4.3.22'
+        with:
+          node-version: '22'
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -160,6 +174,14 @@ jobs:
       # `gh release create`/`gh release edit`), this is a no-op and those
       # notes are left untouched — only missing releases get auto-generated
       # notes as a placeholder.
+      # OpenAI-Codex: include direct commits and use the same base for PR notes.
+      - name: Generate commit changelog
+        id: release_notes
+        if: inputs.verify_only != true && steps.tag.outputs.tag != 'v4.3.22'
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+        run: node release-automation/.github/scripts/release-commit-notes.mjs
+
       - name: Ensure a GitHub Release exists for this tag
         if: inputs.verify_only != true
         env:
@@ -176,7 +198,12 @@ jobs:
             # OpenAI-Codex: never attach new builds to a published release.
             gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -qx true
           else
-            gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --title "$tag" --generate-notes
+            args=(--repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$tag" --generate-notes --notes-file "$RUNNER_TEMP/release-commit-notes.md")
+            previous="${{ steps.release_notes.outputs.previous_tag }}"
+            if [ -n "$previous" ]; then
+              args+=(--notes-start-tag "$previous")
+            fi
+            gh release create "$tag" "${args[@]}"
           fi
 
   build:
