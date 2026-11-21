@@ -49,9 +49,9 @@ assert.equal(actualGuard.split(end).length, 2, 'expected exactly one guard termi
 const guardEnd = actualGuard.indexOf('\nfi', actualGuard.indexOf(end));
 assert.notEqual(guardEnd, -1, 'expected guard closing fi');
 const actualShellGuard = start + actualGuard.slice(0, guardEnd + '\nfi'.length);
-assert.equal(actualGuard.split("| node -e '\n").length, 2, 'expected actual Node validator');
-assert.equal(actualGuard.split("\n'; then").length, 2, 'expected validator terminator');
-const validator = actualGuard.split("| node -e '\n")[1].split("\n'; then")[0];
+assert.equal(actualShellGuard.split("| node -e '\n").length, 2, 'expected actual Node validator');
+assert.equal(actualShellGuard.split("\n'; then").length, 2, 'expected validator terminator');
+const validator = actualShellGuard.split("| node -e '\n")[1].split("\n'; then")[0];
 
 function check(pages, options = {}) {
   const files = pages.flat();
