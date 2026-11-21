@@ -155,3 +155,55 @@ test('both latest workflow runs must succeed for the exact PR head', () => {
   assert.equal(accepts([...base, { ...base[1], id: 4, status: 'in_progress', conclusion: null }]), false);
   assert.equal(accepts([base[0], { ...base[1], head_sha: 'b'.repeat(40) }]), false);
 });
+
+
+// OpenAI-Codex: run the actual auto-merge shell with a fully mocked GitHub CLI.
+test('auto-merge only merges an eligible exact-head dependency PR', { skip: process.platform !== 'linux' }, async () => {
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const marker = '        run: |\n';
+  assert.equal(workflow.split(marker).length, 2);
+  const actual = workflow.split(marker)[1].split('\n')
+    .map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'merge-workflow-test-'));
+  const run = ({ failure = false, protectedFile = false, noPr = false } = {}) => {
+    const log = path.join(root, Math.random().toString(36).slice(2));
+    const pr = { state: 'open', base: { ref: 'Source_Code' }, head: { sha }, changed_files: 1 };
+    const runs = { total_count: 2, workflow_runs: [
+      { id: 1, path: '.github/workflows/ci.yml', head_sha: sha, status: 'completed', conclusion: failure ? 'failure' : 'success' },
+      { id: 2, path: '.github/workflows/python-matrix.yml', head_sha: sha, status: 'completed', conclusion: 'success' },
+    ] };
+    const pages = [[{ filename: protectedFile ? '.github/actions/unsafe/action.yml' : 'requirements.txt', status: 'modified' }]];
+    const prelude = String.raw`
+      gh() {
+        printf '%s\n' "$*" >> "$GH_LOG"
+        case "$*" in
+          "api repos/example/repo/commits/"*"/pulls "*) [ "$NO_PR" = 1 ] || printf '66\n' ;;
+          "api repos/example/repo/actions/runs?"*) printf '%s' "$RUNS" ;;
+          "api repos/example/repo/pulls/66/files "*) : ;;
+          "api --paginate --slurp repos/example/repo/pulls/66/files?per_page=100") printf '%s' "$PAGES" ;;
+          "api repos/example/repo/pulls/66 --jq "*) printf 'false\n' ;;
+          "api repos/example/repo/pulls/66") printf '%s' "$PR" ;;
+          "pr merge 66 "*) : ;;
+          "workflow run clean-merged-branches.yml "*) : ;;
+          *) printf 'Unexpected gh call: %s\n' "$*" >&2; return 1 ;;
+        esac
+      }
+    `;
+    const result = spawnSync('bash', ['--noprofile', '--norc', '-c', prelude + '\n' + actual], {
+      encoding: 'utf8', env: { ...process.env, GH_REPO: 'example/repo', GH_TOKEN: 'fixture',
+        GH_LOG: log, HEAD_SHA: sha, PR: JSON.stringify(pr), RUNS: JSON.stringify(runs),
+        PAGES: JSON.stringify(pages), NO_PR: noPr ? '1' : '0' },
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stderr);
+    return fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : '';
+  };
+  const success = run();
+  assert.match(success, /pr merge 66 --squash --match-head-commit/);
+  assert.match(success, /workflow run clean-merged-branches\.yml/);
+  for (const variant of [{ failure: true }, { protectedFile: true }, { noPr: true }]) {
+    assert.doesNotMatch(run(variant), /pr merge 66/);
+  }
+});
