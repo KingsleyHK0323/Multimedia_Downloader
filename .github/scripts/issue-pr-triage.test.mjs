@@ -301,7 +301,7 @@ const discussionScripts = discussionFlow.split('          script: |\n').slice(1)
   }
   return lines.join('\n');
 });
-assert.equal(discussionScripts.length, 2);
+assert.equal(discussionScripts.length, 3);
 const bootstrapDiscussion = new AsyncFunction('context', 'github', 'core', discussionScripts[0]);
 const promoteDiscussion = new AsyncFunction('context', 'github', 'core', discussionScripts[1]);
 function discussionHarness() {
@@ -366,4 +366,22 @@ test('label bootstrap preserves an existing label and creates only a missing one
   h.state.knownLabels = ['bug'];
   await bootstrapDiscussion(ctx, h.github, { notice() {} });
   assert.deepEqual(h.state.knownLabels, ['bug', 'confirmed-bug']);
+});
+
+// OpenAI-Codex: preview reads real metadata without creating or changing an issue.
+test('discussion preview is read-only and rejects invalid input', async () => {
+  const h = discussionHarness();
+  const previewDiscussion = new AsyncFunction('context', 'github', 'core', discussionScripts[2]);
+  const old = process.env.PREVIEW_NUMBER;
+  try {
+    process.env.PREVIEW_NUMBER = '17';
+    await previewDiscussion(h.context, h.github, { info() {} });
+    assert.equal(h.state.created.length, 0);
+    process.env.PREVIEW_NUMBER = 'invalid';
+    await assert.rejects(() => previewDiscussion(h.context, h.github, { info() {} }), /Invalid discussion number/);
+    assert.equal(h.state.created.length, 0);
+  } finally {
+    if (old === undefined) delete process.env.PREVIEW_NUMBER;
+    else process.env.PREVIEW_NUMBER = old;
+  }
 });

@@ -6,6 +6,11 @@ on:
     branches: [Source_Code]
     paths: [.github/workflows/discussion-bug-triage.yml]
   workflow_dispatch:
+    inputs:
+      preview_number:
+        description: Existing discussion number for a read-only preview
+        type: string
+        required: false
   discussion:
     types: [labeled]
 
@@ -13,7 +18,7 @@ permissions: {}
 
 jobs:
   ensure-label:
-    if: github.event_name != 'discussion' && github.ref == 'refs/heads/Source_Code'
+    if: github.ref == 'refs/heads/Source_Code' && (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.preview_number == ''))
     runs-on: ubuntu-latest
     permissions:
       issues: write
@@ -107,3 +112,49 @@ jobs:
             const body = 'This issue tracks a confirmed bug from the original discussion: ' + latest.url +
               '\n\nRead the linked discussion for the report and its full context.\n\n' + marker;
             await github.rest.issues.create({ owner, repo, title, body, labels: ['bug'] });
+
+  preview:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/Source_Code' && inputs.preview_number != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      discussions: read
+    steps:
+      - name: Preview an existing discussion without creating an issue
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PREVIEW_NUMBER: ${{ inputs.preview_number }}
+        with:
+          script: |
+            // OpenAI-Codex: inspect real discussion metadata without any write permission.
+            const { owner, repo } = context.repo;
+            const input = process.env.PREVIEW_NUMBER || '';
+            if (!/^[1-9][0-9]{0,8}$/.test(input)) throw new Error('Invalid discussion number.');
+            const actor = context.payload.sender;
+            if (actor?.type !== 'User' || typeof actor.login !== 'string' || !actor.login.trim()) {
+              throw new Error('Invalid preview actor.');
+            }
+            const access = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: actor.login });
+            if (!['admin', 'write'].includes(access.data?.permission) &&
+                !['maintain', 'triage'].includes(access.data?.role_name)) throw new Error('Preview actor lacks triage access.');
+            const number = Number(input);
+            const result = await github.graphql(`
+              query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  discussion(number: $number) {
+                    id number url title closed locked labels(first: 100) {
+                      nodes { name }
+                      pageInfo { hasNextPage }
+                    }
+                  }
+                }
+              }`, { owner, repo, number });
+            const item = result?.repository?.discussion;
+            const expectedUrl = 'https://github.com/' + owner + '/' + repo + '/discussions/' + number;
+            if (!item || item.number !== number || item.url !== expectedUrl || typeof item.id !== 'string' ||
+                typeof item.title !== 'string' || !Array.isArray(item.labels?.nodes) ||
+                item.labels.pageInfo?.hasNextPage !== false) throw new Error('Discussion metadata is incomplete.');
+            const eligible = item.closed === false && item.locked === false && !!item.title.trim() &&
+              item.labels.nodes.some(label => label?.name === 'confirmed-bug');
+            core.info(eligible ? 'Preview: discussion has the required label; no issue was created.' :
+              'Preview: discussion is not eligible; no issue was created.');
