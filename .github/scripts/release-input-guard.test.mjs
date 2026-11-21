@@ -2,7 +2,7 @@
 // This does not execute a GitHub workflow or contact any external service.
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -137,4 +137,52 @@ test('release tag and platform inputs cannot inject shell commands', () => {
   const platformAttack = 'all$(printf INJECTED)';
   assert.equal(run(matrixScript, { RELEASE_ONLY: platformAttack }),
     'matrix={"platform":["' + platformAttack + '"]}\n');
+});
+
+// OpenAI-Codex: exercise downstream release shells with local fake commands in CI.
+test('derived release tags stay data in version checks and release creation', () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  function scriptBetween(start, end) {
+    assert.equal(source.split(start).length, 2);
+    const block = source.split(start)[1].split(end)[0];
+    const body = block.split('        run: |\n')[1];
+    assert.ok(body);
+    assert.doesNotMatch(body, /\$\{\{/);
+    return body.split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  }
+  const versionCheck = scriptBetween('      - name: Check the tag matches the project version\n',
+    '\n      # Runs BEFORE');
+  const ensureRelease = scriptBetween('      - name: Ensure a GitHub Release exists for this tag\n',
+    '\n  build:');
+  const root = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), 'release-shell-test-'));
+  const bin = join(root, 'bin');
+  mkdirSync(bin);
+  writeFileSync(join(bin, 'python'), '#!/bin/sh\nprintf "4.3.22\\n"\n', { mode: 0o755 });
+  writeFileSync(join(bin, 'gh'), '#!/bin/sh\nif [ "$1" = release ] && [ "$2" = view ]; then exit 1; fi\nif [ "$1" = release ] && [ "$2" = create ]; then printf "%s\\n" "$@" > "$MOCK_ARGS"; exit 0; fi\nexit 99\n', { mode: 0o755 });
+  const argsFile = join(root, 'gh-args');
+  function run(script, tag, previous = '') {
+    const env = { ...process.env, PATH: bin + ':' + process.env.PATH, RELEASE_TAG: tag,
+      PREVIOUS_TAG: previous, GITHUB_REPOSITORY: 'example/repo', RUNNER_TEMP: root,
+      MOCK_ARGS: argsFile, GH_TOKEN: 'fixture' };
+    delete env.BASH_ENV;
+    delete env.ENV;
+    const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', script], {
+      cwd: root, env, encoding: 'utf8', timeout: 5000,
+    });
+    if (result.error) throw result.error;
+    return result;
+  }
+  assert.equal(run(versionCheck, 'v4.3.22').status, 0);
+  assert.notEqual(run(versionCheck, 'v4.3.23').status, 0);
+  const attack = 'v4.3.22$(printf INJECTED)';
+  const checked = run(versionCheck, attack);
+  assert.notEqual(checked.status, 0);
+  assert.ok(checked.stdout.includes(attack));
+  assert.equal(run(ensureRelease, 'v4.3.23', 'v4.3.22').status, 0);
+  assert.ok(readFileSync(argsFile, 'utf8').split('\n').includes('v4.3.22'));
+  const previous = 'v4.3.21$(printf INJECTED)';
+  assert.equal(run(ensureRelease, attack, previous).status, 0);
+  const args = readFileSync(argsFile, 'utf8').split('\n');
+  assert.ok(args.includes(attack));
+  assert.ok(args.includes(previous));
 });

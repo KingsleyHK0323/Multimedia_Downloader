@@ -164,9 +164,12 @@ jobs:
       # The files can agree with each other and still disagree with the tag
       # being released -- e.g. tagging v4.3.10 on a commit that was never
       # bumped past 4.3.9. Compare the two explicitly.
+      # OpenAI-Codex: keep the validated tag out of generated shell code.
       - name: Check the tag matches the project version
+        env:
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
         run: |
-          tag="${{ steps.tag.outputs.tag }}"
+          tag="$RELEASE_TAG"
           tag_version="${tag#v}"
           file_version="$(python -c "import json;print(json.load(open('package.json'))['version'])")"
           if [ "$tag_version" != "$file_version" ]; then
@@ -193,8 +196,10 @@ jobs:
         if: inputs.verify_only != true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
+          PREVIOUS_TAG: ${{ steps.release_notes.outputs.previous_tag }}
         run: |
-          tag="${{ steps.tag.outputs.tag }}"
+          tag="$RELEASE_TAG"
           if [ "$tag" = "v4.3.22" ]; then
             if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
               gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '.isDraft and .isPrerelease' | grep -qx true
@@ -206,7 +211,7 @@ jobs:
             gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -qx true
           else
             args=(--repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$tag" --generate-notes --notes-file "$RUNNER_TEMP/release-commit-notes.md")
-            previous="${{ steps.release_notes.outputs.previous_tag }}"
+            previous="$PREVIOUS_TAG"
             if [ -n "$previous" ]; then
               args+=(--notes-start-tag "$previous")
             fi
@@ -444,8 +449,9 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.setup.outputs.tag }}
         run: |
-          tag="${{ needs.setup.outputs.tag }}"
+          tag="$RELEASE_TAG"
           echo "Uploading bundles to release $tag"
           find src-tauri/target/release/bundle -type f \
             \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
