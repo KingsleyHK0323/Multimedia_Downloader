@@ -69,3 +69,32 @@ test('preserves a branch when the PR source repository is unavailable', async ()
   pr.head.repo = null;
   assert.deepEqual(await invoke(pr), []);
 });
+
+
+// OpenAI-Codex: exercise Git's server-side lease against an isolated bare fixture.
+test('atomic lease preserves an advanced branch and deletes the unchanged head', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-lease-test-'));
+  const remote = path.join(root, 'remote.git');
+  const work = path.join(root, 'work');
+  const git = (args, options = {}) => execFileSync('git', args, { encoding: 'utf8', stdio: 'pipe', ...options }).trim();
+  git(['init', '--bare', remote]);
+  git(['init', work]);
+  git(['-C', work, 'config', 'user.name', 'Cleanup Test']);
+  git(['-C', work, 'config', 'user.email', 'cleanup@example.invalid']);
+  git(['-C', work, 'checkout', '-b', 'lease-test']);
+  git(['-C', work, 'commit', '--allow-empty', '-m', 'initial']);
+  const old = git(['-C', work, 'rev-parse', 'HEAD']);
+  git(['-C', work, 'push', remote, 'HEAD:refs/heads/lease-test']);
+  git(['-C', work, 'commit', '--allow-empty', '-m', 'advance']);
+  const current = git(['-C', work, 'rev-parse', 'HEAD']);
+  git(['-C', work, 'push', remote, 'HEAD:refs/heads/lease-test']);
+  const deletion = expected => ['-C', work, 'push', `--force-with-lease=refs/heads/lease-test:${expected}`, remote, ':refs/heads/lease-test'];
+  assert.throws(() => git(deletion(old)));
+  assert.equal(git(['--git-dir', remote, 'rev-parse', 'refs/heads/lease-test']), current);
+  git(deletion(current));
+  assert.throws(() => git(['--git-dir', remote, 'rev-parse', '--verify', 'refs/heads/lease-test']));
+});
