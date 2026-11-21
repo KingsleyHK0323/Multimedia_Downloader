@@ -155,6 +155,8 @@ After a pull request merges, the `Clean merged branches` workflow deletes its un
 
 Release builds upload installers to a draft. Automatic publication requires the six expected nonempty installers and successful CI and Python matrix runs for the tagged commit. The workflow does not automatically publish v4.3.3; a historical v4.3.3 release already exists. A failed build or missing verification leaves a draft unpublished. (OpenAI-Codex)
 
+The `Release build` workflow also has a manual `verify_only` mode that builds all three platforms and checks the six installer artifacts without modifying a GitHub Release. (OpenAI-Codex)
+
 The `API documentation build` workflow generates an HTML reference for the Python engine, AI and internationalization modules as a short-lived GitHub Actions artifact and refreshes the [published API reference](https://kingsleyhk0323.github.io/Multimedia_Downloader/api/) on GitHub Pages. (OpenAI-Codex)
 
 The `Container image` workflow builds and smoke-tests the web image on GitHub-hosted runners before pushing SHA and `edge` tags to GHCR. The service has no authentication; bind it to localhost unless you provide your own access controls. (OpenAI-Codex)

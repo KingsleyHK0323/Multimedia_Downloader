@@ -29,6 +29,11 @@ on:
           - ubuntu-22.04
           - macos-15
           - windows-latest
+      verify_only:
+        description: Build and verify artifacts without modifying a GitHub Release
+        type: boolean
+        default: false
+        required: false
   workflow_call:
     inputs:
       tag:
@@ -86,9 +91,21 @@ jobs:
             echo "matrix={\"platform\":[\"$only\"]}" >> "$GITHUB_OUTPUT"
           fi
 
+      # OpenAI-Codex: verification cannot publish and must cover all platforms.
+      - name: Validate verification-only mode
+        if: inputs.verify_only == true
+        env:
+          SOURCE_REF: ${{ github.ref }}
+          ONLY: ${{ inputs.only }}
+          EVENT: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$EVENT" == workflow_dispatch && "$SOURCE_REF" == refs/heads/Source_Code && "$ONLY" == all ]] || { echo "::error::Verification requires all platforms on Source_Code."; exit 1; }
+
       # OpenAI-Codex: create the requested beta tag only from Source_Code.
       - name: Prepare v4.3.22 beta tag
-        if: github.event_name == 'workflow_dispatch' && steps.tag.outputs.tag == 'v4.3.22'
+        if: github.event_name == 'workflow_dispatch' && steps.tag.outputs.tag == 'v4.3.22' && inputs.verify_only != true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ONLY: ${{ inputs.only }}
@@ -113,6 +130,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -143,6 +161,7 @@ jobs:
       # notes are left untouched — only missing releases get auto-generated
       # notes as a placeholder.
       - name: Ensure a GitHub Release exists for this tag
+        if: inputs.verify_only != true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -171,6 +190,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.setup.outputs.tag }}
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -350,10 +370,43 @@ jobs:
 
       - name: Build the Tauri app
         uses: tauri-apps/tauri-action@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # OpenAI-Codex: retain only installer files in verification-only runs.
+      - name: Stage installers for verification
+        if: inputs.verify_only == true
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const root = path.resolve('src-tauri/target/release/bundle');
+          const out = path.join(process.env.RUNNER_TEMP, 'release-verify');
+          fs.mkdirSync(out);
+          let count = 0;
+          function walk(dir) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const file = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(file);
+              else if (entry.isFile() && (/\.(rpm|deb|AppImage|dmg|msi)$/.test(entry.name) || entry.name.endsWith('-setup.exe'))) {
+                fs.copyFileSync(file, path.join(out, entry.name), fs.constants.COPYFILE_EXCL);
+                count++;
+              }
+            }
+          }
+          walk(root);
+          if (!count) throw new Error('No installer artifacts were produced.');
+          NODE
+
+      - uses: actions/upload-artifact@v4
+        if: inputs.verify_only == true
+        with:
+          name: release-verify-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
+          path: ${{ runner.temp }}/release-verify/
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Upload installers to the release
+        if: inputs.verify_only != true
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -368,10 +421,55 @@ jobs:
                -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) \
             -print0 | xargs -0 gh release upload "$tag" --repo "$GITHUB_REPOSITORY"
 
+  # OpenAI-Codex: verify the same build jobs without changing a release.
+  verify-only:
+    needs: [setup, build]
+    if: inputs.verify_only == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: automation
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-verify-${{ github.run_id }}-${{ github.run_attempt }}-*
+          path: ${{ runner.temp }}/release-verify-download
+      - name: Validate the complete version-specific inventory
+        env:
+          TAG: ${{ needs.setup.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+          const root = path.join(process.env.RUNNER_TEMP, 'release-verify-download');
+          const assets = [];
+          function walk(dir) {
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              const file = path.join(dir, entry.name);
+              if (entry.isDirectory()) walk(file);
+              else if (entry.isFile()) assets.push({ name: entry.name, size: fs.statSync(file).size });
+              else throw new Error('Unexpected artifact entry.');
+            }
+          }
+          walk(root);
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'release-verify-assets.json'), JSON.stringify({ assets }));
+          NODE
+          node automation/.github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/release-verify-assets.json"
+
   # OpenAI-Codex: apply the same asset and exact-commit checks to beta publication.
   publish-beta:
     needs: [setup, build]
-    if: needs.setup.outputs.tag == 'v4.3.22'
+    if: inputs.verify_only != true && needs.setup.outputs.tag == 'v4.3.22'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -427,7 +525,7 @@ jobs:
   # OpenAI-Codex: publish only complete builds of a commit with passing CI.
   publish-stable:
     needs: [setup, build]
-    if: needs.setup.outputs.tag != 'v4.3.22' && needs.setup.outputs.tag != 'v4.3.3'
+    if: inputs.verify_only != true && needs.setup.outputs.tag != 'v4.3.22' && needs.setup.outputs.tag != 'v4.3.3'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

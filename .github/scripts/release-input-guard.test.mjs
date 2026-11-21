@@ -70,3 +70,29 @@ test('rejects shell syntax as data and never echoes it', () => {
   }
 });
 
+
+// OpenAI-Codex: verification-only runs must not reach release or package writes.
+test('verification-only mode isolates release and package publication paths', () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const between = (start, end) => {
+    assert.equal(source.split(start).length, 2, 'unique start required');
+    const tail = source.split(start)[1];
+    assert.ok(tail.includes(end), 'end required');
+    return tail.split(end)[0];
+  };
+  assert.match(between('      - name: Validate verification-only mode\n', '      # OpenAI-Codex: create the requested beta tag'),
+    /SOURCE_REF.*github\.ref[\s\S]*"\$ONLY" == all/);
+  assert.match(between('      - name: Ensure a GitHub Release exists for this tag\n', '\n  build:'),
+    /if: inputs\.verify_only != true/);
+  assert.match(between('      - name: Upload installers to the release\n', '\n  # OpenAI-Codex: verify the same build jobs'),
+    /if: inputs\.verify_only != true/);
+  assert.match(between('  publish-beta:\n', '  # OpenAI-Codex: publish only complete builds'),
+    /if: inputs\.verify_only != true/);
+  assert.match(between('  publish-stable:\n', '  # OpenAI-Codex: dispatch package publication'),
+    /if: inputs\.verify_only != true/);
+  const buildAction = between('      - name: Build the Tauri app\n', '      # OpenAI-Codex: retain only installer files');
+  assert.doesNotMatch(buildAction, /tagName|releaseName|releaseId|GITHUB_TOKEN/);
+  const verification = between('  verify-only:\n', '  # OpenAI-Codex: apply the same asset');
+  assert.match(verification, /contents: read/);
+  assert.doesNotMatch(verification, /gh release|npm publish|contents: write/);
+});
