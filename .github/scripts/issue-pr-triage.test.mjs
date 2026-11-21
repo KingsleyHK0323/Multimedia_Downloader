@@ -306,7 +306,7 @@ const bootstrapDiscussion = new AsyncFunction('context', 'github', 'core', discu
 const promoteDiscussion = new AsyncFunction('context', 'github', 'core', discussionScripts[1]);
 function discussionHarness() {
   const item = { id: 'D_example', number: 17, url: 'https://github.com/owner/repo/discussions/17',
-    title: 'A bug @someone', closed: false, locked: false,
+    title: 'A bug @someone', body: 'A reproducible bug\nDetails from @reporter', closed: false, locked: false,
     labels: { nodes: [{ name: 'confirmed-bug' }], pageInfo: { hasNextPage: false } } };
   const state = { item, second: null, reads: 0, existing: [], created: [], role: 'admin',
     permission: 'admin', knownLabels: ['bug', 'confirmed-bug'] };
@@ -336,8 +336,38 @@ test('confirmed discussion creates one linked issue without modifying the discus
   assert.equal(h.state.created.length, 1);
   assert.deepEqual(h.state.created[0].labels, ['bug']);
   assert.ok(h.state.created[0].body.includes(h.state.item.url));
+  assert.ok(h.state.created[0].body.includes('> A reproducible bug'));
+  assert.ok(h.state.created[0].body.includes('> Details from @\u200breporter'));
+  assert.ok(h.state.created[0].body.trimEnd().endsWith('<!-- mmdl-discussion-bug:17 -->'));
   assert.ok(h.state.created[0].body.includes('<!-- mmdl-discussion-bug:17 -->'));
   assert.ok(h.state.created[0].title.includes('@\u200bsomeone'));
+});
+// OpenAI-Codex: prevent copied marker text from suppressing unrelated reports.
+test('only the terminal bot marker identifies an existing issue', async () => {
+  const h = discussionHarness();
+  h.state.existing = [{ user: { login: 'github-actions[bot]' },
+    body: '> <!-- mmdl-discussion-bug:17 -->\n\n<!-- mmdl-discussion-bug:55 -->' }];
+  await h.run(); await h.run();
+  assert.equal(h.state.created.length, 1);
+  const existing = discussionHarness();
+  existing.state.existing = [{ user: { login: 'github-actions[bot]' },
+    body: '<!-- mmdl-discussion-bug:17 -->\\nA maintainer added more details.' }];
+  await existing.run();
+  assert.equal(existing.state.created.length, 0);
+});
+test('a changed report aborts and large reports are safely bounded', async () => {
+  const changed = discussionHarness();
+  changed.state.second = { ...clone(changed.state.item), body: 'Different report' };
+  await changed.run();
+  assert.equal(changed.state.created.length, 0);
+  const large = discussionHarness();
+  large.state.item.body = '@'.repeat(20000);
+  await large.run();
+  assert.equal(large.state.created.length, 1);
+  const body = large.state.created[0].body;
+  assert.ok(Buffer.byteLength(body, 'utf8') < 60000);
+  assert.ok(body.includes('report excerpt was shortened'));
+  assert.ok(!body.includes('@@'));
 });
 test('untrusted actors and non-confirmation events cannot create an issue', async () => {
   const h = discussionHarness();

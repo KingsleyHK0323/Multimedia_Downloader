@@ -75,7 +75,7 @@ jobs:
               query($owner: String!, $repo: String!, $number: Int!) {
                 repository(owner: $owner, name: $repo) {
                   discussion(number: $number) {
-                    id number url title closed locked labels(first: 100) {
+                    id number url title body closed locked labels(first: 100) {
                       nodes { name }
                       pageInfo { hasNextPage }
                     }
@@ -90,6 +90,7 @@ jobs:
               const expectedUrl = 'https://github.com/' + owner + '/' + repo + '/discussions/' + event.number;
               return item?.id === event.node_id && item.number === event.number && item.url === expectedUrl &&
                 item.closed === false && item.locked === false && typeof item.title === 'string' && !!item.title.trim() &&
+                typeof item.body === 'string' &&
                 Array.isArray(item.labels?.nodes) && item.labels.pageInfo?.hasNextPage === false &&
                 item.labels.nodes.some(label => label?.name === 'confirmed-bug');
             }
@@ -99,18 +100,35 @@ jobs:
             const existing = await github.paginate(github.rest.issues.listForRepo,
               { owner, repo, state: 'all', creator: 'github-actions[bot]', per_page: 100 });
             if (!Array.isArray(existing)) throw new Error('Could not establish existing linked issues.');
-            if (existing.some(item => !item.pull_request && item.user?.login === 'github-actions[bot]' &&
-                typeof item.body === 'string' && item.body.includes(marker))) return;
+            if (existing.some(item => {
+              if (item.pull_request || item.user?.login !== 'github-actions[bot]' || typeof item.body !== 'string') return false;
+              const markers = item.body.match(/<!-- mmdl-discussion-bug:[1-9]\d* -->/g) || [];
+              return markers.at(-1) === marker;
+            })) return;
             await github.rest.issues.getLabel({ owner, repo, name: 'bug' });
             const latest = await loadDiscussion();
-            if (!eligible(latest) || latest.title !== first.title) {
+            if (!eligible(latest) || latest.title !== first.title || latest.body !== first.body) {
               core.notice('The discussion changed during triage; no issue was created.');
               return;
             }
             const safeTitle = latest.title.replace(/[\r\n]+/g, ' ').replace(/@/g, '@\u200b').trim().slice(0, 200);
             const title = '[Discussion ' + event.number + '] ' + safeTitle;
+            // OpenAI-Codex: include a bounded, mention-safe report while preserving the source.
+            const original = latest.body.replace(/\r\n?/g, '\n').replace(/[\x00-\x08\x0b-\x1f\x7f]/g, ' ');
+            let excerpt = '';
+            let bytes = 0;
+            let truncated = false;
+            for (const character of original) {
+              const size = Buffer.byteLength(character, 'utf8');
+              if (bytes + size > 12000) { truncated = true; break; }
+              excerpt += character;
+              bytes += size;
+            }
+            const quoted = excerpt.replace(/@/g, '@\u200b').split('\n').map(line => '> ' + line).join('\n');
             const body = 'This issue tracks a confirmed bug from the original discussion: ' + latest.url +
-              '\n\nRead the linked discussion for the report and its full context.\n\n' + marker;
+              '\n\n## Original report\n\n' + quoted +
+              (truncated ? '\n\nThe report excerpt was shortened; see the original discussion for the complete text.' : '') +
+              '\n\n' + marker;
             await github.rest.issues.create({ owner, repo, title, body, labels: ['bug'] });
 
   preview:

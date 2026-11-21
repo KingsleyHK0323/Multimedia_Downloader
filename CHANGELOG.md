@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Include a bounded, mention-safe report excerpt in issues created from confirmed bug discussions. (OpenAI-Codex)
 - Include all commit titles alongside generated pull request notes for new releases. (OpenAI-Codex)
 - Normalize staged installer names before verification while retaining strict published asset checks. (OpenAI-Codex)
 - Add a verification-only mode to build and validate release installers without modifying a Release. (OpenAI-Codex)
