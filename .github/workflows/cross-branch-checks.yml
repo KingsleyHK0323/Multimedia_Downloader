@@ -40,22 +40,39 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # OpenAI-Codex: reject malformed dispatch references before checkout.
-      - name: Validate requested preview commit
-        if: github.event_name == 'workflow_dispatch' && inputs.preview_sha != ''
-        env:
-          PREVIEW_SHA: ${{ inputs.preview_sha }}
-        run: '[[ "$PREVIEW_SHA" =~ ^[0-9a-f]{40}$ ]]'
-      # OpenAI-Codex: do not report a failed website deployment as healthy.
-      - name: Require successful preview deployment
-        if: github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'Multimedia_Downloader_Web_Preview'
-        env:
-          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-        run: test "$CONCLUSION" = success
+      # OpenAI-Codex: fetch trusted website history before selecting a requested commit.
       - uses: actions/checkout@v7
         with:
-          # OpenAI-Codex: check the deployed website commit for Pages events.
-          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_branch == 'Multimedia_Downloader_Web_Preview' && github.event.workflow_run.head_sha || github.event_name == 'workflow_dispatch' && inputs.preview_sha || 'Multimedia_Downloader_Web_Preview' }}
+          ref: Multimedia_Downloader_Web_Preview
+          fetch-depth: 0
+          persist-credentials: false
+      # BEGIN TRUSTED_PREVIEW_REF
+      - name: Verify preview commit provenance
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RUN_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
+          THIS_REPOSITORY: ${{ github.repository }}
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          REQUESTED_SHA: ${{ inputs.preview_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=""
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            target="$REQUESTED_SHA"
+          elif [[ "$EVENT_NAME" == workflow_run && "$RUN_BRANCH" == Multimedia_Downloader_Web_Preview ]]; then
+            [[ "$RUN_REPOSITORY" == "$THIS_REPOSITORY" && "$RUN_CONCLUSION" == success ]] || { echo "::error::Untrusted or unsuccessful preview deployment."; exit 1; }
+            [[ "$RUN_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid deployed preview commit."; exit 1; }
+            target="$RUN_SHA"
+          fi
+          if [[ -n "$target" ]]; then
+            [[ "$target" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid preview commit."; exit 1; }
+            git merge-base --is-ancestor "$target" HEAD || { echo "::error::Preview commit is not in the trusted website history."; exit 1; }
+            git -c core.hooksPath=/dev/null checkout --detach "$target"
+          fi
+      # END TRUSTED_PREVIEW_REF
       - uses: actions/setup-node@v7
         with:
           node-version: "22"

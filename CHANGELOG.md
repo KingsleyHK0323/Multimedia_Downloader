@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Restrict website cross-checks to verified preview branch history and check out the dispatched workflow commit for staged builds. (OpenAI-Codex)
 - Pass release tag and platform inputs through environment variables before shell execution while retaining strict input validation. (OpenAI-Codex)
 - Include a bounded, mention-safe report excerpt in issues created from confirmed bug discussions. (OpenAI-Codex)
 - Include all commit titles alongside generated pull request notes for new releases. (OpenAI-Codex)

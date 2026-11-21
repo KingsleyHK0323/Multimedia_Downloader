@@ -56,7 +56,8 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ needs.validate-input.outputs.source_sha }}
+          # OpenAI-Codex: the guard requires the requested SHA to match this workflow commit.
+          ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify checked-out commit
         shell: bash
