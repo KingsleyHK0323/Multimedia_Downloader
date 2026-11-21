@@ -105,21 +105,35 @@ jobs:
             [[ "$RELEASE_TAG" == "v$version" ]] || { echo "::error::Tag and source version differ."; exit 1; }
             gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease |
               jq -e --arg tag "$RELEASE_TAG" '.tagName == $tag and (.isDraft | not) and (.isPrerelease | not)' >/dev/null
-            gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100" > "$RUNNER_TEMP/package-runs.json"
-            SHA="$sha" node -e '
-              const data = require(process.argv[1]);
-              if (!Array.isArray(data.workflow_runs) || data.total_count > 100) process.exit(1);
-              for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
-                const latest = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.SHA &&
-                  r.head_branch === "Source_Code" && ["push", "workflow_dispatch"].includes(r.event))
-                  .sort((a, b) => b.id - a.id)[0];
-                if (!latest || latest.status !== "completed" || latest.conclusion !== "success") process.exit(1);
-              }
-            ' "$RUNNER_TEMP/package-runs.json"
             package_version="$version"
           else
             [[ "$sha" == "$GITHUB_SHA" ]] || { echo "::error::Source commit changed."; exit 1; }
             package_version="$version-dev.$GITHUB_RUN_ID"
+          fi
+          # OpenAI-Codex: development and release publications both require exact-commit checks.
+          if [[ "$MODE" == release || "$MODE" == publish-dev ]]; then
+            verified=false
+            for attempt in $(seq 1 36); do
+              if gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100" > "$RUNNER_TEMP/package-runs.json" && SHA="$sha" node -e '
+                const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+                if (!/^[0-9a-f]{40}$/.test(process.env.SHA || "") || !Array.isArray(data.workflow_runs) ||
+                    !Number.isSafeInteger(data.total_count) || data.total_count > 100 ||
+                    data.total_count !== data.workflow_runs.length) process.exit(1);
+                for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
+                  const matches = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.SHA &&
+                    r.head_branch === "Source_Code" && ["push", "workflow_dispatch"].includes(r.event));
+                  if (matches.some(r => !Number.isSafeInteger(r.id) || r.id < 1)) process.exit(1);
+                  const latest = matches.sort((a, b) => b.id - a.id)[0];
+                  if (!latest || latest.status !== "completed" || latest.conclusion !== "success") process.exit(1);
+                }
+              ' < "$RUNNER_TEMP/package-runs.json"; then
+                verified=true
+                break
+              fi
+              echo "Waiting for CI and Python matrix for $sha ($attempt/36)."
+              sleep 10
+            done
+            [[ "$verified" == true ]] || { echo "::error::Exact-commit CI and matrix checks must pass before publishing."; exit 1; }
           fi
           echo "mode=$MODE" >> "$GITHUB_OUTPUT"
           echo "version=$package_version" >> "$GITHUB_OUTPUT"
@@ -186,6 +200,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
+      actions: read
       packages: write
     steps:
       - uses: actions/setup-node@v7
@@ -222,7 +237,34 @@ jobs:
             fi
             [[ "$kind" == commit && "$object" == "$SOURCE_SHA" ]] || { echo "::error::Release tag moved during packaging."; exit 1; }
             dist_tag=latest
+          else
+            head="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/Source_Code" --jq '.object.sha')"
+            [[ "$head" == "$SOURCE_SHA" ]] || { echo "::error::Source_Code advanced during packaging."; exit 1; }
           fi
+          # OpenAI-Codex: recheck exact-commit runs immediately before publication.
+          sha="$SOURCE_SHA"
+          verified=false
+          for attempt in $(seq 1 36); do
+            if gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100" > "$RUNNER_TEMP/package-runs.json" && SHA="$sha" node -e '
+              const data = JSON.parse(require("fs").readFileSync(0, "utf8"));
+              if (!/^[0-9a-f]{40}$/.test(process.env.SHA || "") || !Array.isArray(data.workflow_runs) ||
+                  !Number.isSafeInteger(data.total_count) || data.total_count > 100 ||
+                  data.total_count !== data.workflow_runs.length) process.exit(1);
+              for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
+                const matches = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.SHA &&
+                  r.head_branch === "Source_Code" && ["push", "workflow_dispatch"].includes(r.event));
+                if (matches.some(r => !Number.isSafeInteger(r.id) || r.id < 1)) process.exit(1);
+                const latest = matches.sort((a, b) => b.id - a.id)[0];
+                if (!latest || latest.status !== "completed" || latest.conclusion !== "success") process.exit(1);
+              }
+            ' < "$RUNNER_TEMP/package-runs.json"; then
+              verified=true
+              break
+            fi
+            echo "Waiting for CI and Python matrix for $sha ($attempt/36)."
+            sleep 10
+          done
+          [[ "$verified" == true ]] || { echo "::error::Exact-commit CI and matrix checks must pass before publishing."; exit 1; }
           mapfile -t archives < <(find "$RUNNER_TEMP/npm-delivery" -maxdepth 1 -type f -name '*.tgz' -print)
           [[ "${#archives[@]}" == 1 ]] || { echo "::error::Expected one tested package archive."; exit 1; }
           npm publish "${archives[0]}" --registry=https://npm.pkg.github.com --tag "$dist_tag" --ignore-scripts

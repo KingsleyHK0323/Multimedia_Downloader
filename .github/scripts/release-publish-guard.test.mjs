@@ -40,3 +40,35 @@ test('rejects missing, stale, incomplete or failed checks', () => {
 test('a newer failing run overrides an older success', () => {
   assert.notEqual(verify([run(ci), run(matrix), run(matrix, { id: 2, conclusion: 'failure' })]), 0);
 });
+
+// OpenAI-Codex: package publication must recheck the same exact-commit gates.
+const packageWorkflow = await readFile(new URL('../workflows/npm-package.yml', import.meta.url), 'utf8');
+const packagePieces = packageWorkflow.split('SHA="$sha" node -e \x27\n').slice(1);
+assert.equal(packagePieces.length, 2);
+const packageScript = (part) => part.split('\x27 < "$RUNNER_TEMP/package-runs.json"; then')[0]
+  .split('\n').map((line) => line.trim()).join('\n').trim();
+assert.equal(packageScript(packagePieces[0]), packageScript(packagePieces[1]));
+function verifyPackage(runs, total = runs.length) {
+  const result = spawnSync(process.execPath, ['-e', packageScript(packagePieces[0])], {
+    input: JSON.stringify({ total_count: total, workflow_runs: runs }),
+    encoding: 'utf8', env: { ...process.env, SHA: sha }, timeout: 5000,
+  });
+  assert.equal(result.error, undefined);
+  return result.status;
+}
+test('package publication accepts both passing exact-commit checks', () => {
+  assert.equal(verifyPackage([run(ci), run(matrix)]), 0);
+});
+test('package publication rejects missing, incomplete and stale checks', () => {
+  assert.notEqual(verifyPackage([run(ci)]), 0);
+  assert.notEqual(verifyPackage([run(ci), run(matrix, { status: 'in_progress', conclusion: null })]), 0);
+  assert.notEqual(verifyPackage([run(ci), run(matrix, { head_sha: 'b'.repeat(40) })]), 0);
+  assert.notEqual(verifyPackage([run(ci), run(matrix, { head_branch: 'other' })]), 0);
+  assert.notEqual(verifyPackage([run(ci), run(matrix, { event: 'pull_request' })]), 0);
+});
+test('package publication rejects newer failures or incomplete API results', () => {
+  assert.notEqual(verifyPackage([run(ci), run(matrix), run(matrix, { id: 2, conclusion: 'failure' })]), 0);
+  assert.notEqual(verifyPackage([run(ci), run(matrix)], 3), 0);
+  assert.notEqual(verifyPackage([run(ci), run(matrix)], 101), 0);
+  assert.notEqual(verifyPackage([run(ci), run(matrix, { id: null })]), 0);
+});
