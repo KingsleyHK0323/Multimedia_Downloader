@@ -89,6 +89,10 @@ jobs:
       - name: Test trusted workflow checkouts
         run: node --test .github/scripts/workflow-ref-guard.test.mjs
 
+      # OpenAI-Codex: reject failed, skipped and incomplete merge prerequisites.
+      - name: Test required check outcomes
+        run: node --test .github/scripts/required-checks.test.mjs
+
       # OpenAI-Codex: verify commit and pull request changelog coverage.
       - name: Test release commit changelog
         run: node --test .github/scripts/release-commit-notes.test.mjs
@@ -279,3 +283,25 @@ jobs:
           status="$(curl --fail --silent --show-error --location --retry 3 --retry-delay 10 --retry-connrefused --max-time 30 --output page.html --write-out '%{http_code}' "$pages_url")"
           test "$status" = "200"
           grep -Fq '<title>Multimedia Downloader — project field guide</title>' page.html
+
+  # OpenAI-Codex: expose a stable, fail-closed merge-check status.
+  ci-required:
+    name: Required CI
+    if: always()
+    needs: [version-consistency, auto-format-guard, release-input-guard, lint, python-tests, frontend-check, rust-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every prerequisite to succeed
+        env:
+          REQUIRED_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node -e '
+            const jobs = Object.entries(JSON.parse(process.env.REQUIRED_RESULTS));
+            const failures = jobs.filter(([, job]) => job.result !== "success");
+            if (jobs.length !== 7 || failures.length) {
+              console.error("Required jobs did not all succeed:", failures.map(([name, job]) => name + "=" + job.result).join(", "));
+              process.exit(1);
+            }
+          '

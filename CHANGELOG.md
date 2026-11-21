@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Publish stable required check results for the complete CI and cross-platform Python test suites. (OpenAI-Codex)
 - Restrict website cross-checks to verified preview branch history and check out the dispatched workflow commit for staged builds. (OpenAI-Codex)
 - Pass release inputs and derived tags through environment variables before shell execution while retaining strict input validation. (OpenAI-Codex)
 - Include a bounded, mention-safe report excerpt in issues created from confirmed bug discussions. (OpenAI-Codex)
