@@ -132,3 +132,26 @@ test('merge requires the exact CI-tested head and does not bypass or delete', ()
   assert.equal(workflow.includes('--admin'), false);
   assert.equal(workflow.includes('--delete-branch'), false);
 });
+
+
+// OpenAI-Codex: exercise the actual same-head workflow-run gate.
+test('both latest workflow runs must succeed for the exact PR head', () => {
+  const marker = "if ! printf '%s' \"$runs\" | node -e '\n";
+  const suffix = "\n          '; then";
+  assert.equal(workflow.split(marker).length, 2);
+  const validator = workflow.split(marker)[1].split(suffix)[0];
+  const base = [
+    { id: 1, path: '.github/workflows/ci.yml', head_sha: sha, status: 'completed', conclusion: 'success' },
+    { id: 2, path: '.github/workflows/python-matrix.yml', head_sha: sha, status: 'completed', conclusion: 'success' },
+  ];
+  const accepts = (runs, total = runs.length) => spawnSync(process.execPath, ['-e', validator], {
+    encoding: 'utf8', input: JSON.stringify({ total_count: total, workflow_runs: runs }),
+    env: { ...process.env, HEAD_SHA: sha },
+  }).status === 0;
+  assert.equal(accepts(base), true);
+  assert.equal(accepts(base.slice(0, 1)), false);
+  assert.equal(accepts(base, 101), false);
+  assert.equal(accepts([...base, { ...base[0], id: 3, conclusion: 'failure' }]), false);
+  assert.equal(accepts([...base, { ...base[1], id: 4, status: 'in_progress', conclusion: null }]), false);
+  assert.equal(accepts([base[0], { ...base[1], head_sha: 'b'.repeat(40) }]), false);
+});
