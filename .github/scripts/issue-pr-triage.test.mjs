@@ -165,3 +165,100 @@ test('issue classifier ignores false closing fences within logs', async () => {
   await h.run(3, { ...ctx, payload: { issue: item } });
   assert.deepEqual(h.applied, [['area:docs']]);
 });
+
+
+// OpenAI-Codex: exercise the actual first-contribution workflow with mocked GitHub APIs.
+const welcomeWorkflow = await readFile(new URL('../workflows/first-interaction.yml', import.meta.url), 'utf8');
+const welcomeMarker = '          script: |\n';
+assert.equal(welcomeWorkflow.split(welcomeMarker).length, 2);
+const welcomeScript = welcomeWorkflow.split(welcomeMarker)[1].split('\n')
+  .map(line => line.startsWith('            ') ? line.slice(12) : line).join('\n');
+const WelcomeFunction = Object.getPrototypeOf(async function () {}).constructor;
+function welcomeHarness(kind = 'issue') {
+  const author = { id: 42, login: 'alice', type: 'User' };
+  const item = { number: 30, state: 'open', user: author };
+  const state = {
+    history: [{ ...item, ...(kind === 'pr' ? { pull_request: {} } : {}) }],
+    comments: [],
+    latest: { ...item, ...(kind === 'pr' ? { pull_request: {} } : {}) },
+    created: [],
+  };
+  const methods = { history() {}, comments() {} };
+  const github = {
+    paginate: async (method, params) => {
+      if (method === methods.history) {
+        assert.equal(params.creator, 'alice');
+        assert.equal(params.state, 'all');
+        return state.history;
+      }
+      if (method === methods.comments) return state.comments;
+      throw new Error('Unexpected pagination');
+    },
+    rest: { issues: {
+      listForRepo: methods.history,
+      listComments: methods.comments,
+      get: async () => ({ data: state.latest }),
+      createComment: async (params) => {
+        state.created.push(params);
+        state.comments.push({ user: { login: 'github-actions[bot]' }, body: params.body });
+      },
+    } },
+  };
+  const context = { eventName: kind === 'pr' ? 'pull_request_target' : 'issues',
+    repo: { owner: 'owner', repo: 'repo' }, payload: {
+      action: 'opened', sender: author, ...(kind === 'pr' ? { pull_request: item } : { issue: item }),
+    } };
+  const core = { notice() {}, warning() {} };
+  const run = () => new WelcomeFunction('context', 'github', 'core', welcomeScript)(context, github, core);
+  return { state, item, author, context, run };
+}
+test('welcomes the first issue or PR once, with the correct message', async () => {
+  for (const kind of ['issue', 'pr']) {
+    const h = welcomeHarness(kind);
+    await h.run();
+    assert.equal(h.state.created.length, 1);
+    assert.match(h.state.created[0].body, kind === 'issue' ? /first issue/ : /first pull request/);
+    assert.match(h.state.created[0].body, /multimedia-downloader:first-contribution/);
+    await h.run();
+    assert.equal(h.state.created.length, 1);
+  }
+});
+test('earlier issues or PRs by the same author prevent another welcome', async () => {
+  for (const kind of ['issue', 'pr']) {
+    for (const wasPull of [true, false]) {
+      const h = welcomeHarness(kind);
+      h.state.history.push({ number: 3, user: h.author, ...(wasPull ? { pull_request: {} } : {}) });
+      await h.run();
+      assert.equal(h.state.created.length, 0);
+    }
+  }
+});
+test('other contributors and newer items do not suppress the first welcome', async () => {
+  const h = welcomeHarness('pr');
+  h.state.history.push({ number: 1, user: { id: 99, login: 'other', type: 'User' } });
+  h.state.history.push({ number: 31, user: h.author });
+  await h.run();
+  assert.equal(h.state.created.length, 1);
+});
+test('bot, missing history, changed identity and closed targets do not post', async () => {
+  for (const variant of ['bot', 'missing', 'changed', 'closed']) {
+    const h = welcomeHarness();
+    if (variant === 'bot') h.context.payload.sender = { id: 42, login: 'bot', type: 'Bot' };
+    if (variant === 'missing') h.state.history = [];
+    if (variant === 'changed') h.state.latest = { ...h.item, user: { id: 43 } };
+    if (variant === 'closed') h.state.latest = { ...h.item, state: 'closed' };
+    await h.run();
+    assert.equal(h.state.created.length, 0, variant);
+  }
+});
+test('existing legacy welcome and malformed history fail closed', async () => {
+  const h = welcomeHarness();
+  h.state.comments.push({ user: { login: 'github-actions[bot]' },
+    body: 'Thank you for opening your first issue! We appreciate the report and will review it.' });
+  await h.run();
+  assert.equal(h.state.created.length, 0);
+  const broken = welcomeHarness();
+  broken.state.history.push({ number: null, user: broken.author });
+  await assert.rejects(broken.run(), /Incomplete contributor history/);
+  assert.equal(broken.state.created.length, 0);
+});

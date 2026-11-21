@@ -1,4 +1,4 @@
-# OpenAI-Codex: welcome first-time contributors without checking out PR code.
+# OpenAI-Codex: welcome a person's first repository contribution without executing PR code.
 name: First interaction
 
 on:
@@ -11,14 +11,59 @@ permissions:
   issues: write
   pull-requests: write
 
+# OpenAI-Codex: serialize retries for the same issue or pull request.
+concurrency:
+  group: first-interaction-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
 jobs:
   welcome:
     if: github.event.sender.type != 'Bot'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/first-interaction@v3
+      - name: Welcome a first-time contributor
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          issue-message: "Thank you for opening your first issue! We appreciate the report and will review it."
-          pr-message: "Thank you for your first pull request! We appreciate your contribution and will review it."
+          script: |
+            // OpenAI-Codex: first means no earlier issue or pull request by this user.
+            const isIssue = context.eventName === 'issues';
+            if ((!isIssue && context.eventName !== 'pull_request_target') || context.payload.action !== 'opened') return;
+            const item = isIssue ? context.payload.issue : context.payload.pull_request;
+            const sender = context.payload.sender;
+            if (!item || !Number.isSafeInteger(item.number) || item.number < 1 || item.state !== 'open' ||
+                item.user?.type !== 'User' || !Number.isSafeInteger(item.user?.id) || item.user.id < 1 ||
+                typeof item.user?.login !== 'string' || !item.user.login.trim() ||
+                sender?.type !== 'User' || sender.id !== item.user.id) {
+              core.notice('First interaction has incomplete or non-human identity; skipped.');
+              return;
+            }
+            const { owner, repo } = context.repo;
+            const history = await github.paginate(github.rest.issues.listForRepo, {
+              owner, repo, creator: item.user.login, state: 'all', per_page: 100,
+            });
+            if (!Array.isArray(history) || history.some(entry => !Number.isSafeInteger(entry?.number) ||
+                entry.number < 1 || !Number.isSafeInteger(entry.user?.id))) {
+              throw new Error('Incomplete contributor history');
+            }
+            if (!history.some(entry => entry.number === item.number && entry.user.id === item.user.id)) {
+              core.warning('Current contribution is not present in the history; skipped.');
+              return;
+            }
+            if (history.some(entry => entry.number < item.number && entry.user.id === item.user.id)) return;
+            const marker = '<!-- multimedia-downloader:first-contribution -->';
+            const legacy = isIssue
+              ? 'Thank you for opening your first issue! We appreciate the report and will review it.'
+              : 'Thank you for your first pull request! We appreciate your contribution and will review it.';
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner, repo, issue_number: item.number, per_page: 100,
+            });
+            if (!Array.isArray(comments)) throw new Error('Incomplete comment inventory');
+            if (comments.some(comment => comment.user?.login === 'github-actions[bot]' &&
+                typeof comment.body === 'string' && (comment.body.includes(marker) || comment.body === legacy))) return;
+            // OpenAI-Codex: re-read the target immediately before writing.
+            const latest = (await github.rest.issues.get({ owner, repo, issue_number: item.number })).data;
+            if (latest?.state !== 'open' || latest.number !== item.number || latest.user?.id !== item.user.id ||
+                Boolean(latest.pull_request) === isIssue) return;
+            await github.rest.issues.createComment({ owner, repo, issue_number: item.number,
+              body: legacy + '\n\n' + marker });
