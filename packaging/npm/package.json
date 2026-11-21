@@ -1,0 +1,27 @@
+{
+  "name": "@kingsleyhk0323/multimedia-downloader",
+  "description": "Multimedia Downloader web application packaged for GitHub Packages.",
+  "license": "SEE LICENSE IN LICENSE",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KingsleyHK0323/Multimedia_Downloader.git"
+  },
+  "homepage": "https://github.com/KingsleyHK0323/Multimedia_Downloader",
+  "bin": {
+    "multimedia-downloader-web": "bin/mmdl-web.cjs"
+  },
+  "files": [
+    "bin",
+    "app",
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md",
+    "third-party"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "x-codex-signature": "OpenAI-Codex"
+}

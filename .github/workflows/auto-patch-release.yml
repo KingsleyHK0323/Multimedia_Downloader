@@ -118,7 +118,7 @@ jobs:
     needs: bump
     permissions:
       contents: write
-      actions: read
+      actions: write
     uses: ./.github/workflows/release.yml
     with:
       tag: ${{ needs.bump.outputs.tag }}

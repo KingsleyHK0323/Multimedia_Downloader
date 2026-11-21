@@ -1,0 +1,237 @@
+# OpenAI-Codex: validate an installable web package before any GitHub Packages publication.
+name: npm web package
+
+on:
+  push:
+    branches: [Source_Code]
+    paths:
+      - 'packaging/npm/**'
+      - .github/workflows/npm-package.yml
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Validate, publish a development package, or publish a verified stable release
+        type: choice
+        options: [validate, publish-dev, release]
+        default: validate
+        required: true
+      tag:
+        description: Existing stable release tag (required only for release mode)
+        type: string
+        required: false
+  release:
+    types: [published]
+
+permissions: {}
+
+concurrency:
+  group: npm-web-package-${{ github.ref }}-${{ inputs.mode || github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.event_name != 'release' || github.event.release.prerelease == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      mode: ${{ steps.meta.outputs.mode }}
+      version: ${{ steps.meta.outputs.version }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
+      tag: ${{ steps.meta.outputs.tag }}
+    env:
+      MODE: ${{ github.event_name == 'release' && 'release' || inputs.mode || 'validate' }}
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Validate request
+        env:
+          EVENT: ${{ github.event_name }}
+          SOURCE_REF: ${{ github.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$EVENT:$MODE" in
+            push:validate|workflow_dispatch:validate|workflow_dispatch:publish-dev|workflow_dispatch:release)
+              [[ "$SOURCE_REF" == refs/heads/Source_Code ]] || { echo "::error::Use Source_Code for this request."; exit 1; } ;;
+            release:release) ;;
+            *) echo "::error::Unsupported package request."; exit 1 ;;
+          esac
+          if [[ "$MODE" == release ]]; then
+            [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || { echo "::error::Invalid release tag."; exit 1; }
+            [[ "$RELEASE_TAG" != v4.3.3 ]] || { echo "::error::v4.3.3 requires separate confirmation."; exit 1; }
+          fi
+
+      - uses: actions/checkout@v7
+        if: env.MODE != 'release'
+        with:
+          ref: ${{ github.sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        if: env.MODE == 'release'
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          path: source
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        if: env.MODE == 'release'
+        with:
+          ref: Source_Code
+          path: automation
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+
+      - name: Verify source version and release checks
+        id: meta
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="$(git -C source rev-parse HEAD)"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          version="$(node -p "JSON.parse(require('fs').readFileSync('source/package.json','utf8')).version")"
+          [[ "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          if [[ "$MODE" == release ]]; then
+            [[ "$RELEASE_TAG" == "v$version" ]] || { echo "::error::Tag and source version differ."; exit 1; }
+            gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease |
+              jq -e --arg tag "$RELEASE_TAG" '.tagName == $tag and (.isDraft | not) and (.isPrerelease | not)' >/dev/null
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100" > "$RUNNER_TEMP/package-runs.json"
+            SHA="$sha" node -e '
+              const data = require(process.argv[1]);
+              if (!Array.isArray(data.workflow_runs) || data.total_count > 100) process.exit(1);
+              for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
+                const latest = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.SHA &&
+                  r.head_branch === "Source_Code" && ["push", "workflow_dispatch"].includes(r.event))
+                  .sort((a, b) => b.id - a.id)[0];
+                if (!latest || latest.status !== "completed" || latest.conclusion !== "success") process.exit(1);
+              }
+            ' "$RUNNER_TEMP/package-runs.json"
+            package_version="$version"
+          else
+            [[ "$sha" == "$GITHUB_SHA" ]] || { echo "::error::Source commit changed."; exit 1; }
+            package_version="$version-dev.$GITHUB_RUN_ID"
+          fi
+          echo "mode=$MODE" >> "$GITHUB_OUTPUT"
+          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build web application
+        env:
+          PYTHONDONTWRITEBYTECODE: '1'
+        run: |
+          python -m pip install -r source/requirements-web.txt
+          npm ci --no-audit --no-fund --prefix source/frontend
+          npm run build:web --prefix source/frontend
+
+      - name: Assemble and pack
+        id: pack
+        env:
+          PACKAGE_VERSION: ${{ steps.meta.outputs.version }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools=source/packaging/npm
+          [[ "$MODE" != release ]] || tools=automation/packaging/npm
+          node "$tools/assemble.mjs" "$PWD/source" "$RUNNER_TEMP/mmdl-package" "$PACKAGE_VERSION" "$SOURCE_SHA"
+          (cd "$RUNNER_TEMP/mmdl-package" && npm pack --json --ignore-scripts) > "$RUNNER_TEMP/package-info.json"
+          archive="$(node -p "JSON.parse(require('fs').readFileSync(process.argv[1],'utf8'))[0].filename" "$RUNNER_TEMP/package-info.json")"
+          [[ "$archive" =~ ^[A-Za-z0-9._-]+\.tgz$ ]] || { echo "::error::Invalid package filename."; exit 1; }
+          echo "archive=$archive" >> "$GITHUB_OUTPUT"
+
+      - name: Install package and smoke-test the local web app
+        env:
+          ARCHIVE: ${{ steps.pack.outputs.archive }}
+          PACKAGE_VERSION: ${{ steps.meta.outputs.version }}
+          SOURCE_SHA: ${{ steps.meta.outputs.source_sha }}
+          PYTHONDONTWRITEBYTECODE: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/mmdl-consumer"
+          cd "$RUNNER_TEMP/mmdl-consumer"
+          npm install --ignore-scripts --no-save --no-audit --no-fund "$RUNNER_TEMP/mmdl-package/$ARCHIVE"
+          app="$PWD/node_modules/.bin/multimedia-downloader-web"
+          [[ "$("$app" --version)" == "$PACKAGE_VERSION" ]]
+          [[ "$(node -p "require('./node_modules/@kingsleyhk0323/multimedia-downloader/package.json')['x-mmdl-source-commit']")" == "$SOURCE_SHA" ]]
+          MMDL_DOWNLOADS="$RUNNER_TEMP/mmdl-downloads" PORT=18517 "$app" > "$RUNNER_TEMP/mmdl-smoke.log" 2>&1 &
+          pid=$!
+          trap 'kill "$pid" 2>/dev/null || true' EXIT
+          curl --fail --silent --show-error --retry 15 --retry-all-errors --retry-delay 2 http://127.0.0.1:18517/ -o "$RUNNER_TEMP/mmdl-page.html"
+          grep -qi '<html' "$RUNNER_TEMP/mmdl-page.html"
+          curl --fail --silent --show-error http://127.0.0.1:18517/api/locales > "$RUNNER_TEMP/mmdl-locales.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: npm-web-package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mmdl-package/*.tgz
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    if: needs.build.outputs.mode == 'publish-dev' || needs.build.outputs.mode == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@kingsleyhk0323'
+      - uses: actions/download-artifact@v4
+        with:
+          name: npm-web-package-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/npm-delivery
+      - name: Recheck release and publish the tested archive
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          MODE: ${{ needs.build.outputs.mode }}
+          TAG: ${{ needs.build.outputs.tag }}
+          SOURCE_SHA: ${{ needs.build.outputs.source_sha }}
+          VERSION: ${{ needs.build.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dist_tag=dev
+          if [[ "$MODE" == release ]]; then
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease |
+              jq -e --arg tag "$TAG" '.tagName == $tag and (.isDraft | not) and (.isPrerelease | not)' >/dev/null
+            ref="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
+            kind="$(jq -r '.object.type' <<< "$ref")"
+            object="$(jq -r '.object.sha' <<< "$ref")"
+            if [[ "$kind" == tag ]]; then
+              ref="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$object")"
+              kind="$(jq -r '.object.type' <<< "$ref")"
+              object="$(jq -r '.object.sha' <<< "$ref")"
+            fi
+            [[ "$kind" == commit && "$object" == "$SOURCE_SHA" ]] || { echo "::error::Release tag moved during packaging."; exit 1; }
+            dist_tag=latest
+          fi
+          mapfile -t archives < <(find "$RUNNER_TEMP/npm-delivery" -maxdepth 1 -type f -name '*.tgz' -print)
+          [[ "${#archives[@]}" == 1 ]] || { echo "::error::Expected one tested package archive."; exit 1; }
+          npm publish "${archives[0]}" --registry=https://npm.pkg.github.com --tag "$dist_tag" --ignore-scripts
+          verified=false
+          for attempt in $(seq 1 8); do
+            if npm view "@kingsleyhk0323/multimedia-downloader@$VERSION" version --registry=https://npm.pkg.github.com | grep -Fx "$VERSION"; then
+              verified=true
+              break
+            fi
+            sleep 5
+          done
+          [[ "$verified" == true ]] || { echo "::error::Published package could not be verified; inspect the registry before retrying."; exit 1; }

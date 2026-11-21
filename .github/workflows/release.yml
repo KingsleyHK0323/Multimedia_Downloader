@@ -432,3 +432,21 @@ jobs:
           done
           [ "$verified" = true ] || { echo "::error::CI and matrix must both pass for the tagged Source_Code commit."; exit 1; }
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
+
+  # OpenAI-Codex: dispatch package publication after a verified stable release.
+  request-npm-package:
+    needs: [setup, publish-stable]
+    if: needs.publish-stable.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: Queue verified npm package publication
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.setup.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run npm-package.yml --repo "$GITHUB_REPOSITORY" --ref Source_Code -f mode=release -f tag="$TAG"

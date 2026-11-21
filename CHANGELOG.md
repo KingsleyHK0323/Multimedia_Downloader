@@ -13,6 +13,8 @@
 ### Unreleased
 
 #### Repository automation
+- Build and smoke-test an installable web package before publishing development or verified stable versions to GitHub Packages. (OpenAI-Codex)
+- Correct the published API documentation location. (OpenAI-Codex)
 - Correct first-contribution welcomes, prevent duplicate messages on retries, and allow read-only previews. (OpenAI-Codex)
 - Delete merged branches only when the server confirms the expected head commit. (OpenAI-Codex)
 - Require the six expected version-specific installer names and nonempty files before automatic publication. (OpenAI-Codex)
