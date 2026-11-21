@@ -208,7 +208,7 @@ function welcomeHarness(kind = 'issue') {
     repo: { owner: 'owner', repo: 'repo' }, payload: {
       action: 'opened', sender: author, ...(kind === 'pr' ? { pull_request: item } : { issue: item }),
     } };
-  const core = { notice() {}, warning() {} };
+  const core = { notice() {}, warning() {}, info() {} };
   const run = () => new WelcomeFunction('context', 'github', 'core', welcomeScript)(context, github, core);
   return { state, item, author, context, run };
 }
@@ -261,4 +261,32 @@ test('existing legacy welcome and malformed history fail closed', async () => {
   broken.state.history.push({ number: null, user: broken.author });
   await assert.rejects(broken.run(), /Incomplete contributor history/);
   assert.equal(broken.state.created.length, 0);
+});
+
+
+// OpenAI-Codex: a manual preview may inspect real issues but can never post.
+test('manual preview never posts for first, existing or invalid contributions', async () => {
+  const saved = process.env.PREVIEW_ITEM;
+  try {
+    for (const kind of ['issue', 'pr']) {
+      const h = welcomeHarness(kind);
+      h.context.eventName = 'workflow_dispatch';
+      h.context.payload = {};
+      process.env.PREVIEW_ITEM = '30';
+      await h.run();
+      assert.equal(h.state.created.length, 0);
+      h.state.history.push({ number: 1, user: h.author });
+      await h.run();
+      assert.equal(h.state.created.length, 0);
+    }
+    const invalid = welcomeHarness();
+    invalid.context.eventName = 'workflow_dispatch';
+    invalid.context.payload = {};
+    process.env.PREVIEW_ITEM = 'not-a-number';
+    await assert.rejects(invalid.run(), /Invalid preview item number/);
+    assert.equal(invalid.state.created.length, 0);
+  } finally {
+    if (saved === undefined) delete process.env.PREVIEW_ITEM;
+    else process.env.PREVIEW_ITEM = saved;
+  }
 });

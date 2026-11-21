@@ -13,7 +13,7 @@
 ### Unreleased
 
 #### Repository automation
-- Correct first-contribution welcomes and prevent duplicate messages on retries. (OpenAI-Codex)
+- Correct first-contribution welcomes, prevent duplicate messages on retries, and allow read-only previews. (OpenAI-Codex)
 - Delete merged branches only when the server confirms the expected head commit. (OpenAI-Codex)
 - Require the six expected version-specific installer names and nonempty files before automatic publication. (OpenAI-Codex)
 - Classify issue area keywords in prose while excluding fenced logs and ambiguous comments. (OpenAI-Codex)

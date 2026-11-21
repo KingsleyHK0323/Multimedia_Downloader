@@ -6,6 +6,12 @@ on:
     types: [opened]
   pull_request_target:
     types: [opened]
+  workflow_dispatch:
+    inputs:
+      item_number:
+        description: Issue or pull request number to preview without posting
+        required: true
+        type: string
 
 permissions:
   issues: write
@@ -13,7 +19,7 @@ permissions:
 
 # OpenAI-Codex: serialize retries for the same issue or pull request.
 concurrency:
-  group: first-interaction-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number }}
+  group: first-interaction-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number || inputs.item_number }}
   cancel-in-progress: false
 
 jobs:
@@ -24,21 +30,34 @@ jobs:
     steps:
       - name: Welcome a first-time contributor
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PREVIEW_ITEM: ${{ inputs.item_number }}
         with:
           script: |
             // OpenAI-Codex: first means no earlier issue or pull request by this user.
-            const isIssue = context.eventName === 'issues';
-            if ((!isIssue && context.eventName !== 'pull_request_target') || context.payload.action !== 'opened') return;
-            const item = isIssue ? context.payload.issue : context.payload.pull_request;
+            const preview = context.eventName === 'workflow_dispatch';
+            const { owner, repo } = context.repo;
+            let item;
+            let isIssue;
+            if (preview) {
+              // OpenAI-Codex: manual dispatch is always a read-only preview.
+              const input = process.env.PREVIEW_ITEM || '';
+              if (!/^[1-9][0-9]{0,9}$/.test(input)) throw new Error('Invalid preview item number');
+              item = (await github.rest.issues.get({ owner, repo, issue_number: Number(input) })).data;
+              isIssue = !item?.pull_request;
+            } else {
+              isIssue = context.eventName === 'issues';
+              if ((!isIssue && context.eventName !== 'pull_request_target') || context.payload.action !== 'opened') return;
+              item = isIssue ? context.payload.issue : context.payload.pull_request;
+            }
             const sender = context.payload.sender;
             if (!item || !Number.isSafeInteger(item.number) || item.number < 1 || item.state !== 'open' ||
                 item.user?.type !== 'User' || !Number.isSafeInteger(item.user?.id) || item.user.id < 1 ||
                 typeof item.user?.login !== 'string' || !item.user.login.trim() ||
-                sender?.type !== 'User' || sender.id !== item.user.id) {
+                (!preview && (sender?.type !== 'User' || sender.id !== item.user.id))) {
               core.notice('First interaction has incomplete or non-human identity; skipped.');
               return;
             }
-            const { owner, repo } = context.repo;
             const history = await github.paginate(github.rest.issues.listForRepo, {
               owner, repo, creator: item.user.login, state: 'all', per_page: 100,
             });
@@ -50,7 +69,10 @@ jobs:
               core.warning('Current contribution is not present in the history; skipped.');
               return;
             }
-            if (history.some(entry => entry.number < item.number && entry.user.id === item.user.id)) return;
+            if (history.some(entry => entry.number < item.number && entry.user.id === item.user.id)) {
+              core.info('Earlier contribution found; no welcome.');
+              return;
+            }
             const marker = '<!-- multimedia-downloader:first-contribution -->';
             const legacy = isIssue
               ? 'Thank you for opening your first issue! We appreciate the report and will review it.'
@@ -60,10 +82,17 @@ jobs:
             });
             if (!Array.isArray(comments)) throw new Error('Incomplete comment inventory');
             if (comments.some(comment => comment.user?.login === 'github-actions[bot]' &&
-                typeof comment.body === 'string' && (comment.body.includes(marker) || comment.body === legacy))) return;
+                typeof comment.body === 'string' && (comment.body.includes(marker) || comment.body === legacy))) {
+              core.info('This contribution was already welcomed.');
+              return;
+            }
             // OpenAI-Codex: re-read the target immediately before writing.
             const latest = (await github.rest.issues.get({ owner, repo, issue_number: item.number })).data;
             if (latest?.state !== 'open' || latest.number !== item.number || latest.user?.id !== item.user.id ||
                 Boolean(latest.pull_request) === isIssue) return;
+            if (preview) {
+              core.info('Preview only: this first contribution would receive a welcome; no comment was posted.');
+              return;
+            }
             await github.rest.issues.createComment({ owner, repo, issue_number: item.number,
               body: legacy + '\n\n' + marker });
