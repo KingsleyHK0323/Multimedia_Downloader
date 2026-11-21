@@ -31,6 +31,7 @@ jobs:
         env:
           MANUAL_PR: ${{ inputs.pr_number }}
           DRY_RUN: ${{ inputs.dry_run }}
+          CLEANUP_TOKEN: ${{ github.token }}
         with:
           script: |
             const { owner, repo } = context.repo;
@@ -68,4 +69,29 @@ jobs:
               core.info('Dry run: eligible branch will be preserved.');
               return;
             }
-            await github.rest.git.deleteRef({ owner, repo, ref: `heads/${branch}` });
+            // OpenAI-Codex: Git's lease makes the deletion conditional at the server.
+            if (!/^[0-9a-f]{40}$/.test(pr.head.sha) ||
+                !/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo) ||
+                typeof branch !== 'string' || !process.env.CLEANUP_TOKEN) {
+              throw new Error('Invalid cleanup identity or missing token');
+            }
+            const { execFileSync } = require('node:child_process');
+            const fs = require('node:fs');
+            const os = require('node:os');
+            const path = require('node:path');
+            const refName = `refs/heads/${branch}`;
+            execFileSync('git', ['check-ref-format', refName], { stdio: 'ignore' });
+            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'branch-cleanup-'));
+            execFileSync('git', ['init', '--bare', dir], { stdio: 'ignore' });
+            const auth = Buffer.from(`x-access-token:${process.env.CLEANUP_TOKEN}`).toString('base64');
+            const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
+              GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+              GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${auth}` };
+            try {
+              execFileSync('git', ['-C', dir, 'push',
+                `--force-with-lease=${refName}:${pr.head.sha}`,
+                `https://github.com/${owner}/${repo}.git`, `:${refName}`],
+                { env, stdio: 'pipe' });
+            } catch {
+              throw new Error('Conditional branch deletion failed; branch may have changed');
+            }

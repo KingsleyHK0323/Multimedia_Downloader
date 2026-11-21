@@ -8,13 +8,27 @@ const marker = '          script: |\n';
 assert.equal(workflow.split(marker).length, 2);
 const script = workflow.split(marker)[1].split('\n').map(line => line.startsWith('            ') ? line.slice(12) : line).join('\n');
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const fn = new AsyncFunction('context', 'github', 'core', script);
+const fn = new AsyncFunction('context', 'github', 'core', 'require', script);
 const sha = 'a'.repeat(40);
 function makePr(branch = 'feature') {
   return { merged: true, head: { ref: branch, sha, repo: { full_name: 'owner/repo' } } };
 }
 async function invoke(pr, actualSha = sha, dispatch = false, dryRun = 'true') {
   const deleted = [];
+  const fakeRequire = name => {
+    if (name === 'node:child_process') return { execFileSync: (command, args) => {
+      assert.equal(command, 'git');
+      if (args.includes('push')) {
+        assert.ok(args.includes(`--force-with-lease=refs/heads/${pr.head.ref}:${pr.head.sha}`));
+        deleted.push(`heads/${pr.head.ref}`);
+      }
+    } };
+    if (name === 'node:fs') return { mkdtempSync: () => '/fake/git' };
+    if (name === 'node:os') return { tmpdir: () => '/fake' };
+    if (name === 'node:path') return { join: (...parts) => parts.join('/') };
+    throw new Error('Unexpected dependency');
+  };
+  process.env.CLEANUP_TOKEN = 'test-token';
   const context = { eventName: dispatch ? 'workflow_dispatch' : 'pull_request_target',
     repo: { owner: 'owner', repo: 'repo' },
     payload: { repository: { full_name: 'owner/repo' }, pull_request: pr } };
@@ -24,7 +38,7 @@ async function invoke(pr, actualSha = sha, dispatch = false, dryRun = 'true') {
   } } };
   const core = { info() {}, warning() {} };
   if (dispatch) { process.env.MANUAL_PR = '12'; process.env.DRY_RUN = dryRun; }
-  await fn(context, github, core);
+  await fn(context, github, core, fakeRequire);
   return deleted;
 }
 test('deletes only a merged, unchanged local feature branch', async () => {
@@ -47,4 +61,40 @@ test('manual cleanup rejects unmerged pull requests', async () => {
 test('manual dry run preserves eligible branches', async () => {
   assert.deepEqual(await invoke(makePr(), sha, true), []);
   assert.deepEqual(await invoke(makePr(), sha, true, 'false'), ['heads/feature']);
+});
+
+// OpenAI-Codex: a deleted source repository must never authorize cleanup.
+test('preserves a branch when the PR source repository is unavailable', async () => {
+  const pr = makePr();
+  pr.head.repo = null;
+  assert.deepEqual(await invoke(pr), []);
+});
+
+
+// OpenAI-Codex: exercise Git's server-side lease against an isolated bare fixture.
+test('atomic lease preserves an advanced branch and deletes the unchanged head', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const fs = await import('node:fs');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'cleanup-lease-test-'));
+  const remote = path.join(root, 'remote.git');
+  const work = path.join(root, 'work');
+  const git = (args, options = {}) => execFileSync('git', args, { encoding: 'utf8', stdio: 'pipe', ...options }).trim();
+  git(['init', '--bare', remote]);
+  git(['init', work]);
+  git(['-C', work, 'config', 'user.name', 'Cleanup Test']);
+  git(['-C', work, 'config', 'user.email', 'cleanup@example.invalid']);
+  git(['-C', work, 'checkout', '-b', 'lease-test']);
+  git(['-C', work, 'commit', '--allow-empty', '-m', 'initial']);
+  const old = git(['-C', work, 'rev-parse', 'HEAD']);
+  git(['-C', work, 'push', remote, 'HEAD:refs/heads/lease-test']);
+  git(['-C', work, 'commit', '--allow-empty', '-m', 'advance']);
+  const current = git(['-C', work, 'rev-parse', 'HEAD']);
+  git(['-C', work, 'push', remote, 'HEAD:refs/heads/lease-test']);
+  const deletion = expected => ['-C', work, 'push', `--force-with-lease=refs/heads/lease-test:${expected}`, remote, ':refs/heads/lease-test'];
+  assert.throws(() => git(deletion(old)));
+  assert.equal(git(['--git-dir', remote, 'rev-parse', 'refs/heads/lease-test']), current);
+  git(deletion(current));
+  assert.throws(() => git(['--git-dir', remote, 'rev-parse', '--verify', 'refs/heads/lease-test']));
 });
