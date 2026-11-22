@@ -331,22 +331,14 @@ test('mode gates default to legacy and reject unknown values', () => {
   assert.match(workflow, /invalid-mode:[\s\S]*?exit 1\n  legacy-report:/);
 });
 
-// OpenAI-Codex_health_release_architecture: prevent an opt-in variable from enabling App writes before isolation.
-test('health PR mode stops unconditionally before creating an App token', () => {
+// OpenAI-Codex: health proposals are opt-in and limited to the approved source ref.
+test('health PR mode requires an explicit opt-in and a source ref', () => {
   const report = workflow.split('\n  report:\n')[1];
   assert.ok(report, 'health PR job must be present');
-  const guard = "      # OpenAI-Codex_health_release_architecture: keep App PR writes disabled until branch isolation is verified.\n" +
-    "      - name: Block health PR writes pending branch isolation\n" +
-    "        shell: bash\n" +
-    "        run: |\n" +
-    "          echo '::error::Health App PR mode is disabled until branch isolation is verified.'\n" +
-    "          exit 1\n";
-  const tokenStep = "      - name: Create a repository-scoped App token\n";
-  assert.equal(report.split(guard).length, 2, 'the unconditional fail-closed step must be unique');
-  assert.ok(report.indexOf(guard) < report.indexOf(tokenStep), 'the guard must precede the App token');
-  assert.ok(report.includes(guard + tokenStep), 'no step may be inserted between the guard and token');
-  assert.match(report, /vars\.AUTOMATION_PR_MODE == 'enabled'/);
-  assert.doesNotMatch(guard, /^\s*(?:if|continue-on-error):/m);
+  const gate = report.split('\n    concurrency:\n')[0];
+  assert.match(gate, /vars\.AUTOMATION_PR_MODE == 'enabled'/);
+  assert.match(gate, /github\.repository == 'KingsleyHK0323\/Multimedia_Downloader'/);
+  assert.match(gate, /github\.ref == 'refs\/heads\/Source_Code'/);
 });
 
 test('rejects an obsolete queued writer revision before any write', async () => {
@@ -358,9 +350,8 @@ test('rejects an obsolete queued writer revision before any write', async () => 
 test('checks the writer revision before creating an App token', () => {
   const report = workflow.split('\n  report:\n')[1];
   const revision = report.indexOf('      - name: Verify current health writer revision\n');
-  const guard = report.indexOf('      - name: Block health PR writes pending branch isolation\n');
   const token = report.indexOf('      - name: Create a repository-scoped App token\n');
-  assert.ok(revision >= 0 && revision < guard && guard < token);
+  assert.ok(revision >= 0 && revision < token);
   assert.ok(report.includes("WORKFLOW_SHA: ${{ job.workflow_sha }}"));
   assert.match(report, /source_sha.*git\/ref\/heads\/Source_Code/);
 });

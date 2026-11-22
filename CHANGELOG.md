@@ -13,6 +13,8 @@
 ### Unreleased
 
 #### Repository automation
+- Observe approved merged PR metadata without privileged actions to validate release-event handling. (OpenAI-Codex)
+- Enable opt-in App health proposals for verified protected-branch testing. (OpenAI-Codex)
 - Prepare the health report writer to share the approved temporary branch and coordination lock. (OpenAI-Codex)
 - Record the scheduled CI run attempt in the health report for accurate rerun tracking. (OpenAI-Codex_health_release_architecture)
 - Stage an opt-in health report update that verifies the App commit, complete tree, push checks, and protected source ref before a non-force compare-and-swap. (OpenAI-Codex_ruleset_architecture)
