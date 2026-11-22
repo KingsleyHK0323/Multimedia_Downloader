@@ -3,6 +3,10 @@ name: Verify repository automation App
 
 on:
   workflow_dispatch:
+  # OpenAI-Codex: re-verify the App when this trusted workflow changes.
+  push:
+    branches: [Source_Code]
+    paths: [.github/workflows/verify-automation-app.yml]
 
 permissions: {}
 
@@ -41,3 +45,27 @@ jobs:
             never|always|pull_requests_only|exempt) printf 'App bypass mode: %s\n' "$mode" ;;
             *) echo '::error::App bypass mode is missing or unknown.'; exit 1 ;;
           esac
+      # OpenAI-Codex: resolve the App bot identity without repository writes.
+      - name: Verify App bot identity
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$APP_SLUG" = 'kingsley-multimedia-automation'
+          bot="$(gh api "/users/${APP_SLUG}%5Bbot%5D")"
+          jq -e --arg login "${APP_SLUG}[bot]" '.login == $login and .type == "Bot" and (.id | type == "number" and . > 0 and floor == .)' <<< "$bot" >/dev/null
+          printf 'App bot user ID: %s\n' "$(jq -r '.id' <<< "$bot")"
+      # OpenAI-Codex: confirm the private App metadata is visible to its own token.
+      - name: Verify App metadata identity
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$APP_SLUG" = 'kingsley-multimedia-automation'
+          app_id="$(gh api "/apps/$APP_SLUG" --jq '.id')"
+          test "$app_id" = '5868451'
+          echo 'App metadata identity verified.'

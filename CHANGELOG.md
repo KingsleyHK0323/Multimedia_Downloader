@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Recheck the automation App identity when its verification workflow changes. (OpenAI-Codex)
 - Check the automation App's view of the permanent-branch ruleset without changing repository settings. (OpenAI-Codex)
 - Record the tested base, head, and merge context for every pull request. (OpenAI-Codex_ruleset_architecture)
 - Isolate automated formatting from checkout-local Python modules. (OpenAI-Codex_format_architecture)
