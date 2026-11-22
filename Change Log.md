@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-22
+
+- Added a non-deploying build check for website pushes and pull requests. (OpenAI-Codex)
+
 ## 2026-11-04
 
 - Updated the simulated app version to match Source_Code V4.3.20. (OpenAI-Codex)
