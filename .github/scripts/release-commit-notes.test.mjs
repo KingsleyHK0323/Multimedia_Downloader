@@ -74,10 +74,17 @@ test('rejects invalid input and missing tags without producing notes', () => {
 
 
 // OpenAI-Codex_format_architecture: execute the actual draft-creation script with GitHub mocks.
-const creationBlock = workflow.split('      - name: Create or verify the draft release\n')[1]
-  ?.split('\n      - name: Upload or verify exact release assets')[0];
-const creationScript = creationBlock?.split('          script: |\n')[1]?.replace(/^ {12}/gm, '');
-assert.ok(creationScript);
+const creationBlock = workflow.split('      - name: Create or verify the draft release\n')[1];
+const scriptBlock = creationBlock?.split('          script: |\n')[1];
+assert.ok(scriptBlock);
+const scriptLines = [];
+for (const line of scriptBlock.split('\n')) {
+  if (line === '') { scriptLines.push(''); continue; }
+  if (!line.startsWith('            ')) break;
+  scriptLines.push(line.slice(12));
+}
+const creationScript = scriptLines.join('\n');
+assert.ok(creationScript.trim());
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 const runCreation = new AsyncFunction('github', 'context', 'require', creationScript);
 const target = 'a'.repeat(40);
