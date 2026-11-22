@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Verify the automation App against a scoped required-status rule before enabling protected updates. (OpenAI-Codex)
 - Run the cross-platform Python matrix for pushes to the approved temporary automation branch. (OpenAI-Codex)
 - Keep staged health App writes and merges disabled until non-source branch isolation is verified. (OpenAI-Codex)
 - Reconcile merged-branch cleanup, first contributions, and PR labels from trusted events and scheduled scans. (OpenAI-Codex)
