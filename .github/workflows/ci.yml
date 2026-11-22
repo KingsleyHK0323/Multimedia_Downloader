@@ -76,6 +76,10 @@ jobs:
       - name: Test formatter change selection
         run: node --test .github/scripts/auto-format.test.mjs
 
+      # OpenAI-Codex_format_architecture: exercise isolated plans, artifacts and atomic App updates.
+      - name: Test formatter App reconciliation
+        run: node --test .github/scripts/auto-format-plan.test.mjs .github/scripts/auto-format-artifacts.test.mjs .github/scripts/auto-format-cas.test.mjs .github/scripts/auto-format-workflow.test.mjs
+
       # OpenAI-Codex_format_architecture: prevent release-helper formatting from creating a later bot commit.
       - name: Check release Python helper formatting
         run: >-
@@ -84,6 +88,7 @@ jobs:
           .github/scripts/download-release-artifacts.test.py
           .github/scripts/stage-release-artifacts.py
           .github/scripts/stage-release-artifacts.test.py
+          .github/scripts/formatter-plan.py
 
   # OpenAI-Codex: test the actual release input guard on Linux.
   release-input-guard:
@@ -113,6 +118,7 @@ jobs:
             .github/workflows/release.yml .github/workflows/release-build.yml .github/workflows/npm-package.yml \
             .github/workflows/clean-merged-branches.yml .github/workflows/cleanup-associated-pr-probe.yml \
             .github/workflows/first-interaction.yml .github/workflows/issue-pr-triage.yml \
+            .github/workflows/auto-format.yml .github/workflows/formatter-plan.yml .github/workflows/formatter-app-cas.yml \
             .github/workflows/automation-health-cas.yml \
             .github/workflows/automation-health.yml .github/workflows/automation-health-merge.yml \
             .github/workflows/patch-release-observer.yml

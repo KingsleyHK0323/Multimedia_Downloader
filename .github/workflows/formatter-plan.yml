@@ -1,0 +1,113 @@
+# OpenAI-Codex_format_architecture: calculate one independent, read-only formatting plan.
+name: Formatter plan
+on:
+  workflow_call:
+    inputs:
+      replica:
+        required: true
+        type: string
+    outputs:
+      artifact_id:
+        value: ${{ jobs.plan.outputs.artifact_id }}
+      artifact_digest:
+        value: ${{ jobs.plan.outputs.artifact_digest }}
+permissions:
+  contents: read
+jobs:
+  plan:
+    name: Formatter plan ${{ inputs.replica }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      artifact_id: ${{ steps.retained.outputs.artifact-id }}
+      artifact_digest: ${{ steps.retained.outputs.artifact-digest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ job.workflow_sha }}
+          path: trusted-automation
+          persist-credentials: false
+      - name: Verify trusted planner script
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='trusted-automation/.github/scripts/formatter-plan.py'
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ && -f "$file" && ! -L "$file" ]]
+          [[ "$(git -C trusted-automation rev-parse HEAD)" == "$WORKFLOW_SHA" ]]
+          record="$(git -C trusted-automation ls-tree "$WORKFLOW_SHA" -- .github/scripts/formatter-plan.py)"
+          [[ "$record" =~ ^100644[[:space:]]blob[[:space:]]([0-9a-f]{40})[[:space:]] ]]
+          [[ "$(git -C trusted-automation hash-object --no-filters .github/scripts/formatter-plan.py)" == "${BASH_REMATCH[1]}" ]]
+      - name: Verify exact source ref
+        env:
+          ACTUAL_REF: ${{ github.ref }}
+        shell: bash
+        run: |
+          [[ "$ACTUAL_REF" == 'refs/heads/Source_Code' ]] ||
+            { echo '::error::Unexpected source ref.'; exit 1; }
+      - name: Fetch Source_Code Git objects
+        id: fetch
+        env:
+          FORMAT_GIT_DIR: ${{ runner.temp }}/format-source.git
+          EXPECTED_WORKFLOW_SHA: ${{ job.workflow_sha }}
+          PLAN_REPLICA: ${{ inputs.replica }}
+          GIT_CONFIG_NOSYSTEM: '1'
+          GIT_CONFIG_GLOBAL: /dev/null
+          GIT_TERMINAL_PROMPT: '0'
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$PLAN_REPLICA" == one || "$PLAN_REPLICA" == two ]]
+          [[ "$EXPECTED_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          git init --bare --quiet "$FORMAT_GIT_DIR"
+          git -C "$FORMAT_GIT_DIR" -c core.hooksPath=/dev/null fetch --no-recurse-submodules --no-tags https://github.com/KingsleyHK0323/Multimedia_Downloader.git refs/heads/Source_Code:refs/heads/source
+          [[ "$(git -C "$FORMAT_GIT_DIR" rev-parse refs/heads/source)" == "$EXPECTED_WORKFLOW_SHA" ]]
+          set +e
+          git ls-remote --exit-code https://github.com/KingsleyHK0323/Multimedia_Downloader.git refs/heads/automation/protected-workflows > "$RUNNER_TEMP/service-ref"
+          status=$?
+          set -e
+          if [[ "$status" == 0 ]]; then
+            [[ "$(wc -l < "$RUNNER_TEMP/service-ref")" == 1 ]]
+            read -r service name < "$RUNNER_TEMP/service-ref"
+            [[ "$service" =~ ^[0-9a-f]{40}$ && "$name" == refs/heads/automation/protected-workflows ]]
+            git -C "$FORMAT_GIT_DIR" -c core.hooksPath=/dev/null fetch --no-recurse-submodules --no-tags https://github.com/KingsleyHK0323/Multimedia_Downloader.git refs/heads/automation/protected-workflows:refs/heads/service
+            [[ "$(git -C "$FORMAT_GIT_DIR" rev-parse refs/heads/service)" == "$service" ]]
+            printf 'service=%s\n' "$service" >> "$GITHUB_OUTPUT"
+          elif [[ "$status" == 2 ]]; then
+            printf 'service=\n' >> "$GITHUB_OUTPUT"
+          else
+            exit "$status"
+          fi
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12.8'
+      - name: Install pinned Black for planning
+        shell: bash
+        run: |
+          cat > "$RUNNER_TEMP/black-requirements.txt" <<'REQUIREMENTS'
+          black==25.1.0 --hash=sha256:95e8176dae143ba9097f351d174fdaf0ccd29efb414b362ae3fd72bf0f710717 --hash=sha256:3b48735872ec535027d979e8dcb20bf4f70b5ac75a8ea99f127c106a7d7aba9f
+          click==8.1.8 --hash=sha256:63c132bbbed01578a06712a2d1f497bb62d9c1c0d329b7903a866228027263b2
+          mypy-extensions==1.1.0 --hash=sha256:1be4cccdb0f2482337c4743e60421de3a356cd97508abadd57d47403e94f5505
+          packaging==24.2 --hash=sha256:09abb1bccd265c01f4a3aa3f7a7db064b36514d2cba19a2f694fe6150451a759
+          pathspec==0.12.1 --hash=sha256:a0d503e138a4c123b27490a4f7beda6a01c6f288df0e4a8b79c7eb0dc7b4cc08
+          platformdirs==4.3.6 --hash=sha256:73e575e1408ab8103900836b97580d5307456908a03e92031bab39e4554cc3fb
+          REQUIREMENTS
+          python -I -m pip install --disable-pip-version-check --no-cache-dir --ignore-installed --no-deps --require-hashes --only-binary=:all: -r "$RUNNER_TEMP/black-requirements.txt"
+      - name: Calculate formatting plan from Git objects
+        env:
+          FORMAT_GIT_DIR: ${{ runner.temp }}/format-source.git
+          FORMAT_OUTPUT: ${{ runner.temp }}/format-plan-${{ inputs.replica }}
+          FORMAT_ANCHOR: '2f596251077f7dad4d68928339c82a05f118aaed'
+          FORMAT_SERVICE_SHA: ${{ steps.fetch.outputs.service }}
+        shell: bash
+        run: |
+          python -I trusted-automation/.github/scripts/formatter-plan.py
+      - name: Retain formatting plan as data
+        id: retained
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: format-plan-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.replica }}
+          path: ${{ runner.temp }}/format-plan-${{ inputs.replica }}/
+          if-no-files-found: error
+          retention-days: 1

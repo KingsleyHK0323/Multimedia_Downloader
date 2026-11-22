@@ -1,0 +1,308 @@
+# OpenAI-Codex_format_architecture: reconcile verified formatter commits with a protected compare-and-swap.
+name: Formatter App CAS
+on:
+  push:
+    branches: [Source_Code]
+  workflow_run:
+    workflows: [CI, Python matrix tests]
+    types: [completed]
+  schedule:
+    - cron: '47 */6 * * *'
+  workflow_dispatch:
+permissions: {}
+jobs:
+  invalid-mode:
+    if: vars.AUTOMATION_FORMAT_MODE != '' && vars.AUTOMATION_FORMAT_MODE != 'legacy' && vars.AUTOMATION_FORMAT_MODE != 'enabled'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Reject unknown formatter mode
+        run: exit 1
+  ready:
+    if: >-
+      vars.AUTOMATION_FORMAT_MODE == 'enabled' &&
+      github.repository_id == '1251103365' && github.ref == 'refs/heads/Source_Code' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'automation/protected-workflows' &&
+        github.event.workflow_run.repository.id == 1251103365 &&
+        github.event.workflow_run.head_repository.id == 1251103365))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - name: Avoid planning until both push workflows complete
+        id: check
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // BEGIN FORMAT_READY_GATE
+            const { owner, repo } = context.repo;
+            if (owner + '/' + repo !== 'KingsleyHK0323/Multimedia_Downloader' ||
+                context.ref !== 'refs/heads/Source_Code') throw new Error('Unexpected formatter gate context.');
+            if (context.eventName !== 'workflow_run') { core.setOutput('ready', 'true'); return; }
+            const event = context.payload.workflow_run;
+            if (event?.event !== 'push' || event.head_branch !== 'automation/protected-workflows' ||
+                event.repository?.id !== 1251103365 || event.head_repository?.id !== 1251103365 ||
+                !/^[0-9a-f]{40}$/.test(event.head_sha || '')) throw new Error('Unexpected formatter push context.');
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner, repo, event: 'push', head_sha: event.head_sha, per_page: 100,
+            });
+            if (!Array.isArray(runs) || runs.length > 1000) throw new Error('Formatter push runs are unavailable.');
+            const expected = [
+              ['.github/workflows/ci.yml', 'CI'],
+              ['.github/workflows/python-matrix.yml', 'Python matrix tests'],
+            ];
+            const ready = expected.every(([path, name]) => {
+              const candidates = runs.filter(run => run?.path === path && run.event === 'push' &&
+                run.head_sha === event.head_sha && run.head_branch === 'automation/protected-workflows' &&
+                run.repository?.id === 1251103365 && run.head_repository?.id === 1251103365)
+                .sort((a, b) => b.id - a.id);
+              const latest = candidates[0];
+              return Number.isSafeInteger(latest?.id) && latest.id > 0 && latest.name === name &&
+                latest.status === 'completed' && latest.conclusion === 'success';
+            });
+            core.setOutput('ready', ready ? 'true' : 'false');
+            // END FORMAT_READY_GATE
+  plan-one:
+    needs: [ready]
+    if: >-
+      needs.ready.outputs.ready == 'true' &&
+      vars.AUTOMATION_FORMAT_MODE == 'enabled' &&
+      github.repository_id == '1251103365' && github.ref == 'refs/heads/Source_Code' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'automation/protected-workflows' &&
+        github.event.workflow_run.repository.id == 1251103365 &&
+        github.event.workflow_run.head_repository.id == 1251103365))
+    permissions:
+      contents: read
+    uses: ./.github/workflows/formatter-plan.yml
+    with:
+      replica: one
+  plan-two:
+    needs: [ready]
+    if: >-
+      needs.ready.outputs.ready == 'true' &&
+      vars.AUTOMATION_FORMAT_MODE == 'enabled' &&
+      github.repository_id == '1251103365' && github.ref == 'refs/heads/Source_Code' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_branch == 'automation/protected-workflows' &&
+        github.event.workflow_run.repository.id == 1251103365 &&
+        github.event.workflow_run.head_repository.id == 1251103365))
+    permissions:
+      contents: read
+    uses: ./.github/workflows/formatter-plan.yml
+    with:
+      replica: two
+  reconcile:
+    needs: [plan-one, plan-two]
+    if: >-
+      !cancelled() && needs.plan-one.result == 'success' && needs.plan-two.result == 'success' &&
+      vars.AUTOMATION_FORMAT_MODE == 'enabled'
+    concurrency:
+      group: automation-service-reconcile
+      queue: max
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      checks: read
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Verify exact workflow revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ACTUAL_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ACTUAL_REF" == refs/heads/Source_Code && "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          tip="$(gh api repos/KingsleyHK0323/Multimedia_Downloader/git/ref/heads/Source_Code --jq '.object.sha')"
+          [[ "$tip" == "$WORKFLOW_SHA" ]]
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ job.workflow_sha }}
+          path: trusted-automation
+          persist-credentials: false
+      - name: Verify trusted reconciliation module
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          file='trusted-automation/.github/scripts/auto-format-cas.mjs'
+          [[ -f "$file" && ! -L "$file" && "$(git -C trusted-automation rev-parse HEAD)" == "$WORKFLOW_SHA" ]]
+          record="$(git -C trusted-automation ls-tree "$WORKFLOW_SHA" -- .github/scripts/auto-format-cas.mjs)"
+          [[ "$record" =~ ^100644[[:space:]]blob[[:space:]]([0-9a-f]{40})[[:space:]] ]]
+          [[ "$(git -C trusted-automation hash-object --no-filters .github/scripts/auto-format-cas.mjs)" == "${BASH_REMATCH[1]}" ]]
+      - name: Verify independent artifact identities
+        id: artifacts
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          ONE_ID: ${{ needs.plan-one.outputs.artifact_id }}
+          TWO_ID: ${{ needs.plan-two.outputs.artifact_id }}
+          ONE_DIGEST: ${{ needs.plan-one.outputs.artifact_digest }}
+          TWO_DIGEST: ${{ needs.plan-two.outputs.artifact_digest }}
+        with:
+          script: |
+            // BEGIN FORMAT_ARTIFACT_IDENTITIES
+            const { owner, repo } = context.repo;
+            const ids = [process.env.ONE_ID, process.env.TWO_ID];
+            const digests = [process.env.ONE_DIGEST, process.env.TWO_DIGEST];
+            if (owner + '/' + repo !== 'KingsleyHK0323/Multimedia_Downloader' ||
+                ids.some(id => !/^[1-9][0-9]*$/.test(id || '')) || ids[0] === ids[1] ||
+                digests.some(value => !/^[0-9a-f]{64}$/.test(value || ''))) {
+              throw new Error('Independent planner outputs are invalid.');
+            }
+            const attempt = Number(process.env.GITHUB_RUN_ATTEMPT);
+            if (!Number.isSafeInteger(attempt) || attempt < 1) throw new Error('Invalid run attempt.');
+            for (const [index, label] of ['one', 'two'].entries()) {
+              const id = Number(ids[index]);
+              if (!Number.isSafeInteger(id)) throw new Error('Invalid artifact ID.');
+              const item = (await github.rest.actions.getArtifact({ owner, repo, artifact_id: id })).data;
+              const pattern = new RegExp('^format-plan-' + context.runId + '-([1-9][0-9]*)-' + label + '$');
+              const match = typeof item?.name === 'string' ? item.name.match(pattern) : null;
+              if (item?.id !== id || !match || Number(match[1]) > attempt ||
+                  item.expired !== false || item.workflow_run?.id !== context.runId ||
+                  item.workflow_run?.repository_id !== 1251103365 ||
+                  item.workflow_run?.head_repository_id !== 1251103365 ||
+                  !Number.isSafeInteger(item.size_in_bytes) || item.size_in_bytes < 1 ||
+                  item.size_in_bytes > 50 * 1024 * 1024 || item.digest !== 'sha256:' + digests[index]) {
+                throw new Error('A planner artifact does not match its job output and run.');
+              }
+              core.setOutput(label + '_id', ids[index]);
+              core.setOutput(label + '_digest', digests[index]);
+            }
+            // END FORMAT_ARTIFACT_IDENTITIES
+      - name: Download bounded artifact archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FORMAT_ONE_ID: ${{ steps.artifacts.outputs.one_id }}
+          FORMAT_TWO_ID: ${{ steps.artifacts.outputs.two_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$FORMAT_ONE_ID" =~ ^[1-9][0-9]*$ && "$FORMAT_TWO_ID" =~ ^[1-9][0-9]*$ ]]
+          for replica in one two; do
+            if [[ "$replica" == one ]]; then artifact="$FORMAT_ONE_ID"; else artifact="$FORMAT_TWO_ID"; fi
+            (ulimit -f 131072; curl --fail --location --silent --show-error --max-filesize 52428800 --max-time 120 \
+              --header 'Accept: application/vnd.github+json' --header "Authorization: Bearer $GH_TOKEN" \
+              "https://api.github.com/repos/KingsleyHK0323/Multimedia_Downloader/actions/artifacts/$artifact/zip" \
+              --output "$RUNNER_TEMP/format-$replica.zip")
+          done
+      - name: Validate and extract artifact data
+        env:
+          FORMAT_ONE_DIGEST: ${{ steps.artifacts.outputs.one_digest }}
+          FORMAT_TWO_DIGEST: ${{ steps.artifacts.outputs.two_digest }}
+        shell: bash
+        run: |
+          # BEGIN FORMAT_SAFE_UNZIP_PYTHON
+          python -I - <<'PY'
+          import hashlib
+          import os
+          import pathlib
+          import re
+          import stat
+          import zipfile
+          
+          # OpenAI-Codex_health_release_architecture: extract only bounded, expected data.
+          root = pathlib.Path(os.environ["RUNNER_TEMP"])
+          target = root / "format-artifacts"
+          target.mkdir(exist_ok=False)
+          for replica in ("one", "two"):
+              archive = root / ("format-" + replica + ".zip")
+              expected = os.environ["FORMAT_" + replica.upper() + "_DIGEST"]
+              if not re.fullmatch(r"[0-9a-f]{64}", expected):
+                  raise SystemExit("Artifact digest is invalid.")
+              if archive.stat().st_size > 50 * 1024 * 1024:
+                  raise SystemExit("Artifact archive exceeds its download limit.")
+              with archive.open("rb") as data:
+                  digest = hashlib.file_digest(data, "sha256").hexdigest()
+              if digest != expected:
+                  raise SystemExit("Artifact archive digest mismatch.")
+              destination = target / replica
+              destination.mkdir()
+              seen = set()
+              total = 0
+              with zipfile.ZipFile(archive) as zipped:
+                  entries = zipped.infolist()
+                  if not 1 <= len(entries) <= 52:
+                      raise SystemExit("Artifact archive entry count is invalid.")
+                  for entry in entries:
+                      name = entry.filename
+                      if entry.orig_filename != name or '\0' in entry.orig_filename:
+                          raise SystemExit("Artifact archive contains a NUL or truncated name.")
+                      mode = entry.external_attr >> 16
+                      if name in seen or entry.flag_bits & 1 or stat.S_ISLNK(mode):
+                          raise SystemExit("Artifact archive contains a duplicate, encrypted, or symlink entry.")
+                      seen.add(name)
+                      if name == "blobs/" and entry.is_dir() and entry.file_size == 0:
+                          (destination / "blobs").mkdir(exist_ok=True)
+                          continue
+                      is_manifest = name == "manifest.json"
+                      if not (is_manifest or re.fullmatch(r"blobs/[0-9a-f]{64}", name)):
+                          raise SystemExit("Artifact archive contains an unexpected path.")
+                      limit = 4 * 1024 * 1024 if is_manifest else 25 * 1024 * 1024
+                      if entry.is_dir() or entry.file_size > limit:
+                          raise SystemExit("Artifact archive member exceeds its limit.")
+                      total += entry.file_size
+                      if total > 44 * 1024 * 1024:
+                          raise SystemExit("Artifact archive expands beyond its limit.")
+                      output = destination / name
+                      output.parent.mkdir(parents=True, exist_ok=True)
+                      remaining = entry.file_size
+                      with zipped.open(entry) as source, output.open("xb") as dest:
+                          while remaining:
+                              chunk = source.read(min(1024 * 1024, remaining))
+                              if not chunk:
+                                  raise SystemExit("Artifact archive member is truncated.")
+                              dest.write(chunk)
+                              remaining -= len(chunk)
+                          if source.read(1):
+                              raise SystemExit("Artifact archive member exceeds its declared size.")
+              if "manifest.json" not in seen:
+                  raise SystemExit("Artifact manifest is missing.")
+          PY
+          # END FORMAT_SAFE_UNZIP_PYTHON
+      - name: Verify source tip before App token
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$(gh api repos/KingsleyHK0323/Multimedia_Downloader/git/ref/heads/Source_Code --jq '.object.sha')" == "$WORKFLOW_SHA" ]]
+      - name: Create repository-scoped App token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          app-id: '5868451'
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Reconcile verified formatter plan
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        with:
+          script: |
+            const path = require('node:path');
+            const { pathToFileURL } = require('node:url');
+            const file = path.join(process.env.GITHUB_WORKSPACE, 'trusted-automation', '.github/scripts/auto-format-cas.mjs');
+            const { reconcileFormatter } = await import(pathToFileURL(file).href);
+            const app = getOctokit(process.env.APP_TOKEN);
+            const result = await reconcileFormatter({ github, app, context, appSlug: process.env.APP_SLUG,
+              workflowSha: process.env.WORKFLOW_SHA, artifactRoot: path.join(process.env.RUNNER_TEMP, 'format-artifacts'),
+              log: { warn: message => core.warning(message) } });
+            core.notice('Formatter reconciliation: ' + JSON.stringify(result));

@@ -15,7 +15,10 @@ concurrency:
 
 jobs:
   format:
-    if: github.actor != 'github-actions[bot]'
+    # OpenAI-Codex_format_architecture: keep legacy as the default until App CAS is enabled.
+    if: >-
+      (vars.AUTOMATION_FORMAT_MODE == '' || vars.AUTOMATION_FORMAT_MODE == 'legacy') &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

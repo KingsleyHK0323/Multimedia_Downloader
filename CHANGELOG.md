@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Add an opt-in formatter App path that verifies push checks and updates Source_Code with a non-force compare-and-swap. (OpenAI-Codex_format_architecture)
 - Observe approved merged PR metadata without privileged actions to validate release-event handling. (OpenAI-Codex)
 - Enable opt-in App health proposals for verified protected-branch testing. (OpenAI-Codex)
 - Prepare the health report writer to share the approved temporary branch and coordination lock. (OpenAI-Codex)
