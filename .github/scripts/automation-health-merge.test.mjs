@@ -57,7 +57,10 @@ function harness(options = {}) {
     mutateRules: false, mutateRuns: false, mutatePr: false, moveBase: false,
     mergeConflict: false, missingMatrix: false, foreignOnly: false, pendingMatrix: false,
     websiteReads: 0, noWebsiteRule: false, websiteBypass: 'never', mutateWebsite: false,
-    allowFetchMerge: false, websiteParamMode: 'normal', websiteDetailParamMode: 'normal',
+    allowFetchMerge: false, websiteParamMode: 'missing', websiteDetailParamMode: 'missing',
+    repoReads: 0, repositoryFork: false, repositoryId: 1251103365, repositoryName: full,
+    mutateRepository: false, websiteSourceType: 'Repository', websiteSource: full,
+    detailSourceType: 'Repository', detailSource: full, scopeMode: 'exact',
     ...options,
   };
   const rules = () => [
@@ -147,11 +150,12 @@ function harness(options = {}) {
         if (state.noWebsiteRule) return [];
         const parameters = state.websiteParamMode === 'missing' ? undefined :
           state.websiteParamMode === 'null' ? null :
+          state.websiteParamMode === 'empty' ? {} :
           state.websiteParamMode === 'extra' ? { update_allows_fetch_and_merge: false, unknown_option: true } :
           { update_allows_fetch_and_merge: state.allowFetchMerge };
         return [{ type: state.mutateWebsite && state.websiteReads > 1 ? 'deletion' : 'update',
           ...(parameters === undefined ? {} : { parameters }),
-          ruleset_id: 8, ruleset_source_type: 'Repository', ruleset_source: full }];
+          ruleset_id: 8, ruleset_source_type: state.websiteSourceType, ruleset_source: state.websiteSource }];
       }
       assert.equal(args.branch, 'Source_Code');
       state.rulesReads++;
@@ -167,9 +171,16 @@ function harness(options = {}) {
       if (args.ruleset_id === 8) {
         const parameters = state.websiteDetailParamMode === 'missing' ? undefined :
           state.websiteDetailParamMode === 'null' ? null :
+          state.websiteDetailParamMode === 'empty' ? {} :
           state.websiteDetailParamMode === 'extra' ? { update_allows_fetch_and_merge: false, unknown_option: true } :
           { update_allows_fetch_and_merge: state.allowFetchMerge };
+        const include = state.scopeMode === 'other' ? ['refs/heads/Source_Code'] :
+          state.scopeMode === 'broad' ? ['~ALL'] : ['refs/heads/Multimedia_Downloader_Web_Preview'];
+        const exclude = state.scopeMode === 'excluded' ? ['refs/heads/Multimedia_Downloader_Web_Preview'] : [];
+        const conditions = state.scopeMode === 'missing' ? undefined :
+          { ref_name: { include, exclude }, ...(state.scopeMode === 'unknown' ? { unknown: true } : {}) };
         return { data: { id: 8, enforcement: 'active', target: 'branch',
+          source_type: state.detailSourceType, source: state.detailSource, conditions,
           current_user_can_bypass: state.websiteBypass,
           rules: [{ type: 'update', ...(parameters === undefined ? {} : { parameters }) }] } };
       }
@@ -178,6 +189,11 @@ function harness(options = {}) {
         current_user_can_bypass: state.bypass, rules: rules().map(({ type }) => ({ type })) } };
     },
     rest: {
+      repos: { get: async () => {
+        state.repoReads++;
+        return { data: { id: state.repositoryId, full_name: state.repositoryName,
+          fork: state.mutateRepository && state.repoReads > 1 ? true : state.repositoryFork } };
+      } },
       users: { getByUsername: async () => ({ data: bot }) },
       pulls: {
         merge: async (args) => {
@@ -257,13 +273,47 @@ test('waits for an incomplete CI matrix without merging', async () => {
   assert.ok(h.state.notices.some((value) => value.includes('Waiting for')));
 });
 
-test('rejects absent, bypassable or changed website update restrictions', async () => {
-  for (const options of [{ noWebsiteRule: true }, { websiteBypass: 'always' },
-    { websiteBypass: null }, { mutateWebsite: true }, { allowFetchMerge: true },
-    { websiteParamMode: 'missing' }, { websiteParamMode: 'null' }, { websiteParamMode: 'extra' },
-    { websiteDetailParamMode: 'missing' }, { websiteDetailParamMode: 'null' }, { websiteDetailParamMode: 'extra' }]) {
+// OpenAI-Codex_ruleset_architecture: reproduce GitHub's parameterless non-fork response and fail closed otherwise.
+test('accepts parameterless and explicit false update rules on the exact non-fork website scope', async () => {
+  for (const options of [
+    {},
+    { websiteParamMode: 'normal', websiteDetailParamMode: 'normal' },
+    { websiteParamMode: 'missing', websiteDetailParamMode: 'normal' },
+    { websiteParamMode: 'normal', websiteDetailParamMode: 'missing' },
+  ]) {
+    const h = harness(options);
+    await h.invoke();
+    assert.equal(h.state.writes.length, 1);
+    assert.equal(h.state.writes[0].sha, head);
+  }
+});
+
+test('rejects absent, bypassable, changed or malformed website update restrictions', async () => {
+  for (const options of [
+    { noWebsiteRule: true }, { websiteBypass: 'always' }, { websiteBypass: null },
+    { mutateWebsite: true }, { allowFetchMerge: true, websiteParamMode: 'normal' },
+    { allowFetchMerge: true, websiteDetailParamMode: 'normal' },
+    { websiteParamMode: 'null' }, { websiteParamMode: 'empty' }, { websiteParamMode: 'extra' },
+    { websiteDetailParamMode: 'null' }, { websiteDetailParamMode: 'empty' }, { websiteDetailParamMode: 'extra' },
+    { websiteSourceType: 'Organization' }, { websiteSource: 'other/repo' },
+    { detailSourceType: 'Organization' }, { detailSource: 'other/repo' },
+    { scopeMode: 'other' }, { scopeMode: 'broad' }, { scopeMode: 'excluded' },
+    { scopeMode: 'unknown' }, { scopeMode: 'missing' },
+  ]) {
     const h = harness(options);
     await assert.rejects(h.invoke());
+    assert.deepEqual(h.state.writes, []);
+  }
+});
+
+test('rejects forks, incomplete repository identity and changes between snapshots', async () => {
+  for (const options of [
+    { repositoryFork: true }, { repositoryFork: null }, { repositoryFork: undefined },
+    { repositoryFork: 'false' }, { repositoryId: 999 }, { repositoryName: 'other/repo' },
+    { mutateRepository: true },
+  ]) {
+    const h = harness(options);
+    await assert.rejects(h.invoke(), /Repository identity or non-fork status/);
     assert.deepEqual(h.state.writes, []);
   }
 });

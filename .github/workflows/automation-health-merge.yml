@@ -139,6 +139,12 @@ jobs:
               }, null, 2) + '\n', 'utf8');
             };
             const ruleSnapshot = async () => {
+              // OpenAI-Codex_ruleset_architecture: missing update parameters are safe only on this non-fork.
+              const repository = (await app.rest.repos.get({ owner, repo })).data;
+              if (!repository || repository.id !== 1251103365 || repository.full_name !== fullName ||
+                  repository.fork !== false) {
+                throw new Error('Repository identity or non-fork status cannot be verified.');
+              }
               const rules = await app.paginate('GET /repos/{owner}/{repo}/rules/branches/{branch}', {
                 owner, repo, branch: baseName, per_page: 100,
               });
@@ -196,6 +202,7 @@ jobs:
                 }
               }
               const safeUpdate = (rule) => {
+                if (!Object.hasOwn(rule, 'parameters')) return repository.fork === false;
                 const value = rule.parameters;
                 return !!value && typeof value === 'object' && !Array.isArray(value) &&
                   Object.keys(value).length === 1 &&
@@ -203,7 +210,8 @@ jobs:
                   value.update_allows_fetch_and_merge === false;
               };
               const updates = websiteRules.filter((rule) => rule.type === 'update');
-              if (!updates.length || !updates.every(safeUpdate)) {
+              if (!updates.length || !updates.every((rule) =>
+                rule.ruleset_source_type === 'Repository' && rule.ruleset_source === fullName && safeUpdate(rule))) {
                 throw new Error('Website branch update restriction is missing or permits fetch-and-merge.');
               }
               const websiteIds = [...new Set(updates.map((rule) => rule.ruleset_id))].sort((a, b) => a - b);
@@ -212,16 +220,28 @@ jobs:
                 const detail = (await app.request('GET /repos/{owner}/{repo}/rulesets/{ruleset_id}', {
                   owner, repo, ruleset_id: id, includes_parents: true,
                 })).data;
+                const conditions = detail?.conditions;
+                const scope = conditions?.ref_name;
                 if (!detail || detail.id !== id || detail.enforcement !== 'active' || detail.target !== 'branch' ||
+                    detail.source_type !== 'Repository' || detail.source !== fullName ||
+                    !conditions || typeof conditions !== 'object' || Array.isArray(conditions) ||
+                    Object.keys(conditions).length !== 1 || !Object.hasOwn(conditions, 'ref_name') ||
+                    !scope || typeof scope !== 'object' || Array.isArray(scope) ||
+                    Object.keys(scope).length !== 2 || !Object.hasOwn(scope, 'include') ||
+                    !Object.hasOwn(scope, 'exclude') || !Array.isArray(scope.include) ||
+                    scope.include.length !== 1 || scope.include[0] !== 'refs/heads/' + website ||
+                    !Array.isArray(scope.exclude) || scope.exclude.length !== 0 ||
                     detail.current_user_can_bypass !== 'never' || !Array.isArray(detail.rules) ||
                     !detail.rules.some((rule) => rule.type === 'update') ||
                     !detail.rules.filter((rule) => rule.type === 'update').every(safeUpdate)) {
                   throw new Error('A website update restriction is missing or bypassable by the App.');
                 }
                 websiteDetails.push({ id: detail.id, enforcement: detail.enforcement, target: detail.target,
+                  source_type: detail.source_type, source: detail.source, conditions: detail.conditions,
                   current_user_can_bypass: detail.current_user_can_bypass, rules: detail.rules });
               }
               return JSON.stringify({
+                repository: { id: repository.id, full_name: repository.full_name, fork: repository.fork },
                 rules: [...rules].sort((a, b) => a.ruleset_id - b.ruleset_id || a.type.localeCompare(b.type)),
                 details: details.map((d) => ({
                   id: d.id, enforcement: d.enforcement, target: d.target,
