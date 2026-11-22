@@ -20,6 +20,7 @@ function fake(options = {}) {
   let refCalls = 0;
   let releaseCalls = 0;
   const api = {
+    assertTagProtection: async () => { if (options.unsafeRules) throw new Error('tag rules unavailable'); },
     ref: async () => {
       refCalls++;
       return { object: { type: options.annotated ? 'tag' : 'commit',
@@ -144,4 +145,13 @@ test('publication inventory must match all six staged bytes', async () => {
   await verifyInventory({ api: state.api, repo, tag, expectedSha: sha, manifest });
   state.assets[0].digest = 'sha256:' + 'c'.repeat(64);
   await assert.rejects(verifyInventory({ api: state.api, repo, tag, expectedSha: sha, manifest }), /differs/);
+});
+
+test('tag protection failure prevents asset upload or publication inventory approval', async () => {
+  const upload = fake({ unsafeRules: true });
+  await assert.rejects(run(upload), /tag rules unavailable/);
+  assert.deepEqual(upload.calls, []);
+  const inventory = fake({ unsafeRules: true });
+  await assert.rejects(verifyInventory({ api: inventory.api, repo, tag, expectedSha: sha, manifest: [] }),
+    /tag rules unavailable/);
 });

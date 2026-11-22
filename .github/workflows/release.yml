@@ -19,6 +19,8 @@ on:
       - .github/workflows/release.yml
       - .github/workflows/release-build.yml
       - .github/scripts/upload-release-assets.mjs
+      - .github/scripts/verify-tag-protection.mjs
+      - .github/scripts/verify-tag-protection.test.mjs
       - .github/scripts/release-upload-create-only.test.mjs
       - .github/scripts/select-release-artifacts.mjs
       - .github/scripts/select-release-artifacts.test.mjs
@@ -347,6 +349,11 @@ jobs:
           ref: ${{ job.workflow_sha }}
           path: automation
           persist-credentials: false
+      # OpenAI-Codex_format_architecture: verify tag rules using this job's own token.
+      - name: Verify version-tag protections
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node automation/.github/scripts/verify-tag-protection.mjs
       - name: Verify build artifact identities
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -448,6 +455,11 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
         run: node .github/scripts/release-commit-notes.mjs
+      # OpenAI-Codex_format_architecture: verify tag rules using this job's own token.
+      - name: Verify version-tag protections
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node automation/.github/scripts/verify-tag-protection.mjs
       - name: Create or verify the draft release
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
@@ -504,6 +516,11 @@ jobs:
                 (tag === 'v4.3.22' ? release.prerelease !== true : release.prerelease !== false)) {
               throw new Error('Release is not the expected draft.');
             }
+      # OpenAI-Codex_format_architecture: verify tag rules using this job's own token.
+      - name: Verify version-tag protections
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node automation/.github/scripts/verify-tag-protection.mjs
       - name: Upload or verify exact release assets
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -570,6 +587,7 @@ jobs:
           done
           [[ "$verified" == true ]] || { echo "::error::Beta CI and matrix must pass for the tagged Source_Code commit."; exit 1; }
           node automation/.github/scripts/upload-release-assets.mjs v4.3.22 --verify-inventory
+          node automation/.github/scripts/verify-tag-protection.mjs
           gh release edit v4.3.22 --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
 
   # OpenAI-Codex: publish only complete builds of a commit with passing CI.
@@ -626,6 +644,7 @@ jobs:
           done
           [ "$verified" = true ] || { echo "::error::CI and matrix must both pass for the tagged Source_Code commit."; exit 1; }
           node automation/.github/scripts/upload-release-assets.mjs "$TAG" --verify-inventory
+          node automation/.github/scripts/verify-tag-protection.mjs
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
 
   # OpenAI-Codex: dispatch package publication after a verified stable release.

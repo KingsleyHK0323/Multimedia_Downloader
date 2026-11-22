@@ -144,7 +144,7 @@ jobs:
 
       # OpenAI-Codex_format_architecture: verify immutable artifact provenance and safe extraction.
       - name: Test release artifact selection and version data
-        run: node --test .github/scripts/select-release-artifacts.test.mjs .github/scripts/verify-version-at-commit.test.mjs
+        run: node --test .github/scripts/select-release-artifacts.test.mjs .github/scripts/verify-version-at-commit.test.mjs .github/scripts/verify-tag-protection.test.mjs
       - name: Test release artifact download and extraction
         run: |
           python -I .github/scripts/download-release-artifacts.test.py

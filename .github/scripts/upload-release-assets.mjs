@@ -1,5 +1,6 @@
 // OpenAI-Codex_format_architecture: reuse only byte-identical assets for the exact release tag.
 import { createHash } from 'node:crypto';
+import { verifyTagProtection } from './verify-tag-protection.mjs';
 import { request } from 'node:https';
 import { execFileSync } from 'node:child_process';
 import { constants, copyFileSync, createReadStream, mkdtempSync, readdirSync, statSync } from 'node:fs';
@@ -69,6 +70,7 @@ export async function syncAssets({ api, repo, tag, expectedSha, files }) {
       results.push({ name: file.name, result: 'reused' });
       continue;
     }
+    await api.assertTagProtection();
     try {
       // Never pass --clobber: concurrent uploads must remain create-only.
       await api.upload(repo, release.id, file.name, file.path, file.size);
@@ -115,6 +117,7 @@ export function expectedNames(tag, runnerOs) {
   return names[runnerOs];
 }
 export async function verifyInventory({ api, repo, tag, expectedSha, manifest }) {
+  await api.assertTagProtection();
   await verifyTarget(api, repo, tag, expectedSha);
   const release = await api.release(repo, tag);
   if (!release || release.tag_name !== tag || release.draft !== true ||
@@ -138,6 +141,7 @@ export async function verifyInventory({ api, repo, tag, expectedSha, manifest })
     if (classifyAsset(assets, file) !== 'identical') throw new Error('Release asset is missing.');
   }
   await verifyTarget(api, repo, tag, expectedSha);
+  await api.assertTagProtection();
 }
 
 async function digestFile(path) {
@@ -225,6 +229,10 @@ function uploadByReleaseId(repo, id, name, path, size) {
 }
 function githubApi() {
   return {
+    assertTagProtection: async () => {
+      const result = verifyTagProtection();
+      if (!result.bypassActorsVisible) console.log('::notice::Other actors with tag-rule bypass are not visible to this token.');
+    },
     ref: async (repo, tag) => parse(gh('api', 'repos/' + repo + '/git/ref/tags/' + tag)),
     tag: async (repo, sha) => parse(gh('api', 'repos/' + repo + '/git/tags/' + sha)),
     release: async (repo, tag) => parse(gh('api', 'repos/' + repo + '/releases/tags/' + tag)),

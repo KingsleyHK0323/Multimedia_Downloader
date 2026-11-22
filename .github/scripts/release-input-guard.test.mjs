@@ -303,3 +303,26 @@ test('PR metadata requires exact branch casing before trusted API data is consum
   assert.notEqual(run('automation/protected-workflows', 'source_code').status, 0);
 });
 
+
+test('version-tag protections are checked with each job token before release writes', () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8');
+  const block = name => {
+    const section = source.split('  ' + name + ':\n')[1];
+    assert.ok(section, name);
+    return section.split(/\n  (?:#|[a-z][a-z-]*:)/)[0];
+  };
+  const verify = block('verify-only');
+  assert.match(verify, /contents: read/);
+  assert.match(verify, /node automation\/\.github\/scripts\/verify-tag-protection\.mjs/);
+  const publisher = block('publisher');
+  const checks = [...publisher.matchAll(/node automation\/\.github\/scripts\/verify-tag-protection\.mjs/g)]
+    .map(match => match.index);
+  assert.equal(checks.length, 2);
+  assert.ok(checks[0] < publisher.indexOf('- name: Create or verify the draft release'));
+  assert.ok(checks[1] < publisher.indexOf('- name: Upload or verify exact release assets'));
+  for (const name of ['publish-beta', 'publish-stable']) {
+    const body = block(name);
+    assert.match(body, /node automation\/\.github\/scripts\/verify-tag-protection\.mjs/);
+    assert.ok(body.indexOf('verify-tag-protection.mjs') < body.indexOf('gh release edit '));
+  }
+});
