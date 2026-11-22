@@ -23,11 +23,26 @@ concurrency:
   queue: max
 
 jobs:
+  # OpenAI-Codex_health_release_architecture: reject unknown migration modes without logging their values.
+  reject-unsupported-mode:
+    permissions: {}
+    if: >-
+      vars.AUTOMATION_PATCH_PR_MODE != '' &&
+      vars.AUTOMATION_PATCH_PR_MODE != 'legacy' &&
+      vars.AUTOMATION_PATCH_PR_MODE != 'enabled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - run: |
+          echo '::error::Unsupported automatic patch mode.'
+          exit 1
+
   bump:
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (vars.AUTOMATION_PATCH_PR_MODE == '' || vars.AUTOMATION_PATCH_PR_MODE == 'legacy') &&
+      (github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
-      contains(github.event.pull_request.labels.*.name, 'release:patch'))
+      contains(github.event.pull_request.labels.*.name, 'release:patch')))
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.release.outputs.tag }}

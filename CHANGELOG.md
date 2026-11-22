@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Stage disabled App patch-release proposals with owner-verified label history, checked Source_Code updates, and create-only tag reconciliation. (OpenAI-Codex_health_release_architecture)
 - Skip website automation App token creation when no owner website PR exists. (OpenAI-Codex_ruleset_architecture)
 - Permit explicit opt-in for the owner-verified website update coordinator. (OpenAI-Codex_ruleset_architecture)
 - Handle an already merged service branch disappearing during or after read-only formatting plans. (OpenAI-Codex_format_architecture)

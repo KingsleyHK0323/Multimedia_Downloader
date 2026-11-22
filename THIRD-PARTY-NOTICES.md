@@ -1,12 +1,12 @@
-<!-- OpenAI-Codex -->
+<!-- OpenAI-Codex: corrected project license references. -->
 # Third-Party Notices
 
 **Language / 語言 / 语言:** [English](#english) · [繁體中文](#繁體中文) · [简体中文](#简体中文)
 
 This project (`KingsleyHK0323/Multimedia_Downloader`) is licensed under the
-MIT License (see `LICENSE`). It bundles or depends on the third-party
+PolyForm Noncommercial License 1.0.0 (see `LICENSE`). It bundles or depends on the third-party
 components listed below, each under its **own** license — those components
-are **not** covered by this project's MIT license.
+are **not** covered by this project's license.
 
 ---
 
@@ -32,8 +32,8 @@ V4.0's packaged desktop installers bundle a Windows build of
   for the exact bundled build on request, per GPLv3 §6.
 - ffmpeg is invoked by this project as a **separate subprocess** (never
   statically or dynamically linked into our own binaries) — this project's
-  own source code is licensed independently under MIT and is not itself
-  subject to the GPL.
+  own source code is licensed independently under the PolyForm Noncommercial
+  License 1.0.0.
 
 ### yt-dlp — The Unlicense (public domain equivalent)
 
@@ -71,7 +71,7 @@ V4.0 的桌面安裝檔內建了 Windows 版 [ffmpeg](https://ffmpeg.org)，讓�
   <https://github.com/GyanD/codexffmpeg>。此聲明即為依 GPLv3 第 6 條，就
   本次 bundled 建置版本提供對應原始碼的書面承諾。
 - ffmpeg 在本專案中以**獨立子行程**呼叫（從未靜態或動態連結進我方執行
-  檔）——本專案自身的原始碼獨立以 MIT 授權，不受 GPL 拘束。
+  檔）——本專案自身的原始碼獨立以 PolyForm Noncommercial License 1.0.0 授權。
 
 ### yt-dlp — The Unlicense（等同公共領域）
 
@@ -107,7 +107,7 @@ V4.0 的桌面安装包内置了 Windows 版 [ffmpeg](https://ffmpeg.org)，使�
   <https://github.com/GyanD/codexffmpeg>。此声明即为依 GPLv3 第 6 条，就
   本次内置构建版本提供对应源代码的书面承诺。
 - ffmpeg 在本项目中以**独立子进程**调用（从未静态或动态链接进我方可执行
-  文件）——本项目自身的源代码独立以 MIT 授权，不受 GPL 约束。
+  文件）——本项目自身的源代码独立以 PolyForm Noncommercial License 1.0.0 授权。
 
 ### yt-dlp — The Unlicense（等同公共领域）
 

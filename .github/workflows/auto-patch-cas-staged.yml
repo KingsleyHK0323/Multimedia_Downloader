@@ -1,0 +1,872 @@
+# OpenAI-Codex_health_release_architecture: stage a fixed-ref checked patch coordinator.
+name: Reconcile checked patch version
+on:
+  workflow_run:
+    workflows: [CI, Python matrix tests]
+    types: [completed]
+  schedule:
+    - cron: '27 */6 * * *'
+  workflow_dispatch:
+permissions:
+  actions: read
+  checks: read
+  contents: read
+  pull-requests: read
+jobs:
+  update-patch:
+    if: >-
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.ref == 'refs/heads/Source_Code' &&
+      vars.AUTOMATION_PATCH_PR_MODE == 'enabled' &&
+      vars.AUTOMATION_PATCH_CAS == 'enabled'
+    concurrency:
+      group: automation-service-reconcile
+      queue: max
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Verify exact source ref and workflow revision
+        env:
+          ACTUAL_REF: ${{ github.ref }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$ACTUAL_REF" == 'refs/heads/Source_Code' && "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+            { echo '::error::Unexpected source ref or workflow revision.'; exit 1; }
+          tip="$(gh api repos/KingsleyHK0323/Multimedia_Downloader/git/ref/heads/Source_Code --jq '.object.sha')"
+          [[ "$tip" == "$WORKFLOW_SHA" ]] || { echo '::error::Source_Code changed before token creation.'; exit 1; }
+      # OpenAI-Codex_health_release_architecture: do not permit configuration to bypass the staging stop.
+      - name: Keep patch App CAS disabled
+        shell: bash
+        run: |
+          echo '::error::Patch App CAS remains disabled pending release and signature verification.'
+          exit 1
+      - name: Create a repository-scoped App token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          app-id: '5868451'
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Verify and update only Source_Code
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        with:
+          script: |
+            // OpenAI-Codex_health_release_architecture: the App-token job executes only this trusted inline script.
+            const { createHash } = require('node:crypto');
+            const { ANCHOR_PATH, ANCHOR_CONTENT, currentPatchLabel, labelAtMerge, utcSecond } = (() => {
+            // BEGIN EXACT SOURCE AUTHORIZATION HELPER
+            // OpenAI-Codex_format_architecture: reconstruct source-label authorization from the complete PR timeline.
+            // OpenAI-Codex_health_release_architecture: bind owner and immutable label identity across REST and GraphQL.
+            const SECOND = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$/;
+            const SHA = /^[0-9a-f]{40}$/;
+            const OWNER_ID = 157894869;
+            const OWNER_NODE = 'U_kgDOCWlI1Q';
+            const REPO_ID = 1251103365;
+            const PATCH_LABEL_ID = 'LA_kwDOSpJShc8AAAADEWCHJg';
+            const PATCH_LABEL_CREATED = '2026-11-22T06:44:42Z';
+            const ANCHOR_PATH = '.github/automation/patch-release-pr-v1.txt';
+            const ANCHOR_CONTENT = 'OpenAI-Codex_format_architecture: auto-patch PR mode migration v1\n';
+            function utcSecond(value) {
+              if (typeof value !== 'string' || !SECOND.test(value)) throw new Error('Invalid exact UTC timestamp.');
+              const time = Date.parse(value);
+              if (!Number.isFinite(time) || new Date(time).toISOString() !== value.slice(0, -1) + '.000Z') {
+                throw new Error('Invalid exact UTC timestamp.');
+              }
+              return time;
+            }
+            const LABEL_NODES_QUERY = `
+              query PatchLabelEventNodes($ids: [ID!]!) {
+                nodes(ids: $ids) {
+                  __typename
+                  ... on LabeledEvent {
+                    id createdAt
+                    actor { __typename ... on User { id databaseId } ... on Bot { id } }
+                    label { id name createdAt updatedAt repository { databaseId } }
+                    labelable { __typename ... on PullRequest { number repository { databaseId } } }
+                  }
+                  ... on UnlabeledEvent {
+                    id createdAt
+                    actor { __typename ... on User { id databaseId } ... on Bot { id } }
+                    label { id name createdAt updatedAt repository { databaseId } }
+                    labelable { __typename ... on PullRequest { number repository { databaseId } } }
+                  }
+                }
+              }
+            `;
+            function currentPatchLabel(pr) {
+              if (!Array.isArray(pr?.labels) || pr.labels.some(label => !label || typeof label.name !== 'string')) {
+                throw new Error('Current source PR labels are incomplete.');
+              }
+              const relevant = pr.labels.filter(label =>
+                label.name.toLowerCase() === 'release:patch' || label.node_id === PATCH_LABEL_ID);
+              if (!relevant.length) return false;
+              if (relevant.length !== 1 || relevant[0].name !== 'release:patch' || relevant[0].node_id !== PATCH_LABEL_ID) {
+                throw new Error('Current patch label identity is ambiguous.');
+              }
+              return true;
+            }
+            async function labelAtMerge(events, mergedAt, mergeSha, github, sourceNumber) {
+              const mergedTime = utcSecond(mergedAt);
+              if (!Array.isArray(events) || events.length > 10_000 || !SHA.test(mergeSha || '') ||
+                  !github || typeof github.graphql !== 'function' || typeof github.paginate !== 'function' ||
+                  !github.rest?.issues?.listEventsForTimeline ||
+                  !Number.isSafeInteger(sourceNumber) || sourceNumber <= 0) {
+                throw new Error('Source PR timeline is incomplete.');
+              }
+              const merged = events.filter(event => event?.event === 'merged');
+              if (merged.length !== 1 || merged[0].created_at !== mergedAt || merged[0].commit_id !== mergeSha) {
+                throw new Error('Source PR merge timeline is incomplete or inconsistent.');
+              }
+              const changes = [];
+              const seen = new Set();
+              for (const event of events) {
+                if (!event || typeof event.event !== 'string') throw new Error('Source PR timeline has an incomplete event.');
+                if (!['labeled', 'unlabeled'].includes(event.event)) continue;
+                if (typeof event.node_id !== 'string' || !event.node_id || seen.has(event.node_id) ||
+                    typeof event.label?.name !== 'string' || !event.label.name ||
+                    !event.actor || !['User', 'Bot'].includes(event.actor.type) ||
+                    typeof event.actor.node_id !== 'string' || !event.actor.node_id ||
+                    !Number.isSafeInteger(event.actor.id) || event.actor.id <= 0) {
+                  throw new Error('A source PR label event is incomplete.');
+                }
+                seen.add(event.node_id);
+                changes.push({ event, time: utcSecond(event.created_at) });
+              }
+              const fingerprint = timeline => {
+                if (!Array.isArray(timeline) || timeline.length > 10_000) throw new Error('Source PR timeline is incomplete.');
+                const selected = [];
+                for (const event of timeline) {
+                  if (!event || typeof event.event !== 'string') throw new Error('Source PR timeline has an incomplete event.');
+                  if (['merged', 'labeled', 'unlabeled'].includes(event.event)) {
+                    selected.push([event.event, event.node_id ?? null, event.created_at ?? null, event.commit_id ?? null,
+                      event.label?.name ?? null, event.actor?.id ?? null, event.actor?.node_id ?? null, event.actor?.type ?? null]);
+                  }
+                }
+                return JSON.stringify(selected);
+              };
+              const metadata = new Map();
+              for (let offset = 0; offset < changes.length; offset += 100) {
+                const chunk = changes.slice(offset, offset + 100);
+                const response = await github.graphql(LABEL_NODES_QUERY, { ids: chunk.map(item => item.event.node_id) });
+                if (!response || !Array.isArray(response.nodes) || response.nodes.length !== chunk.length) {
+                  throw new Error('GraphQL label event response is incomplete.');
+                }
+                for (let index = 0; index < chunk.length; index++) {
+                  const item = chunk[index], event = item.event, node = response.nodes[index];
+                  const expectedType = event.event === 'labeled' ? 'LabeledEvent' : 'UnlabeledEvent';
+                  if (!node || node.id !== event.node_id || node.__typename !== expectedType ||
+                      node.createdAt !== event.created_at || !node.actor ||
+                      node.actor.__typename !== event.actor.type || node.actor.id !== event.actor.node_id ||
+                      (node.actor.__typename === 'User' && node.actor.databaseId !== event.actor.id) ||
+                      !node.label || typeof node.label.id !== 'string' || !node.label.id ||
+                      typeof node.label.name !== 'string' || !node.label.name ||
+                      node.label.repository?.databaseId !== REPO_ID ||
+                      node.labelable?.__typename !== 'PullRequest' ||
+                      node.labelable.number !== sourceNumber || node.labelable.repository?.databaseId !== REPO_ID) {
+                    throw new Error('REST and GraphQL source label events disagree.');
+                  }
+                  const label = node.label;
+                  const prior = metadata.get(label.id);
+                  const description = JSON.stringify([label.name, label.createdAt, label.updatedAt, label.repository.databaseId]);
+                  if (prior !== undefined && prior !== description) {
+                    throw new Error('Label metadata changed during source authorization.');
+                  }
+                  metadata.set(label.id, description);
+                  item.label = label;
+                }
+              }
+              const confirm = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                owner: 'KingsleyHK0323', repo: 'Multimedia_Downloader', issue_number: sourceNumber, per_page: 100,
+              });
+              if (fingerprint(events) !== fingerprint(confirm)) throw new Error('Source PR timeline changed during authorization.');
+              if (changes.some(item => item.label.id !== PATCH_LABEL_ID &&
+                  (item.label.name === 'release:patch' || item.event.label.name === 'release:patch'))) {
+                throw new Error('Patch label identity is not the approved label.');
+              }
+              const withdrawnAfterMerge = changes.some(item => item.label.id === PATCH_LABEL_ID &&
+                item.event.event === 'unlabeled' && item.time > mergedTime);
+              const relevant = changes.filter(item => item.label.id === PATCH_LABEL_ID && item.time <= mergedTime)
+                .sort((a, b) => a.time - b.time);
+              let active = null, previousTime = null;
+              for (const item of relevant) {
+                if (item.time === mergedTime) throw new Error('Patch label changed in the same second as merge.');
+                if (item.time === previousTime) throw new Error('Patch label events have ambiguous ordering.');
+                const { label, event, time } = item;
+                const created = utcSecond(label.createdAt), updated = utcSecond(label.updatedAt);
+                if (label.name !== 'release:patch' || label.createdAt !== PATCH_LABEL_CREATED ||
+                    created > updated || updated >= time || event.label.name !== 'release:patch') {
+                  throw new Error('Patch label identity or historical name cannot be established.');
+                }
+                if ((event.event === 'labeled') === Boolean(active)) {
+                  throw new Error('Patch label history is incomplete or inconsistent.');
+                }
+                active = event.event === 'labeled' ? item : null;
+                previousTime = time;
+              }
+              if (!active) return { atMerge: false, withdrawnAfterMerge };
+              if (active.event.actor.type !== 'User' || active.event.actor.id !== OWNER_ID ||
+                  active.event.actor.node_id !== OWNER_NODE) {
+                throw new Error('Effective patch label was not added by the repository owner.');
+              }
+              return { atMerge: true, withdrawnAfterMerge };
+            }
+            // END EXACT SOURCE AUTHORIZATION HELPER
+            return { ANCHOR_PATH, ANCHOR_CONTENT, currentPatchLabel, labelAtMerge, utcSecond };
+            })();
+            const { planVersion, validateSourcePr, validateVersionPr, versionBranch, VERSION_PATHS } = (() => {
+            // BEGIN EXACT PATCH POLICY
+            // OpenAI-Codex_format_architecture: deterministic, non-executing patch-release policy.
+            const SHA = /^[0-9a-f]{40}$/;
+            const VERSION = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+            const SOURCE_REPO = 'KingsleyHK0323/Multimedia_Downloader';
+            // OpenAI-Codex_health_release_architecture: share the single approved temporary branch.
+            const SOURCE_REPO_ID = 1251103365;
+            const FIXED_BRANCH = 'automation/protected-workflows';
+            const APP_BOT_ID = 359694872;
+            const VERSION_PATHS = Object.freeze([
+              'package.json', 'package-lock.json', 'frontend/package.json', 'frontend/package-lock.json',
+              'src-tauri/tauri.conf.json', 'src-tauri/Cargo.toml', 'src-tauri/Cargo.lock',
+              'README.md', 'CHANGELOG.md', 'engine/__init__.py',
+            ]);
+            function fail(message) { throw new Error(message); }
+            function canonicalNumber(value) {
+              return Number.isSafeInteger(value) && value > 0;
+            }
+            function replaceExactly(source, pattern, replacer, wanted, name) {
+              let n = 0;
+              const result = source.replace(pattern, (...args) => {
+                n++;
+                return replacer(...args);
+              });
+              if (n !== wanted) fail('Unexpected version fields in ' + name);
+              return result;
+            }
+            function updateJson(source, oldVersion, version, isLock, name) {
+              const data = JSON.parse(source);
+              if (!data || Array.isArray(data) || data.version !== oldVersion) fail('Invalid root version in ' + name);
+              if (isLock && (!data.packages?.[''] || data.packages[''].version !== oldVersion)) {
+                fail('Invalid root lock package version in ' + name);
+              }
+              const expected = structuredClone(data);
+              expected.version = version;
+              if (isLock) expected.packages[''].version = version;
+              const escaped = oldVersion.replaceAll('.', '\\.');
+              const pattern = new RegExp('("version"\\s*:\\s*")' + escaped + '(")', 'g');
+              let replaced = 0;
+              const output = source.replace(pattern, (match, prefix, suffix) => {
+                if (replaced >= (isLock ? 2 : 1)) return match;
+                replaced++;
+                return prefix + version + suffix;
+              });
+              if (replaced !== (isLock ? 2 : 1) ||
+                  JSON.stringify(JSON.parse(output)) !== JSON.stringify(expected)) {
+                fail('JSON version fields are ambiguous in ' + name);
+              }
+              return output;
+            }
+            function checkDate(value) {
+              if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) fail('Invalid release date.');
+              const date = new Date(value + 'T00:00:00Z');
+              if (Number.isNaN(date.valueOf()) || date.toISOString().slice(0, 10) !== value) {
+                fail('Invalid release date.');
+              }
+            }
+            function promoteChangelog(source, version, date, number) {
+              const lines = source.match(/.*(?:\r?\n|$)/g)?.filter(Boolean) || [];
+              const i = lines.findIndex(line => /^### Unreleased\s*$/.test(line));
+              if (i < 0) fail('Unreleased changelog section is missing.');
+              let end = lines.findIndex((line, n) => n > i && /^### /.test(line));
+              if (end < 0) end = lines.length;
+              let notes = lines.slice(i + 1, end).join('').trim();
+              if (!notes) notes = '#### Maintenance\n- Automated patch release after merged pull request #' + number + '.';
+              return lines.slice(0, i + 1).join('') + '\n### [' + version + '] — ' + date +
+                '\n\n' + notes + '\n\n' + lines.slice(end).join('');
+            }
+            function planVersion(files, sourcePrNumber, date) {
+              if (!canonicalNumber(sourcePrNumber)) fail('Invalid source PR number.');
+              checkDate(date);
+              if (!files || VERSION_PATHS.some(path => typeof files[path] !== 'string')) fail('Version files are incomplete.');
+              if (VERSION_PATHS.some(path => files[path].includes('\r'))) fail('Version files must use LF line endings.');
+              const data = JSON.parse(files['package.json']);
+              const current = data?.version;
+              const match = typeof current === 'string' && current.match(VERSION);
+              if (!match || current.length > 49) fail('Invalid current version.');
+              const patch = BigInt(match[3]) + 1n;
+              const version = match[1] + '.' + match[2] + '.' + patch.toString();
+              if (version.length > 50 || version === '4.3.3') fail('This version requires separate release authorization.');
+              const updates = {};
+              for (const [name, lock] of [
+                ['package.json', false], ['package-lock.json', true],
+                ['frontend/package.json', false], ['frontend/package-lock.json', true],
+                ['src-tauri/tauri.conf.json', false],
+              ]) updates[name] = updateJson(files[name], current, version, lock, name);
+              const escaped = current.replaceAll('.', '\\.');
+              updates['src-tauri/Cargo.toml'] = replaceExactly(
+                files['src-tauri/Cargo.toml'], new RegExp('^version\\s*=\\s*"' + escaped + '"$', 'gm'),
+                () => 'version = "' + version + '"', 1, 'src-tauri/Cargo.toml'
+              );
+              updates['src-tauri/Cargo.lock'] = replaceExactly(
+                files['src-tauri/Cargo.lock'], new RegExp('(^name = "multimedia-downloader"\\nversion = ")' + escaped + '("$)', 'gm'),
+                (_, prefix, suffix) => prefix + version + suffix, 1, 'src-tauri/Cargo.lock'
+              );
+              updates['README.md'] = replaceExactly(
+                files['README.md'], new RegExp('^(# Multimedia Downloader — V)' + escaped + '$', 'gm'),
+                (_, prefix) => prefix + version, 1, 'README.md'
+              );
+              updates['engine/__init__.py'] = replaceExactly(
+                files['engine/__init__.py'], new RegExp('^(__version__\\s*=\\s*")' + escaped + '("$)', 'gm'),
+                (_, prefix, suffix) => prefix + version + suffix, 1, 'engine/__init__.py'
+              );
+              updates['CHANGELOG.md'] = promoteChangelog(files['CHANGELOG.md'], version, date, sourcePrNumber);
+              if (VERSION_PATHS.some(path => updates[path] === files[path])) fail('An expected version file did not change.');
+              return { sourcePrNumber, oldVersion: current, version, tag: 'v' + version, updates };
+            }
+            function validateSourcePr(pr, { requireCurrentLabel = true } = {}) {
+              if (!pr || !canonicalNumber(pr.number) || pr.state !== 'closed' || pr.merged !== true ||
+                  typeof pr.merged_at !== 'string' || Number.isNaN(Date.parse(pr.merged_at)) ||
+                  pr.base?.ref !== 'Source_Code' || pr.base?.repo?.id !== SOURCE_REPO_ID ||
+                  pr.base.repo.full_name !== SOURCE_REPO ||
+                  !canonicalNumber(pr.user?.id) || pr.user.id === APP_BOT_ID ||
+                  !Array.isArray(pr.labels) || (requireCurrentLabel && !pr.labels.some(label => label?.name === 'release:patch')) ||
+                  !SHA.test(pr.merge_commit_sha || '')) {
+                fail('Source PR is not an eligible merged, labeled Source_Code change.');
+              }
+              return { number: pr.number, mergeSha: pr.merge_commit_sha };
+            }
+            function versionBranch(number) {
+              if (!canonicalNumber(number)) fail('Invalid source PR number.');
+              return FIXED_BRANCH;
+            }
+            function validateVersionPr(pr, source, { requireMerged = false, requireCurrentLabel = true } = {}) {
+              validateSourcePr(source, { requireCurrentLabel });
+              if (!pr || !canonicalNumber(pr.number) || pr.user?.id !== APP_BOT_ID ||
+                  pr.base?.ref !== 'Source_Code' || pr.base?.repo?.id !== SOURCE_REPO_ID ||
+                  pr.base.repo.full_name !== SOURCE_REPO || pr.head?.repo?.id !== SOURCE_REPO_ID ||
+                  pr.head.repo.full_name !== SOURCE_REPO || pr.head?.ref !== versionBranch(source.number) ||
+                  !SHA.test(pr.head?.sha || '') || !SHA.test(pr.base?.sha || '') ||
+                  pr.draft !== false || pr.auto_merge !== null || !Array.isArray(pr.labels) ||
+                  pr.labels.some(label => typeof label?.name !== 'string' || label.name.toLowerCase() === 'release:patch')) {
+                fail('Version PR is not the expected App-authored Source_Code request.');
+              }
+              const marker = '<!-- automatic-patch-source:' + source.number + ':' + source.merge_commit_sha + ' -->';
+              if (typeof pr.body !== 'string' || pr.body.split('\n').filter(line => line === marker).length !== 1) {
+                fail('Version PR does not identify the exact source PR and merge commit.');
+              }
+              if (requireMerged && (pr.state !== 'closed' || pr.merged !== true || !SHA.test(pr.merge_commit_sha || ''))) {
+                fail('Version PR has not merged.');
+              }
+              return { source: source.number, base: pr.base.sha, head: pr.head.sha,
+                merge: requireMerged ? pr.merge_commit_sha : null };
+            }
+            // END EXACT PATCH POLICY
+            return { planVersion, validateSourcePr, validateVersionPr, versionBranch, VERSION_PATHS };
+            })();
+            const { validatePatchCandidate } = (() => {
+            // BEGIN EXACT PATCH CANDIDATE POLICY
+            // OpenAI-Codex_health_release_architecture: validate an exact, signed single-parent version candidate.
+            
+            const SHA = /^[0-9a-f]{40}$/;
+            const REPO = 'KingsleyHK0323/Multimedia_Downloader';
+            const BOT = 'kingsley-multimedia-automation[bot]';
+            const APP_ID = 359694872;
+            const MAX_FILE = 5_000_000;
+            const blobHash = bytes => createHash('sha1')
+              .update(Buffer.concat([Buffer.from('blob ' + bytes.length + '\0'), bytes])).digest('hex');
+            
+            function entries(items) {
+              if (!Array.isArray(items) || items.length > 100000) throw new Error('Tree inventory is incomplete.');
+              const result = new Map();
+              for (const item of items) {
+                if (!item || typeof item.path !== 'string' || !item.path || result.has(item.path) ||
+                    !SHA.test(item.sha || '') || typeof item.mode !== 'string' ||
+                    !['blob', 'tree', 'commit'].includes(item.type)) {
+                  throw new Error('Tree entry is malformed or duplicated.');
+                }
+                result.set(item.path, item);
+              }
+              return result;
+            }
+            function commitMessage(plan, source, date) {
+              return 'chore: release ' + plan.tag + ' after PR #' + source.number + '\n\n' +
+                'Automatic patch release for merged PR #' + source.number + '\n' +
+                'Patch-Source-SHA: ' + source.mergeSha + '\n' +
+                'Patch-Plan-Date: ' + date + '\n' +
+                'OpenAI-Codex_health_release_architecture';
+            }
+            
+            function validatePatchCandidate({ source, versionPr, base, headCommit, signedCommit,
+              baseTree, headTree, files, changedFiles, phase = 'open' }) {
+              if (!['open', 'merged'].includes(phase)) throw new Error('Unknown version PR phase.');
+              const requireCurrentLabel = phase !== 'merged';
+              const sourceId = validateSourcePr(source, { requireCurrentLabel });
+              const prId = validateVersionPr(versionPr, source, { requireMerged: phase === 'merged', requireCurrentLabel });
+              if (!SHA.test(base || '') || prId.base !== base ||
+                  (phase === 'open' ? versionPr.state !== 'open' : prId.merge !== prId.head) ||
+                  versionPr.user?.login !== BOT || versionPr.user?.type !== 'Bot' ||
+                  versionPr.changed_files !== VERSION_PATHS.length ||
+                  versionPr.html_url !== 'https://github.com/' + REPO + '/pull/' + versionPr.number ||
+                  !headCommit || headCommit.sha !== prId.head || !SHA.test(headCommit.tree?.sha || '') ||
+                  !Array.isArray(headCommit.parents) || headCommit.parents.length !== 1 ||
+                  headCommit.parents[0]?.sha !== base) throw new Error('Version PR or single-parent commit is invalid.');
+              if (signedCommit?.sha !== headCommit.sha || signedCommit.author?.id !== APP_ID ||
+                  signedCommit.author.login !== BOT || signedCommit.author.type !== 'Bot' ||
+                  signedCommit.committer?.id !== 19864447 || signedCommit.committer.login !== 'web-flow' ||
+                  signedCommit.committer.type !== 'User' || signedCommit.commit?.verification?.verified !== true ||
+                  signedCommit.commit.verification.reason !== 'valid' ||
+                  signedCommit.commit.tree?.sha !== headCommit.tree.sha ||
+                  !Array.isArray(signedCommit.parents) || signedCommit.parents.length !== 1 ||
+                  signedCommit.parents[0]?.sha !== base) throw new Error('Version commit signature or identity is invalid.');
+              if (typeof headCommit.message !== 'string') throw new Error('Version commit message is invalid.');
+              const dateLines = headCommit.message.split('\n').filter(line => line.startsWith('Patch-Plan-Date: '));
+              if (dateLines.length !== 1) throw new Error('Version commit date is missing or ambiguous.');
+              const date = dateLines[0].slice('Patch-Plan-Date: '.length);
+              const before = entries(baseTree), after = entries(headTree);
+              if (before.size !== after.size || !files || typeof files !== 'object') {
+                throw new Error('Candidate tree or source files are incomplete.');
+              }
+              let total = 0;
+              for (const path of VERSION_PATHS) {
+                const item = before.get(path);
+                if (item?.type !== 'blob' || item.mode !== '100644' || typeof files[path] !== 'string') {
+                  throw new Error('A version source file is missing or unsafe: ' + path);
+                }
+                const bytes = Buffer.from(files[path], 'utf8');
+                total += bytes.length;
+                if (bytes.length > MAX_FILE || total > 20_000_000 || bytes.includes(0) ||
+                    bytes.toString('utf8') !== files[path] || blobHash(bytes) !== item.sha) {
+                  throw new Error('A version source file differs from the base tree: ' + path);
+                }
+              }
+              const plan = planVersion(files, sourceId.number, date);
+              if (headCommit.message.trimEnd() !== commitMessage(plan, sourceId, date)) {
+                throw new Error('Version commit message does not match its plan.');
+              }
+              for (const [path, prior] of before) {
+                const next = after.get(path);
+                if (!next || next.type !== prior.type || next.mode !== prior.mode) {
+                  throw new Error('Candidate changed a path, type, or mode: ' + path);
+                }
+                if (VERSION_PATHS.includes(path)) {
+                  const expected = blobHash(Buffer.from(plan.updates[path], 'utf8'));
+                  if (next.type !== 'blob' || next.mode !== '100644' || next.sha !== expected || next.sha === prior.sha) {
+                    throw new Error('Candidate version file differs from its plan: ' + path);
+                  }
+                } else if (prior.type !== 'tree' && next.sha !== prior.sha) {
+                  throw new Error('Candidate changed an unrelated object: ' + path);
+                }
+              }
+              if (!Array.isArray(changedFiles) || changedFiles.length !== VERSION_PATHS.length ||
+                  new Set(changedFiles.map(file => file?.filename)).size !== VERSION_PATHS.length ||
+                  changedFiles.some(file => !VERSION_PATHS.includes(file?.filename) || file.status !== 'modified' ||
+                    file.previous_filename !== undefined || file.sha !== after.get(file.filename)?.sha)) {
+                throw new Error('Version PR changed-file inventory is incomplete or unexpected.');
+              }
+              return { base, head: headCommit.sha, source: sourceId.number, sourceMerge: sourceId.mergeSha,
+                versionPr: versionPr.number, tag: plan.tag, date };
+            }
+            // END EXACT PATCH CANDIDATE POLICY
+            return { validatePatchCandidate };
+            })();
+            const { sourceRulesSnapshot, requiredPushChecks } = (() => {
+            // BEGIN EXACT PUSH CHECK POLICY
+            // OpenAI-Codex_health_release_architecture: verify exact App push checks before any fixed-ref update.
+            const FULL_NAME = 'KingsleyHK0323/Multimedia_Downloader';
+            const REPO_ID = 1251103365;
+            const BOT_ID = 359694872;
+            const BOT_LOGIN = 'kingsley-multimedia-automation[bot]';
+            const BRANCH = 'automation/protected-workflows';
+            const ACTIONS_APP_ID = 15368;
+            const SHA = /^[0-9a-f]{40}$/;
+            const positive = x => Number.isSafeInteger(x) && x > 0;
+            const isBot = user => user?.id === BOT_ID && user.login === BOT_LOGIN && user.type === 'Bot';
+            
+            async function sourceRulesSnapshot(app, { owner, repo }) {
+              if (owner + '/' + repo !== FULL_NAME) throw new Error('Unexpected repository.');
+              const repository = (await app.rest.repos.get({ owner, repo })).data;
+              if (repository?.id !== REPO_ID || repository.full_name !== FULL_NAME ||
+                  typeof repository.node_id !== 'string' || !repository.node_id || repository.fork !== false) {
+                throw new Error('Repository identity is incomplete.');
+              }
+              const rules = await app.paginate('GET /repos/{owner}/{repo}/rules/branches/{branch}', {
+                owner, repo, branch: 'Source_Code', per_page: 100,
+              });
+              if (!Array.isArray(rules) || rules.length < 1 || rules.length > 1000 ||
+                  rules.some(rule => !rule || !positive(rule.ruleset_id) ||
+                    !['Repository', 'Organization'].includes(rule.ruleset_source_type) ||
+                    typeof rule.ruleset_source !== 'string' || typeof rule.type !== 'string')) {
+                throw new Error('Active Source_Code rules are incomplete.');
+              }
+              const details = [];
+              for (const id of [...new Set(rules.map(rule => rule.ruleset_id))].sort((a, b) => a - b)) {
+                const detail = (await app.request('GET /repos/{owner}/{repo}/rulesets/{ruleset_id}', {
+                  owner, repo, ruleset_id: id, includes_parents: true,
+                })).data;
+                if (detail?.id !== id || detail.enforcement !== 'active' || detail.target !== 'branch' ||
+                    detail.current_user_can_bypass !== 'never' || !Array.isArray(detail.rules)) {
+                  throw new Error('An active Source_Code ruleset is unavailable or bypassable by the App.');
+                }
+                details.push({ id, rules: detail.rules, enforcement: detail.enforcement,
+                  current_user_can_bypass: detail.current_user_can_bypass, conditions: detail.conditions });
+              }
+              if (!rules.some(rule => rule.type === 'non_fast_forward') ||
+                  rules.some(rule => rule.type === 'pull_request' || rule.type === 'update')) {
+                throw new Error('Source_Code must forbid force pushes and permit checked direct updates.');
+              }
+              const protectedChecks = new Set();
+              for (const rule of rules.filter(rule => rule.type === 'required_status_checks')) {
+                const params = rule.parameters;
+                if (!params || typeof params.strict_required_status_checks_policy !== 'boolean' ||
+                    !Array.isArray(params.required_status_checks) || params.required_status_checks.length === 0) {
+                  throw new Error('A required-check rule is incomplete.');
+                }
+                for (const check of params.required_status_checks) {
+                  if (check?.integration_id === ACTIONS_APP_ID &&
+                      ['Required CI', 'Required Python matrix'].includes(check.context)) protectedChecks.add(check.context);
+                }
+              }
+              if (!protectedChecks.has('Required CI') || !protectedChecks.has('Required Python matrix')) {
+                throw new Error('Required CI and matrix checks from GitHub Actions are not active.');
+              }
+              return { nodeId: repository.node_id, snapshot: JSON.stringify({
+                rules: [...rules].sort((a, b) => a.ruleset_id - b.ruleset_id || a.type.localeCompare(b.type)),
+                details,
+              }) };
+            }
+            
+            async function requiredPushChecks(github, { owner, repo, head, branch = BRANCH, now = Date.now() }) {
+              if (owner + '/' + repo !== FULL_NAME || !SHA.test(head || '') ||
+                  ![BRANCH, 'Source_Code'].includes(branch) ||
+                  !Number.isFinite(now)) throw new Error('Unexpected repository, head, branch, or time.');
+              const runs = [];
+              const seen = new Set();
+              let total;
+              for (let page = 1; page <= 10; page++) {
+                const data = (await github.rest.actions.listWorkflowRunsForRepo({
+                  owner, repo, event: 'push', head_sha: head, per_page: 100, page,
+                })).data;
+                if (!data || !Number.isSafeInteger(data.total_count) || data.total_count < 0 || data.total_count > 1000 ||
+                    !Array.isArray(data.workflow_runs) || data.workflow_runs.length > 100 ||
+                    (total !== undefined && data.total_count !== total)) throw new Error('Push run pagination is incomplete.');
+                total = data.total_count;
+                for (const run of data.workflow_runs) {
+                  if (!positive(run?.id) || seen.has(run.id)) throw new Error('Push run identity is ambiguous.');
+                  seen.add(run.id);
+                  runs.push(run);
+                }
+                if (runs.length >= total) break;
+                if (data.workflow_runs.length !== 100) throw new Error('Push run page is incomplete.');
+              }
+              if (runs.length !== total) throw new Error('Push run count is incomplete.');
+              const expectedRuns = [
+                ['.github/workflows/ci.yml', 'CI', 318584423],
+                ['.github/workflows/python-matrix.yml', 'Python matrix tests', 422035428],
+              ];
+              const selected = expectedRuns.map(([path, name, workflowId]) => {
+                const matches = runs.filter(run => run?.path === path && run.head_sha === head && run.head_branch === branch);
+                if (matches.length === 0) return null;
+                if (matches.length !== 1) throw new Error('Multiple matching push runs are ambiguous.');
+                const run = matches[0];
+                if (['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(run.status)) return null;
+                const age = now - Date.parse(run.created_at);
+                if (run.name !== name || run.workflow_id !== workflowId || run.event !== 'push' || !isBot(run.actor) ||
+                    run.repository?.id !== REPO_ID || run.repository.full_name !== FULL_NAME ||
+                    run.head_repository?.id !== REPO_ID || run.head_repository.full_name !== FULL_NAME ||
+                    run.status !== 'completed' || run.conclusion !== 'success' ||
+                    !positive(run.run_attempt) || run.run_attempt > 10 ||
+                    !Number.isFinite(age) || age < -60000) {
+                  throw new Error('The exact App push run is not trusted and successful.');
+                }
+                return { id: run.id, attempt: run.run_attempt, path, head };
+              });
+              if (selected.some(run => run === null)) return null;
+            
+              const contextName = 'dependabot-context-' + head + '-' + head + '-' + head;
+              const ciNames = [contextName, 'Required CI', 'version-consistency', 'auto-format-guard',
+                'release-input-guard', 'lint', 'python-tests', 'frontend-check', 'rust-check'];
+              const matrixNames = [contextName, 'Required Python matrix'];
+              for (const os of ['ubuntu-22.04', 'macos-15', 'windows-latest']) {
+                for (const version of ['3.10', '3.11', '3.12', '3.13', '3.14']) {
+                  matrixNames.push('python-tests (' + os + ', ' + version + ')');
+                }
+              }
+              const collect = async (run, required) => {
+                const latest = new Map(), ids = new Set();
+                for (let attempt = 1; attempt <= run.attempt; attempt++) {
+                  const data = (await github.rest.actions.listJobsForWorkflowRunAttempt({
+                    owner, repo, run_id: run.id, attempt_number: attempt, per_page: 100,
+                  })).data;
+                  if (!data || !positive(data.total_count) || data.total_count > 100 ||
+                      !Array.isArray(data.jobs) || data.jobs.length !== data.total_count) {
+                    throw new Error('Workflow attempt job list is incomplete.');
+                  }
+                  const names = new Set();
+                  for (const job of data.jobs) {
+                    if (!positive(job?.id) || ids.has(job.id) || job.run_id !== run.id || job.head_sha !== head ||
+                        (job.run_attempt !== undefined && job.run_attempt !== attempt) ||
+                        typeof job.name !== 'string' || names.has(job.name)) throw new Error('Job identity is incomplete.');
+                    ids.add(job.id); names.add(job.name); latest.set(job.name, { job, attempt });
+                  }
+                }
+                const evidence = [];
+                for (const name of required) {
+                  const item = latest.get(name), job = item?.job;
+                  if (!job || job.status !== 'completed' || job.conclusion !== 'success') {
+                    throw new Error('Required job did not succeed: ' + name);
+                  }
+                  const prefix = 'https://api.github.com/repos/' + FULL_NAME + '/check-runs/';
+                  const suffix = typeof job.check_run_url === 'string' && job.check_run_url.startsWith(prefix)
+                    ? job.check_run_url.slice(prefix.length) : '';
+                  const checkId = Number(suffix);
+                  if (!/^[1-9][0-9]*$/.test(suffix) || !positive(checkId)) throw new Error('Invalid check-run URL.');
+                  const check = (await github.rest.checks.get({ owner, repo, check_run_id: checkId })).data;
+                  if (check?.id !== checkId || check.name !== name || check.head_sha !== head ||
+                      check.status !== 'completed' || check.conclusion !== 'success' ||
+                      check.app?.id !== ACTIONS_APP_ID) throw new Error('Required check-run is not trusted: ' + name);
+                  const completedAge = now - Date.parse(check.completed_at);
+                  if (!Number.isFinite(completedAge) || completedAge < -60000 || completedAge > 6 * 24 * 60 * 60 * 1000) {
+                    throw new Error('Required check-run is not recent: ' + name);
+                  }
+                  evidence.push({ name, jobId: job.id, checkId, attempt: item.attempt, completed_at: check.completed_at });
+                }
+                return evidence;
+              };
+              const evidence = await Promise.all([collect(selected[0], ciNames), collect(selected[1], matrixNames)]);
+              return { runs: selected, evidence };
+            }
+            // END EXACT PUSH CHECK POLICY
+            return { sourceRulesSnapshot, requiredPushChecks };
+            })();
+            // BEGIN EXACT PATCH CAS COORDINATOR
+            // OpenAI-Codex_health_release_architecture: update only Source_Code after verified App push checks.
+            
+            const REPO = 'KingsleyHK0323/Multimedia_Downloader';
+            const REPO_ID = 1251103365;
+            const TEMP = 'automation/protected-workflows';
+            const BOT = 'kingsley-multimedia-automation[bot]';
+            const SHA = /^[0-9a-f]{40}$/;
+            const blobHash = bytes => createHash('sha1')
+              .update(Buffer.concat([Buffer.from('blob ' + bytes.length + '\0'), bytes])).digest('hex');
+            
+            async function reconcilePatchCas({ github, app, context, appSlug, workflowSha, anchorPrNumber }) {
+              const { owner, repo } = context.repo || {};
+              if (owner + '/' + repo !== REPO || context.ref !== 'refs/heads/Source_Code' ||
+                  appSlug !== 'kingsley-multimedia-automation' || !SHA.test(workflowSha || '') ||
+                  !Number.isSafeInteger(anchorPrNumber) || anchorPrNumber < 1) {
+                throw new Error('Unexpected patch coordinator context.');
+              }
+              const appInfo = (await app.request('GET /apps/{app_slug}', { app_slug: appSlug })).data;
+              const bot = (await app.rest.users.getByUsername({ username: BOT })).data;
+              if (appInfo?.id !== 5868451 || appInfo.slug !== appSlug ||
+                  bot?.id !== 359694872 || bot.login !== BOT || bot.type !== 'Bot') {
+                throw new Error('Patch automation App identity cannot be verified.');
+              }
+              const ref = async branch => {
+                const data = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + branch })).data;
+                if (data?.ref !== 'refs/heads/' + branch || data.object?.type !== 'commit' ||
+                    !SHA.test(data.object.sha || '')) throw new Error('Branch ref is incomplete.');
+                return data.object.sha;
+              };
+              const commit = async sha => {
+                if (!SHA.test(sha || '')) throw new Error('Invalid commit SHA.');
+                const data = (await github.rest.git.getCommit({ owner, repo, commit_sha: sha })).data;
+                if (data?.sha !== sha || !SHA.test(data.tree?.sha || '') || !Array.isArray(data.parents) ||
+                    data.parents.some(parent => !SHA.test(parent?.sha || ''))) {
+                  throw new Error('Commit metadata is incomplete.');
+                }
+                return data;
+              };
+              const tree = async sha => {
+                const data = (await github.rest.git.getTree({ owner, repo, tree_sha: sha, recursive: 'true' })).data;
+                if (data?.sha !== sha || data.truncated !== false || !Array.isArray(data.tree) ||
+                    data.tree.length > 100000) throw new Error('Git tree inventory is incomplete.');
+                return data.tree;
+              };
+              const readFiles = async items => {
+                const byPath = new Map();
+                for (const item of items) {
+                  if (!item || typeof item.path !== 'string' || byPath.has(item.path)) {
+                    throw new Error('Base tree contains an ambiguous path.');
+                  }
+                  byPath.set(item.path, item);
+                }
+                const result = {};
+                let total = 0;
+                for (const path of VERSION_PATHS) {
+                  const entry = byPath.get(path);
+                  if (entry?.type !== 'blob' || entry.mode !== '100644' || !SHA.test(entry.sha || '') ||
+                      !Number.isSafeInteger(entry.size) || entry.size < 0 || entry.size > 5_000_000) {
+                    throw new Error('Version source entry is incomplete: ' + path);
+                  }
+                  total += entry.size;
+                  if (total > 20_000_000) throw new Error('Version source files are too large.');
+                  const data = (await github.rest.git.getBlob({ owner, repo, file_sha: entry.sha })).data;
+                  if (data?.sha !== entry.sha || data.encoding !== 'base64' || data.size !== entry.size ||
+                      typeof data.content !== 'string') throw new Error('Git blob metadata is incomplete.');
+                  const encoded = data.content.replace(/\s/g, '');
+                  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+                    throw new Error('Git blob encoding is invalid.');
+                  }
+                  const bytes = Buffer.from(encoded, 'base64');
+                  if (bytes.toString('base64') !== encoded || bytes.length !== entry.size ||
+                      blobHash(bytes) !== entry.sha || bytes.includes(0)) throw new Error('Git blob bytes are invalid.');
+                  result[path] = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+                  if (!Buffer.from(result[path], 'utf8').equals(bytes)) throw new Error('Git blob is not canonical UTF-8.');
+                }
+                return result;
+              };
+              const validateAnchor = async base => {
+                const pr = (await github.rest.pulls.get({ owner, repo, pull_number: anchorPrNumber })).data;
+                if (pr?.number !== anchorPrNumber || pr.state !== 'closed' || pr.merged !== true ||
+                    pr.user?.id !== 157894869 || pr.base?.ref !== 'Source_Code' ||
+                    pr.base?.repo?.id !== REPO_ID || pr.base.repo.full_name !== REPO ||
+                    pr.head?.ref !== TEMP || pr.head?.repo?.id !== REPO_ID || pr.head.repo.full_name !== REPO ||
+                    !SHA.test(pr.merge_commit_sha || '')) throw new Error('Approved migration anchor is invalid.');
+                const anchorTime = utcSecond(pr.merged_at);
+                const anchor = await commit(pr.merge_commit_sha);
+                const marker = (await tree(anchor.tree.sha)).filter(item => item?.path === ANCHOR_PATH);
+                if (marker.length !== 1 || marker[0].type !== 'blob' || marker[0].mode !== '100644' ||
+                    marker[0].sha !== blobHash(Buffer.from(ANCHOR_CONTENT, 'utf8'))) {
+                  throw new Error('Approved migration marker is invalid.');
+                }
+                let cursor = base;
+                const seen = new Set();
+                while (cursor !== pr.merge_commit_sha) {
+                  if (seen.has(cursor) || seen.size >= 10000) throw new Error('Anchor first-parent history is incomplete.');
+                  seen.add(cursor);
+                  const current = await commit(cursor);
+                  if (!current.parents.length) throw new Error('Anchor is not in Source_Code first-parent history.');
+                  cursor = current.parents[0].sha;
+                }
+                return anchorTime;
+              };
+              const open = await github.paginate(github.rest.pulls.list, {
+                owner, repo, state: 'open', head: owner + ':' + TEMP, base: 'Source_Code', per_page: 100,
+              });
+              if (!Array.isArray(open) || open.length > 1) throw new Error('Service branch PR listing is ambiguous.');
+              if (open.length === 0) return { status: 'idle' };
+              const initial = open[0];
+              if (!Number.isSafeInteger(initial?.number) || initial.number < 1 || initial.user?.id !== 359694872 ||
+                  typeof initial.body !== 'string') return { status: 'service-branch-busy' };
+              const markerPattern = /^<!-- automatic-patch-source:([1-9][0-9]*):([0-9a-f]{40}) -->$/gm;
+              const markers = [...initial.body.matchAll(markerPattern)];
+              if (markers.length === 0 && !initial.body.includes('automatic-patch-source:')) {
+                return { status: 'service-branch-busy' };
+              }
+              if (markers.length !== 1) throw new Error('Patch source marker is incomplete or ambiguous.');
+              const sourceNumber = Number(markers[0][1]);
+              if (!Number.isSafeInteger(sourceNumber) || sourceNumber < 1) throw new Error('Patch source PR number is invalid.');
+              const inspect = async () => {
+                const headPrs = await github.paginate(github.rest.pulls.list, {
+                  owner, repo, state: 'open', head: owner + ':' + TEMP, per_page: 100,
+                });
+                const basePrs = await github.paginate(github.rest.pulls.list, {
+                  owner, repo, state: 'open', base: TEMP, per_page: 100,
+                });
+                if (!Array.isArray(headPrs) || headPrs.length !== 1 || headPrs[0]?.number !== initial.number ||
+                    !Array.isArray(basePrs) || basePrs.length !== 0) {
+                  throw new Error('Service branch is used by another or ambiguous PR.');
+                }
+                const base = await ref('Source_Code');
+                if (base !== workflowSha) throw new Error('Source_Code advanced beyond the trusted workflow revision.');
+                const [versionPrResponse, sourceResponse] = await Promise.all([
+                  github.rest.pulls.get({ owner, repo, pull_number: initial.number }),
+                  github.rest.pulls.get({ owner, repo, pull_number: sourceNumber }),
+                ]);
+                const versionPr = versionPrResponse.data, source = sourceResponse.data;
+                const sourceId = validateSourcePr(source);
+                if (sourceId.mergeSha !== markers[0][2] || source.number !== sourceNumber) {
+                  throw new Error('Source PR changed or no longer matches the marker.');
+                }
+                const anchorTime = await validateAnchor(base);
+                if (utcSecond(source.merged_at) <= anchorTime) throw new Error('Source PR predates the migration anchor.');
+                const events = await github.paginate(github.rest.issues.listEventsForTimeline, {
+                  owner, repo, issue_number: sourceNumber, per_page: 100,
+                });
+                const authorization = await labelAtMerge(events, source.merged_at, sourceId.mergeSha, github, sourceNumber);
+                if (!authorization.atMerge || authorization.withdrawnAfterMerge || !currentPatchLabel(source)) {
+                  throw new Error('Source PR patch authorization is no longer active.');
+                }
+                const ancestry = (await github.rest.repos.compareCommits({
+                  owner, repo, base: sourceId.mergeSha, head: base,
+                })).data;
+                if (ancestry?.merge_base_commit?.sha !== sourceId.mergeSha || ancestry.behind_by !== 0 ||
+                    !['ahead', 'identical'].includes(ancestry.status)) {
+                  throw new Error('Source PR merge is not in current Source_Code history.');
+                }
+                const head = await ref(TEMP);
+                if (versionPr?.number !== initial.number || versionPr.head?.sha !== head) {
+                  throw new Error('Version PR or service ref changed.');
+                }
+                const [baseCommit, headCommit, details] = await Promise.all([
+                  commit(base), commit(head), github.rest.repos.getCommit({ owner, repo, ref: head }),
+                ]);
+                const [baseTree, headTree, changedFiles] = await Promise.all([
+                  tree(baseCommit.tree.sha), tree(headCommit.tree.sha),
+                  github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: initial.number, per_page: 100 }),
+                ]);
+                const files = await readFiles(baseTree);
+                const candidate = validatePatchCandidate({ source, versionPr, base, headCommit,
+                  signedCommit: details.data, baseTree, headTree, files, changedFiles });
+                if (await ref('Source_Code') !== base || await ref(TEMP) !== head) {
+                  throw new Error('Version refs changed during verification.');
+                }
+                return candidate;
+              };
+              const first = await inspect();
+              const firstRules = await sourceRulesSnapshot(app, { owner, repo });
+              const firstChecks = await requiredPushChecks(github, { owner, repo, head: first.head, branch: TEMP });
+              if (firstChecks === null) return { status: 'waiting-for-checks', pr: first.versionPr, head: first.head };
+              for (let attempt = 0; attempt < 2; attempt++) {
+                const current = await inspect();
+                const rules = await sourceRulesSnapshot(app, { owner, repo });
+                const checks = await requiredPushChecks(github, { owner, repo, head: first.head, branch: TEMP });
+                if (JSON.stringify(current) !== JSON.stringify(first) ||
+                    JSON.stringify(rules) !== JSON.stringify(firstRules) ||
+                    JSON.stringify(checks) !== JSON.stringify(firstChecks)) {
+                  throw new Error('Patch candidate, rules, or check evidence changed before update.');
+                }
+              }
+              const mutation = 'patch-' + first.versionPr + '-' + first.head;
+              const updated = await app.graphql(
+                'mutation($input: UpdateRefsInput!) { updateRefs(input: $input) { clientMutationId } }',
+                { input: { repositoryId: firstRules.nodeId, clientMutationId: mutation,
+                  refUpdates: [{ name: 'refs/heads/Source_Code', beforeOid: first.base, afterOid: first.head, force: false }] } },
+              );
+              if (updated?.updateRefs?.clientMutationId !== mutation || await ref('Source_Code') !== first.head) {
+                throw new Error('The exact checked Source_Code update was not confirmed.');
+              }
+              return { status: 'updated-needs-source-checks', ...first };
+            }
+            // END EXACT PATCH CAS COORDINATOR
+            const { owner, repo } = context.repo;
+            if (context.ref !== 'refs/heads/Source_Code' || process.env.APP_SLUG !== 'kingsley-multimedia-automation' ||
+                !/^[0-9a-f]{40}$/.test(process.env.WORKFLOW_SHA || '')) throw new Error('Unexpected workflow identity.');
+            const markerCommits = await github.paginate(github.rest.repos.listCommits, {
+              owner, repo, sha: process.env.WORKFLOW_SHA, path: ANCHOR_PATH, per_page: 100,
+            });
+            if (!Array.isArray(markerCommits) || markerCommits.length !== 1 ||
+                !/^[0-9a-f]{40}$/.test(markerCommits[0]?.sha || '')) {
+              throw new Error('The patch migration marker must have exactly one introducing commit.');
+            }
+            const associated = await github.paginate(github.rest.repos.listPullRequestsAssociatedWithCommit, {
+              owner, repo, commit_sha: markerCommits[0].sha, per_page: 100,
+            });
+            if (!Array.isArray(associated) || associated.length > 1000) throw new Error('Marker commit PR associations are incomplete.');
+            const anchors = associated.filter(pr => pr?.merge_commit_sha === markerCommits[0].sha &&
+              pr.user?.id === 157894869 && pr.base?.ref === 'Source_Code' &&
+              pr.base?.repo?.id === 1251103365 && pr.head?.repo?.id === 1251103365 &&
+              pr.head?.ref === 'automation/protected-workflows');
+            if (anchors.length !== 1 || !Number.isSafeInteger(anchors[0].number) || anchors[0].number < 1) {
+              throw new Error('The exact approved migration anchor PR is unavailable or ambiguous.');
+            }
+            const app = getOctokit(process.env.APP_TOKEN);
+            const result = await reconcilePatchCas({ github, app, context, appSlug: process.env.APP_SLUG,
+              workflowSha: process.env.WORKFLOW_SHA, anchorPrNumber: anchors[0].number });
+            core.info('Patch coordinator status: ' + result.status);
