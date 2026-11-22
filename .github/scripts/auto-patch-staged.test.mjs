@@ -20,12 +20,17 @@ function block(name) {
 }
 const compact = text => text.split('\n').filter(Boolean).join('\n');
 
-test('keeps writer and finalizer stopped before App token creation', () => {
-  const stop = workflow.indexOf('name: Keep patch App writing disabled');
-  const fail = workflow.indexOf('          exit 1', stop);
+test('requires explicit patch mode and trusted ref before creating an App token', () => {
+  const job = workflow.indexOf('  prepare-patch:');
+  const gateEnd = workflow.indexOf('    concurrency:', job);
+  const verify = workflow.indexOf('name: Verify exact source ref and workflow revision');
   const token = workflow.indexOf('name: Create a repository-scoped App token');
-  assert.ok(stop > 0 && fail > stop && token > fail);
-  assert.match(workflow, /vars\.AUTOMATION_PATCH_PR_MODE == 'enabled'/);
+  assert.ok(job > 0 && gateEnd > job && verify > gateEnd && token > verify);
+  const gate = workflow.slice(job, gateEnd);
+  assert.match(gate, /if:\s*>-/);
+  assert.match(gate, /github\.ref == 'refs\/heads\/Source_Code'/);
+  assert.match(gate, /vars\.AUTOMATION_PATCH_PR_MODE == 'enabled'/);
+  assert.doesNotMatch(workflow, /name: Keep patch App writing disabled/);
   assert.match(workflow, /group: automation-service-reconcile/);
   assert.doesNotMatch(workflow, /actions\/checkout|pull_request_target|import\(/);
   assert.match(workflow, /\[\[ "\$tip" == "\$WORKFLOW_SHA" \]\]/);
