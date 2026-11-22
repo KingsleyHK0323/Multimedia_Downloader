@@ -1,11 +1,15 @@
 # OpenAI-Codex: welcome a person's first repository contribution without executing PR code.
+# OpenAI-Codex_ruleset_architecture: reconcile fork PR metadata from trusted workflow code.
 name: First interaction
 
 on:
   issues:
     types: [opened]
-  pull_request_target:
-    types: [opened]
+  workflow_run:
+    workflows: [CI, Website build check]
+    types: [completed]
+  schedule:
+    - cron: '13 */2 * * *'
   workflow_dispatch:
     inputs:
       item_number:
@@ -17,16 +21,17 @@ permissions:
   issues: write
   pull-requests: write
 
-# OpenAI-Codex: serialize retries for the same issue or pull request.
+# OpenAI-Codex_ruleset_architecture: serialize each issue separately and all PR scans together.
 concurrency:
-  group: first-interaction-${{ github.event_name }}-${{ github.event.issue.number || github.event.pull_request.number || inputs.item_number }}
+  group: first-interaction-${{ github.event_name == 'issues' && format('issue-{0}', github.event.issue.number) || 'pr-scan' }}
   cancel-in-progress: false
 
 jobs:
   welcome:
-    if: github.event.sender.type != 'Bot'
+    if: >-
+      github.event_name != 'workflow_run' || github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 15
     steps:
       - name: Welcome a first-time contributor
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
@@ -34,27 +39,36 @@ jobs:
           PREVIEW_ITEM: ${{ inputs.item_number }}
         with:
           script: |
-            // OpenAI-Codex: first means no earlier issue or pull request by this user.
-            const preview = context.eventName === 'workflow_dispatch';
+            // OpenAI-Codex_ruleset_architecture: wake from trusted workflow code and inspect PR metadata only.
             const { owner, repo } = context.repo;
-            let item;
-            let isIssue;
-            if (preview) {
-              // OpenAI-Codex: manual dispatch is always a read-only preview.
-              const input = process.env.PREVIEW_ITEM || '';
-              if (!/^[1-9][0-9]{0,9}$/.test(input)) throw new Error('Invalid preview item number');
-              item = (await github.rest.issues.get({ owner, repo, issue_number: Number(input) })).data;
-              isIssue = !item?.pull_request;
-            } else {
-              isIssue = context.eventName === 'issues';
-              if ((!isIssue && context.eventName !== 'pull_request_target') || context.payload.action !== 'opened') return;
-              item = isIssue ? context.payload.issue : context.payload.pull_request;
-            }
+            const scanOpenPulls = async () => {
+              const all = [];
+              const numbers = new Set();
+              for (let page = 1; page <= 10; page++) {
+                const rows = (await github.rest.pulls.list({
+                  owner, repo, state: 'open', sort: 'created', direction: 'asc',
+                  per_page: 100, page,
+                })).data;
+                if (!Array.isArray(rows) || rows.length > 100) throw new Error('Open PR inventory is incomplete.');
+                for (const pr of rows) {
+                  if (!Number.isSafeInteger(pr?.number) || pr.number < 1 || numbers.has(pr.number) ||
+                      typeof pr.base?.ref !== 'string' || !pr.base.ref ||
+                      pr.base?.repo?.id !== 1251103365 || pr.base.repo.full_name !== owner + '/' + repo) {
+                    throw new Error('Open PR inventory is inconsistent.');
+                  }
+                  numbers.add(pr.number);
+                  all.push(pr);
+                }
+                if (rows.length < 100) return all;
+              }
+              throw new Error('Open PR inventory reached the safe scan limit.');
+            };
+            const welcome = async (item, isIssue, preview, requireSender) => {
             const sender = context.payload.sender;
             if (!item || !Number.isSafeInteger(item.number) || item.number < 1 || item.state !== 'open' ||
                 item.user?.type !== 'User' || !Number.isSafeInteger(item.user?.id) || item.user.id < 1 ||
                 typeof item.user?.login !== 'string' || !item.user.login.trim() ||
-                (!preview && (sender?.type !== 'User' || sender.id !== item.user.id))) {
+                (!preview && requireSender && (sender?.type !== 'User' || sender.id !== item.user.id))) {
               core.notice('First interaction has incomplete or non-human identity; skipped.');
               return;
             }
@@ -96,3 +110,23 @@ jobs:
             }
             await github.rest.issues.createComment({ owner, repo, issue_number: item.number,
               body: legacy + '\n\n' + marker });
+
+            };
+            if (context.eventName === 'workflow_dispatch') {
+              const input = process.env.PREVIEW_ITEM || '';
+              if (!/^[1-9][0-9]{0,9}$/.test(input)) throw new Error('Invalid preview item number');
+              const item = (await github.rest.issues.get({ owner, repo, issue_number: Number(input) })).data;
+              await welcome(item, !item?.pull_request, true, false);
+            } else if (context.eventName === 'issues') {
+              if (context.payload.action !== 'opened') return;
+              await welcome(context.payload.issue, true, false, true);
+            } else if (context.eventName === 'schedule' ||
+                       (context.eventName === 'workflow_run' && context.payload.workflow_run?.event === 'pull_request')) {
+              const pulls = await scanOpenPulls();
+              let failures = 0;
+              for (const pr of pulls) {
+                try { await welcome(pr, false, false, false); }
+                catch { failures++; core.warning('A PR welcome could not be evaluated; the next scan will retry.'); }
+              }
+              if (failures) throw new Error('One or more PR welcomes could not be evaluated.');
+            }

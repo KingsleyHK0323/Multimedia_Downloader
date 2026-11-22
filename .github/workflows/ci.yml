@@ -95,7 +95,7 @@ jobs:
         with:
           persist-credentials: false
       # OpenAI-Codex_format_architecture: check the release workflow before it is invoked.
-      - name: Check release workflow syntax and contexts
+      - name: Check automation workflow syntax and contexts
         shell: bash
         run: |
           set -euo pipefail
@@ -105,10 +105,14 @@ jobs:
             -o "$archive"
           printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' "$archive" | sha256sum -c -
           tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
-          # v1.7.12 predates these documented job context properties.
+          # OpenAI-Codex_health_release_architecture: v1.7.12 predates these documented properties.
+          # The cleanup mock separately asserts queue=max without cancel-in-progress.
           "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes= \
             -ignore 'property "workflow_(sha|repository|file_path)" is not defined in object type' \
-            .github/workflows/release.yml .github/workflows/release-build.yml .github/workflows/npm-package.yml
+            -ignore '^unexpected key "queue" for "concurrency" section[.]' \
+            .github/workflows/release.yml .github/workflows/release-build.yml .github/workflows/npm-package.yml \
+            .github/workflows/clean-merged-branches.yml .github/workflows/cleanup-associated-pr-probe.yml \
+            .github/workflows/first-interaction.yml .github/workflows/issue-pr-triage.yml
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -215,6 +219,10 @@ jobs:
       # OpenAI-Codex: check branch-cleanup decisions without deleting refs.
       - name: Test merged branch cleanup guard
         run: node --test .github/scripts/clean-merged-branches.test.mjs
+
+      # OpenAI-Codex_health_release_architecture: exercise the read-only GraphQL association probe.
+      - name: Test cleanup association probe
+        run: node --test .github/scripts/cleanup-associated-pr-probe.test.mjs
 
       # OpenAI-Codex: test scheduled health reporting with mocked GitHub APIs.
       - name: Test self-commit health report

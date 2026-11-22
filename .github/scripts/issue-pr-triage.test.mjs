@@ -1,3 +1,4 @@
+// OpenAI-Codex_ruleset_architecture: verify scheduled PR reconciliation with mock APIs.
 // OpenAI-Codex_safe_scope: exercise extracted scripts with in-memory API mocks.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -30,14 +31,15 @@ function harness() {
   const applied = [], created = [], comments = [];
   const labelsFn = () => {}, filesFn = () => {};
   const state = { latestIssue: issue(), latestPull: pull(), files: [{ filename: 'frontend/src/file.ts', status: 'modified' }],
-    labels: [{ name: 'needs-info' }, { name: 'area:frontend' }] };
+    labels: [{ name: 'needs-info' }, { name: 'area:frontend' }], openPulls: [pull()] };
   const github = {
     paginate: async (method) => method === labelsFn ? state.labels : method === filesFn ? state.files : [],
     rest: {
       issues: { getLabel: async () => ({}), createLabel: async (args) => created.push(args.name),
         listLabelsForRepo: labelsFn, get: async () => ({ data: state.latestIssue }),
         addLabels: async (args) => applied.push(args.labels), createComment: async (args) => comments.push(args.body) },
-      pulls: { get: async () => ({ data: state.latestPull }), listFiles: filesFn },
+      pulls: { get: async () => ({ data: state.latestPull }), listFiles: filesFn,
+        list: async ({ page }) => ({ data: page === 1 ? state.openPulls : [] }) },
     },
   };
   const core = { setOutput() {}, warning() {}, notice() {} };
@@ -85,27 +87,27 @@ test('an existing needs-info label is retained after completion', async () => {
 
 test('PR changed path receives a matching area label', async () => {
   const h = harness();
-  await h.run(2, { ...ctx, payload: { pull_request: { number: 2 } } });
+  await h.run(2, { ...ctx, eventName: 'schedule', payload: {} });
   assert.deepEqual(h.applied, [['area:frontend']]);
 });
 
 test('PR label changes between reads prevent labeling', async () => {
   const h = harness(), initial = pull(); let reads = 0;
   h.github.rest.pulls.get = async () => ({ data: ++reads === 1 ? initial : { ...initial, labels: [{ name: 'other' }] } });
-  await h.run(2, { ...ctx, payload: { pull_request: { number: 2 } } });
+  await h.run(2, { ...ctx, eventName: 'schedule', payload: {} });
   assert.deepEqual(h.applied, []);
 });
 
 test('PR head changes between reads prevent labeling', async () => {
   const h = harness(), initial = pull(); let reads = 0;
   h.github.rest.pulls.get = async () => ({ data: ++reads === 1 ? initial : { ...initial, head: { sha: 'c'.repeat(40) } } });
-  await h.run(2, { ...ctx, payload: { pull_request: { number: 2 } } });
+  await h.run(2, { ...ctx, eventName: 'schedule', payload: {} });
   assert.deepEqual(h.applied, []);
 });
 
 test('shell metacharacters in a PR filename are treated as path data', async () => {
   const h = harness(); h.state.files = [{ filename: 'frontend/$(touch danger).ts', status: 'modified' }];
-  await h.run(2, { ...ctx, payload: { pull_request: { number: 2 } } });
+  await h.run(2, { ...ctx, eventName: 'schedule', payload: {} });
   assert.deepEqual(h.applied, [['area:frontend']]);
 });
 
@@ -113,9 +115,9 @@ test('missing labels, bot PRs and incomplete file lists cause no labeling', asyn
   const h = harness(), item = issue(); h.state.labels = [];
   await h.run(1, { ...ctx, payload: { issue: item } });
   h.state.latestPull = { ...pull(), user: { type: 'Bot', login: 'dependabot[bot]' } };
-  await h.run(2, { ...ctx, payload: { pull_request: { number: 2 } } });
+  await h.run(2, { ...ctx, eventName: 'schedule', payload: {} });
   h.state.latestPull = { ...pull(), changed_files: 2 };
-  await h.run(2, { ...ctx, payload: { pull_request: { number: 2 } } });
+  await h.run(2, { ...ctx, eventName: 'schedule', payload: {} });
   assert.deepEqual(h.applied, []);
 });
 
@@ -182,6 +184,7 @@ function welcomeHarness(kind = 'issue') {
     comments: [],
     latest: { ...item, ...(kind === 'pr' ? { pull_request: {} } : {}) },
     created: [],
+    openPulls: [{ ...item, base: { ref: 'Source_Code', repo: { id: 1251103365, full_name: 'owner/repo' } }, head: { repo: { full_name: 'fork/repo' } } }],
   };
   const methods = { history() {}, comments() {} };
   const github = {
@@ -194,7 +197,7 @@ function welcomeHarness(kind = 'issue') {
       if (method === methods.comments) return state.comments;
       throw new Error('Unexpected pagination');
     },
-    rest: { issues: {
+    rest: { pulls: { list: async ({ page }) => ({ data: page === 1 ? state.openPulls : [] }) }, issues: {
       listForRepo: methods.history,
       listComments: methods.comments,
       get: async () => ({ data: state.latest }),
@@ -204,13 +207,13 @@ function welcomeHarness(kind = 'issue') {
       },
     } },
   };
-  const context = { eventName: kind === 'pr' ? 'pull_request_target' : 'issues',
+  const context = { eventName: kind === 'pr' ? 'workflow_run' : 'issues',
     repo: { owner: 'owner', repo: 'repo' }, payload: {
-      action: 'opened', sender: author, ...(kind === 'pr' ? { pull_request: item } : { issue: item }),
+      action: 'opened', sender: author, ...(kind === 'pr' ? { workflow_run: { event: 'pull_request' } } : { issue: item }),
     } };
   const core = { notice() {}, warning() {}, info() {} };
   const run = () => new WelcomeFunction('context', 'github', 'core', welcomeScript)(context, github, core);
-  return { state, item, author, context, run };
+  return { state, item, author, context, github, run };
 }
 test('welcomes the first issue or PR once, with the correct message', async () => {
   for (const kind of ['issue', 'pr']) {
@@ -414,4 +417,93 @@ test('discussion preview is read-only and rejects invalid input', async () => {
     if (old === undefined) delete process.env.PREVIEW_NUMBER;
     else process.env.PREVIEW_NUMBER = old;
   }
+});
+
+
+// OpenAI-Codex_ruleset_architecture: fork PRs need no workflow-run PR association.
+test('scheduled and workflow-run scans welcome a fork PR once', async () => {
+  const h = welcomeHarness('pr');
+  h.context.eventName = 'schedule'; h.context.payload = {};
+  await h.run(); assert.equal(h.state.created.length, 1);
+  h.context.eventName = 'workflow_run'; h.context.payload = { workflow_run: { event: 'pull_request', pull_requests: [] } };
+  await h.run(); assert.equal(h.state.created.length, 1);
+});
+test('malformed PR inventory fails before welcoming anyone', async () => {
+  const h = welcomeHarness('pr');
+  h.context.eventName = 'schedule'; h.context.payload = {};
+  h.state.openPulls = [{ ...h.item, base: { ref: 'Source_Code', repo: { id: 12, full_name: 'other/repo' } } }];
+  await assert.rejects(h.run(), /Open PR inventory is inconsistent/);
+  assert.equal(h.state.created.length, 0);
+});
+test('scheduled triage classifies fork PR metadata and guards against duplicate paths', async () => {
+  const h = harness();
+  h.state.openPulls[0].head.repo = { full_name: 'fork/repo' };
+  await h.run(2, { ...ctx, eventName: 'schedule', payload: {} });
+  assert.deepEqual(h.applied, [['area:frontend']]);
+  h.applied.length = 0;
+  h.state.files = [
+    { filename: 'frontend/src/file.ts', status: 'modified' },
+    { filename: 'frontend/src/file.ts', status: 'modified' },
+  ];
+  h.state.latestPull = { ...pull(), changed_files: 2 };
+  await h.run(2, { ...ctx, eventName: 'schedule', payload: {} });
+  assert.deepEqual(h.applied, []);
+});
+test('PR reconciliation uses trusted events, bounded pagination and no PR checkout', () => {
+  for (const source of [workflow, welcomeWorkflow]) {
+    assert.doesNotMatch(source, /pull_request_target:/);
+    assert.match(source, /workflow_run:/);
+    assert.match(source, /schedule:/);
+    assert.match(source, /page <= 10/);
+    assert.doesNotMatch(source, /actions\/checkout/);
+    assert.match(source, /issues:\n\s+types: \[opened/);
+  }
+});
+
+test('a second PR page is reconciled without trusting the triggering PR payload', async () => {
+  const h = welcomeHarness('pr'); h.context.eventName = 'schedule'; h.context.payload = {};
+  const bots = Array.from({ length: 100 }, (_, index) => ({
+    number: 100 + index, base: { ref: 'Source_Code', repo: { id: 1251103365, full_name: 'owner/repo' } },
+    user: { id: 1000 + index, type: 'Bot', login: 'bot' + index + '[bot]' }, state: 'open',
+  }));
+  const human = h.state.openPulls[0];
+  const pages = [];
+  h.github.rest.pulls.list = async ({ page }) => {
+    pages.push(page); return { data: page === 1 ? bots : page === 2 ? [human] : [] };
+  };
+  await h.run();
+  assert.deepEqual(pages, [1, 2]);
+  assert.equal(h.state.created.length, 1);
+});
+test('duplicate PR pagination fails before any PR label or welcome is written', async () => {
+  const h = harness(); h.state.openPulls = [pull(), pull()];
+  await assert.rejects(h.run(2, { ...ctx, eventName: 'schedule', payload: {} }), /inventory is inconsistent/);
+  assert.deepEqual(h.applied, []);
+  const w = welcomeHarness('pr'); w.context.eventName = 'schedule'; w.context.payload = {};
+  w.state.openPulls.push({ ...w.state.openPulls[0] });
+  await assert.rejects(w.run(), /inventory is inconsistent/);
+  assert.equal(w.state.created.length, 0);
+});
+test('scheduled label bootstrap does not create labels without a human PR', async () => {
+  const h = harness(); h.state.openPulls = [];
+  h.github.rest.issues.getLabel = async () => { throw { status: 404 }; };
+  await h.run(0, { ...ctx, eventName: 'schedule', payload: {} });
+  assert.deepEqual(h.created, []);
+});
+
+test('scheduled welcome includes a fork PR targeting the website branch', async () => {
+  const h = welcomeHarness('pr'); h.context.eventName = 'schedule'; h.context.payload = {};
+  h.state.openPulls[0].base.ref = 'Multimedia_Downloader_Web_Preview';
+  await h.run();
+  assert.equal(h.state.created.length, 1);
+  assert.match(h.state.created[0].body, /first pull request/);
+});
+
+test('website PR CI completion wakes the first-interaction scanner', async () => {
+  assert.match(welcomeWorkflow, /workflows: \[CI, Website build check\]/);
+  const h = welcomeHarness('pr');
+  h.state.openPulls[0].base.ref = 'Multimedia_Downloader_Web_Preview';
+  h.context.payload = { workflow_run: { event: 'pull_request', name: 'Website build check', pull_requests: [] } };
+  await h.run();
+  assert.equal(h.state.created.length, 1);
 });
