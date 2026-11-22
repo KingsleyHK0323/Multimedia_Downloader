@@ -141,7 +141,7 @@ jobs:
               }
               return Buffer.from(JSON.stringify({
                 generated_by: 'OpenAI-Codex', workflow: 'ci.yml', event: 'schedule', branch: baseName,
-                run_id: run.id, status: run.status, conclusion: run.conclusion, url: run.html_url,
+                run_id: run.id, run_attempt: run.run_attempt, status: run.status, conclusion: run.conclusion, url: run.html_url,
               }, null, 2) + '\n', 'utf8');
             };
             const ruleSnapshot = async () => {
