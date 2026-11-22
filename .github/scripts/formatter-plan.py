@@ -333,7 +333,7 @@ def calculate(requested_base, target_output):
         print(
             "::warning::Formatter skipped "
             + str(warning_count)
-            + " paths; see the manifest artifact."
+            + " paths; see the plan warnings."
         )
     manifest = (json.dumps(plan, sort_keys=True, separators=(",", ":")) + "\n").encode(
         "utf-8"

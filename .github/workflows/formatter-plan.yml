@@ -121,6 +121,7 @@ jobs:
         id: preview
         env:
           FORMAT_OUTPUT: ${{ runner.temp }}/format-plan-${{ inputs.replica }}
+          PLAN_REPLICA: ${{ inputs.replica }}
         shell: bash
         run: |
           # BEGIN FORMAT_PREVIEW_SUMMARY
@@ -171,11 +172,15 @@ jobs:
                   raise SystemExit("Preview file identity is invalid.")
               files.append({**path_metadata(item.get("path")), "source": item["source"],
                             "output": item["output"], "sha256": item["sha256"]})
-          warnings = []
-          for item in plan["warnings"][:5]:
+          all_warnings = []
+          for item in plan["warnings"]:
               if not isinstance(item, dict) or not re.fullmatch(r"[a-z-]{1,80}", item.get("reason", "")):
                   raise SystemExit("Preview warning is invalid.")
-              warnings.append({**path_metadata(item.get("path")), "reason": item["reason"]})
+              all_warnings.append({**path_metadata(item.get("path")), "reason": item["reason"]})
+          warnings = all_warnings[:5]
+          if os.environ.get("PLAN_REPLICA") == "one":
+              for warning in all_warnings:
+                  print("FORMAT_DRY_WARNING " + json.dumps(warning, sort_keys=True, ensure_ascii=True, separators=(",", ":")))
           summary = {
               "base": plan["base"],
               "manifest_sha256": hashlib.sha256(raw).hexdigest(),

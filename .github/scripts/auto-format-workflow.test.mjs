@@ -160,7 +160,7 @@ function summarizePreview(manifest) {
     writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest));
     writeFileSync(output, '');
     const result = spawnSync('python', ['-I', '-c', previewCode], {
-      encoding: 'utf8', env: { ...process.env, FORMAT_OUTPUT: dir, GITHUB_OUTPUT: output },
+      encoding: 'utf8', env: { ...process.env, FORMAT_OUTPUT: dir, GITHUB_OUTPUT: output, PLAN_REPLICA: 'one' },
     });
     return { result, output: readFileSync(output, 'utf8') };
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -173,6 +173,8 @@ test('preview outputs only bounded paths, hashes and warnings from matching meta
   const { result, output } = summarizePreview(value);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(output.includes('do-not-output'), false);
+  assert.equal(result.stdout.includes('do-not-output'), false);
+  assert.match(result.stdout, /FORMAT_DRY_WARNING/);
   assert.ok(output.length < 110010);
   assert.ok(output.startsWith('summary='));
   const summary = JSON.parse(output.slice('summary='.length));
@@ -189,4 +191,14 @@ test('preview rejects branch state and invalid hashes instead of emitting metada
     assert.notEqual(result.status, 0);
     assert.equal(output, '');
   }
+});
+
+test('preview shows each available warning as bounded metadata and flags summary truncation', () => {
+  const warnings = Array.from({ length: 8 }, (_, index) => ({ path: 'w' + index + '.py', reason: 'black-file-failed' }));
+  const manifest = { base: 'a'.repeat(40), service: null, prior: [], limited: false,
+    warning_count: warnings.length, warnings, files: [] };
+  const { result, output } = summarizePreview(manifest);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal((result.stdout.match(/FORMAT_DRY_WARNING /g) || []).length, 8);
+  assert.equal(JSON.parse(output.slice('summary='.length)).warnings_truncated, true);
 });
