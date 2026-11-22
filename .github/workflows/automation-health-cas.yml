@@ -41,7 +41,8 @@ jobs:
         id: app-token
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
         with:
-          app-id: '5868451'
+          # OpenAI-Codex: use the supported App client ID input.
+          client-id: ${{ vars.AUTOMATION_APP_CLIENT_ID }}
           private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
           permission-contents: write
       - name: Verify and update the exact Source_Code ref

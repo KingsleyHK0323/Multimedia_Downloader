@@ -14,6 +14,7 @@
 
 #### Repository automation
 - Verify the automation App with its supported client ID input. (OpenAI-Codex)
+- Use the verified client ID input across automation token requests. (OpenAI-Codex)
 - Retry Dependabot automation with a read-only PR scan and exact-head revalidation; provide a dry-run preview. (OpenAI-Codex_ruleset_architecture)
 - Stage opt-in Dependabot automation for existing dependency manifests, with verified checks and a protected non-force Source_Code App update. (OpenAI-Codex_ruleset_architecture)
 - Allow explicit opt-in for App patch proposals and checked source updates while retaining legacy mode by default. (OpenAI-Codex_health_release_architecture)
