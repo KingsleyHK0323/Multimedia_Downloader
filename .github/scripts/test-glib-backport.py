@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -21,20 +22,34 @@ def main():
         raise RuntimeError("The trusted Rust toolchain is unavailable.")
     cargo = str(Path(cargo).resolve(strict=True))
     metadata = json.loads(
-        subprocess.check_output(
+        subprocess.check_output(  # noqa: S603
             [cargo, "metadata", "--locked", "--format-version", "1"],
             cwd=TAURI,
             text=True,
         )
     )
-    matches = [
-        package
-        for package in metadata["packages"]
-        if package["name"] == "glib" and package["version"] == "0.18.5"
-    ]
-    if len(matches) != 1 or matches[0]["source"] != SOURCE:
-        raise RuntimeError("The application did not resolve the pinned GLib backport.")
-    glib_dir = Path(matches[0]["manifest_path"]).resolve().parent
+    affected = []
+    for package in metadata["packages"]:
+        if package["name"] != "glib":
+            continue
+        version = re.fullmatch(
+            r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)",
+            package["version"],
+        )
+        if version is None:
+            raise RuntimeError("Cannot verify a prerelease or malformed GLib version.")
+        if (0, 15, 0) <= tuple(map(int, version.groups())) < (0, 20, 0):
+            affected.append(package)
+    if not affected:
+        print("No affected GLib release remains in the dependency graph.")
+        return
+    if (
+        len(affected) != 1
+        or affected[0]["version"] != "0.18.5"
+        or affected[0]["source"] != SOURCE
+    ):
+        raise RuntimeError("An affected GLib version lacks the verified backport.")
+    glib_dir = Path(affected[0]["manifest_path"]).resolve().parent
     source = (glib_dir / "src" / "variant_iter.rs").read_text(encoding="utf-8")
     if (
         "// OpenAI-Codex: backport upstream GLib soundness fix #1343." not in source
