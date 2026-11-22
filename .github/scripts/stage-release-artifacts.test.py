@@ -25,7 +25,11 @@ def fixtures(root, extra=None):
         archive = Path(root) / (platform + ".zip")
         with zipfile.ZipFile(archive, "w") as out:
             for name in sorted(names):
-                out.writestr("bundle/" + name.replace("Multimedia.Downloader", "Multimedia Downloader"), b"test data")
+                out.writestr(
+                    "bundle/"
+                    + name.replace("Multimedia.Downloader", "Multimedia Downloader"),
+                    b"test data",
+                )
             if extra and platform == "ubuntu-22.04":
                 info, payload = extra
                 out.writestr(info, payload)
@@ -42,13 +46,24 @@ class ReleaseStageTests(unittest.TestCase):
             expected = set().union(*stage_module.expected_by_platform(TAG).values())
             self.assertEqual({item["name"] for item in manifest}, expected)
             self.assertEqual({item.name for item in target.iterdir()}, expected)
-            self.assertTrue(all((target / item["name"]).read_bytes() == b"test data" for item in manifest))
+            self.assertTrue(
+                all(
+                    (target / item["name"]).read_bytes() == b"test data"
+                    for item in manifest
+                )
+            )
 
     def test_rejects_traversal_without_writing_files(self):
         with tempfile.TemporaryDirectory() as root:
             target = Path(root) / "stage"
             target.mkdir()
-            for path in ("../evil", "/absolute/file", "bundle/../../evil", "bundle\\escape", "C:/file"):
+            for path in (
+                "../evil",
+                "/absolute/file",
+                "bundle/../../evil",
+                "bundle\\escape",
+                "C:/file",
+            ):
                 with self.subTest(path=path):
                     with self.assertRaisesRegex(ValueError, "Unsafe"):
                         stage_module.stage(TAG, fixtures(root, (path, b"evil")), target)
@@ -73,7 +88,9 @@ class ReleaseStageTests(unittest.TestCase):
             for path in (duplicate, "bundle/extra.sh"):
                 with self.subTest(path=path):
                     with self.assertRaisesRegex(ValueError, "Unexpected or duplicate"):
-                        stage_module.stage(TAG, fixtures(root, (path, b"duplicate")), target)
+                        stage_module.stage(
+                            TAG, fixtures(root, (path, b"duplicate")), target
+                        )
                     self.assertEqual(list(target.iterdir()), [])
 
     def test_never_overwrites_existing_paths(self):
@@ -90,16 +107,21 @@ class ReleaseStageTests(unittest.TestCase):
     def test_v433_cannot_stage_for_publication(self):
         with self.assertRaisesRegex(ValueError, "separate release authorization"):
             stage_module.expected_by_platform("v4.3.3")
-        self.assertTrue(stage_module.expected_by_platform("v4.3.3", allow_reserved=True))
+        self.assertTrue(
+            stage_module.expected_by_platform("v4.3.3", allow_reserved=True)
+        )
         with self.assertRaisesRegex(ValueError, "Invalid release tag"):
             stage_module.expected_by_platform("v4.٣.٢٣")
-
 
     def test_downloaded_archive_digests_must_match_the_selected_artifacts(self):
         with tempfile.TemporaryDirectory() as root:
             archives = fixtures(root)
             selection = [
-                {"platform": platform, "digest": "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()}
+                {
+                    "platform": platform,
+                    "digest": "sha256:"
+                    + hashlib.sha256(Path(path).read_bytes()).hexdigest(),
+                }
                 for platform, path in archives.items()
             ]
             stage_module.verify_archives(selection, archives)
@@ -107,16 +129,18 @@ class ReleaseStageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "digest mismatch"):
                 stage_module.verify_archives(selection, archives)
 
-
-
     def test_single_platform_recovery_stages_only_its_expected_files(self):
         with tempfile.TemporaryDirectory() as root:
             target = Path(root) / "stage"
             target.mkdir()
             all_archives = fixtures(root)
-            manifest = stage_module.stage(TAG, {"macos-15": all_archives["macos-15"]}, target)
-            self.assertEqual({item["name"] for item in manifest},
-                             stage_module.expected_by_platform(TAG)["macos-15"])
+            manifest = stage_module.stage(
+                TAG, {"macos-15": all_archives["macos-15"]}, target
+            )
+            self.assertEqual(
+                {item["name"] for item in manifest},
+                stage_module.expected_by_platform(TAG)["macos-15"],
+            )
 
 
 if __name__ == "__main__":

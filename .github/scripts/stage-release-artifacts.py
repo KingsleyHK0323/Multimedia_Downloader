@@ -44,7 +44,9 @@ def _safe_name(info):
         raise ValueError("Unsafe artifact path.")
     path = PurePosixPath(raw)
     parts = raw.rstrip("/").split("/")
-    if path.is_absolute() or any(part in ("", ".", "..") or ":" in part for part in parts):
+    if path.is_absolute() or any(
+        part in ("", ".", "..") or ":" in part for part in parts
+    ):
         raise ValueError("Unsafe artifact path.")
     if any(ord(char) < 32 or ord(char) == 127 for char in raw):
         raise ValueError("Unsafe artifact path.")
@@ -53,7 +55,10 @@ def _safe_name(info):
         raise ValueError("Artifact symlinks are forbidden.")
     if not info.is_dir() and stat.S_IFMT(mode) not in (0, stat.S_IFREG):
         raise ValueError("Artifact entry is not a regular file.")
-    if info.flag_bits & 1 or info.compress_type not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):
+    if info.flag_bits & 1 or info.compress_type not in (
+        zipfile.ZIP_STORED,
+        zipfile.ZIP_DEFLATED,
+    ):
         raise ValueError("Unsupported artifact encoding.")
     return path.name
 
@@ -82,7 +87,9 @@ def stage(tag, archives, destination, allow_reserved=False):
                 name = _safe_name(info)
                 if info.is_dir():
                     continue
-                name = re.sub(r"^Multimedia Downloader(?=[_-])", "Multimedia.Downloader", name)
+                name = re.sub(
+                    r"^Multimedia Downloader(?=[_-])", "Multimedia.Downloader", name
+                )
                 if name not in wanted or name in found or name in seen:
                     raise ValueError("Unexpected or duplicate platform installer.")
                 if info.file_size <= 0 or info.file_size > MAX_FILE:
@@ -99,7 +106,9 @@ def stage(tag, archives, destination, allow_reserved=False):
     for platform, source_name, name, expected_size in selected:
         target = out / name
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
-        with zipfile.ZipFile(archives[platform]) as archive, archive.open(source_name, "r") as src:
+        with zipfile.ZipFile(archives[platform]) as archive, archive.open(
+            source_name, "r"
+        ) as src:
             descriptor = os.open(target, flags, 0o600)
             digest = hashlib.sha256()
             size = 0
@@ -115,19 +124,25 @@ def stage(tag, archives, destination, allow_reserved=False):
                     dst.write(chunk)
             if size != expected_size:
                 raise ValueError("Installer does not match declared size.")
-        manifest.append({"name": name, "size": size, "digest": "sha256:" + digest.hexdigest()})
+        manifest.append(
+            {"name": name, "size": size, "digest": "sha256:" + digest.hexdigest()}
+        )
     return sorted(manifest, key=lambda item: item["name"])
 
 
 def verify_archives(selection, archives):
     if not isinstance(selection, list) or len(selection) not in (1, 3):
         raise ValueError("Invalid artifact selection.")
-    entries = {item.get("platform"): item for item in selection if isinstance(item, dict)}
+    entries = {
+        item.get("platform"): item for item in selection if isinstance(item, dict)
+    }
     if len(entries) != len(selection) or set(entries) != set(archives):
         raise ValueError("Invalid artifact selection.")
     for platform, path in archives.items():
         wanted = entries[platform].get("digest")
-        if not isinstance(wanted, str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", wanted):
+        if not isinstance(wanted, str) or not re.fullmatch(
+            r"sha256:[0-9a-f]{64}", wanted
+        ):
             raise ValueError("Invalid archive digest.")
         archive = Path(path)
         if not archive.is_file() or archive.is_symlink():
@@ -147,7 +162,9 @@ def verify_archives(selection, archives):
 
 def main(argv):
     if len(argv) != 4:
-        raise ValueError("Expected tag, staging directory, selection and download directory.")
+        raise ValueError(
+            "Expected tag, staging directory, selection and download directory."
+        )
     tag, destination, selection_path, download_directory = argv
     with open(selection_path, encoding="utf-8") as handle:
         selection = json.load(handle)
@@ -156,10 +173,16 @@ def main(argv):
     platforms = [item.get("platform") for item in selection if isinstance(item, dict)]
     allow_reserved = os.environ.get("VERIFY_ONLY") == "true"
     allowed = expected_by_platform(tag, allow_reserved=allow_reserved)
-    if (any(not isinstance(platform, str) for platform in platforms) or
-            len(set(platforms)) != len(selection) or not set(platforms).issubset(allowed)):
+    if (
+        any(not isinstance(platform, str) for platform in platforms)
+        or len(set(platforms)) != len(selection)
+        or not set(platforms).issubset(allowed)
+    ):
         raise ValueError("Invalid platform selection.")
-    archives = {platform: str(Path(download_directory) / (platform + ".zip")) for platform in platforms}
+    archives = {
+        platform: str(Path(download_directory) / (platform + ".zip"))
+        for platform in platforms
+    }
     verify_archives(selection, archives)
     result = stage(tag, archives, destination, allow_reserved=allow_reserved)
     print(json.dumps(result, sort_keys=True))
@@ -169,5 +192,8 @@ if __name__ == "__main__":
     try:
         main(sys.argv[1:])
     except (ValueError, OSError, zipfile.BadZipFile, RuntimeError) as error:
-        print("::error::Release artifact validation failed: " + str(error), file=sys.stderr)
+        print(
+            "::error::Release artifact validation failed: " + str(error),
+            file=sys.stderr,
+        )
         raise SystemExit(1)

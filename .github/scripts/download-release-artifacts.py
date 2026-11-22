@@ -16,7 +16,11 @@ DIGEST = re.compile(r"sha256:[0-9a-f]{64}\Z")
 
 
 def copy_checked(source, target, expected_digest, limit):
-    if not DIGEST.fullmatch(expected_digest) or not isinstance(limit, int) or limit <= 0:
+    if (
+        not DIGEST.fullmatch(expected_digest)
+        or not isinstance(limit, int)
+        or limit <= 0
+    ):
         raise ValueError("Invalid artifact download constraints.")
     digest = hashlib.sha256()
     total = 0
@@ -35,14 +39,20 @@ def copy_checked(source, target, expected_digest, limit):
 
 
 def download(repo, selection, destination):
-    if not REPO.fullmatch(repo) or not isinstance(selection, list) or len(selection) not in (1, 3):
+    if (
+        not REPO.fullmatch(repo)
+        or not isinstance(selection, list)
+        or len(selection) not in (1, 3)
+    ):
         raise ValueError("Invalid artifact download request.")
     if not hasattr(os, "O_NOFOLLOW"):
         raise RuntimeError("Safe no-follow file creation is unavailable.")
     output = Path(destination)
     if not output.is_dir() or output.is_symlink():
         raise ValueError("A pre-created safe download directory is required.")
-    entries = {item.get("platform"): item for item in selection if isinstance(item, dict)}
+    entries = {
+        item.get("platform"): item for item in selection if isinstance(item, dict)
+    }
     if len(entries) != len(selection) or not set(entries).issubset(PLATFORMS):
         raise ValueError("Invalid platform selection.")
     plans = []
@@ -50,10 +60,19 @@ def download(repo, selection, destination):
         if platform not in entries:
             continue
         item = entries[platform]
-        artifact_id, advertised, expected = item.get("id"), item.get("size"), item.get("digest")
-        if (type(artifact_id) is not int or artifact_id <= 0 or
-                type(advertised) is not int or advertised <= 0 or
-                not isinstance(expected, str) or not DIGEST.fullmatch(expected)):
+        artifact_id, advertised, expected = (
+            item.get("id"),
+            item.get("size"),
+            item.get("digest"),
+        )
+        if (
+            type(artifact_id) is not int
+            or artifact_id <= 0
+            or type(advertised) is not int
+            or advertised <= 0
+            or not isinstance(expected, str)
+            or not DIGEST.fullmatch(expected)
+        ):
             raise ValueError("Invalid artifact metadata.")
         limit = min(MAX_ARCHIVE, max(advertised * 4, advertised + 1_048_576))
         plans.append((platform, artifact_id, expected, limit))
@@ -67,7 +86,9 @@ def download(repo, selection, destination):
         try:
             with os.fdopen(descriptor, "wb") as target:
                 # The executable and endpoint are fixed; repository and artifact ID are validated above.
-                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)  # noqa: S603
+                process = subprocess.Popen(
+                    command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+                )  # noqa: S603
                 try:
                     copy_checked(process.stdout, target, expected, limit)
                 except BaseException:
@@ -92,5 +113,7 @@ if __name__ == "__main__":
     try:
         main(sys.argv[1:])
     except (ValueError, OSError, RuntimeError) as error:
-        print("::error::Release artifact download failed: " + str(error), file=sys.stderr)
+        print(
+            "::error::Release artifact download failed: " + str(error), file=sys.stderr
+        )
         raise SystemExit(1)
