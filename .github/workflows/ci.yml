@@ -99,7 +99,7 @@ jobs:
           # v1.7.12 predates these documented job context properties.
           "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes= \
             -ignore 'property "workflow_(sha|repository|file_path)" is not defined in object type' \
-            .github/workflows/release.yml .github/workflows/release-build.yml
+            .github/workflows/release.yml .github/workflows/release-build.yml .github/workflows/npm-package.yml
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -144,7 +144,7 @@ jobs:
 
       # OpenAI-Codex_format_architecture: verify immutable artifact provenance and safe extraction.
       - name: Test release artifact selection and version data
-        run: node --test .github/scripts/select-release-artifacts.test.mjs .github/scripts/verify-version-at-commit.test.mjs .github/scripts/verify-tag-protection.test.mjs
+        run: node --test .github/scripts/select-release-artifacts.test.mjs .github/scripts/verify-version-at-commit.test.mjs .github/scripts/verify-tag-protection.test.mjs .github/scripts/npm-package-guard.test.mjs
       - name: Test release artifact download and extraction
         run: |
           python -I .github/scripts/download-release-artifacts.test.py

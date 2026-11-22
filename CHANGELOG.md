@@ -13,7 +13,7 @@
 ### Unreleased
 
 #### Repository automation
-- Isolate release builds from publication credentials, require active version-tag protection, and verify installer provenance before draft uploads. (OpenAI-Codex)
+- Isolate release builds from publication credentials, require active version-tag protection for releases and npm release packages, and verify installer provenance before draft uploads. (OpenAI-Codex)
 - Validate parameterless website update rules for this non-fork repository while requiring exact scope and no App bypass. (OpenAI-Codex)
 - Harden staged health PR base updates with an atomic, non-force ref comparison and a scoped App verification workflow. (OpenAI-Codex)
 - Stage an opt-in App health report writer while preserving the existing default schedule. (OpenAI-Codex)
