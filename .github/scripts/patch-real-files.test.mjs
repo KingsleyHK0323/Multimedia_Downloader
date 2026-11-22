@@ -12,11 +12,16 @@ test('plans the checked-out version files without writing them', () => {
     return [path, text];
   }));
   const current = JSON.parse(files['package.json']).version;
-  const result = planVersion(files, 1, '2026-11-22');
-  assert.equal(result.oldVersion, current);
   assert.match(current, /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/);
   const [major, minor, patch] = current.split('.');
   const expected = major + '.' + minor + '.' + (BigInt(patch) + 1n);
+  if (expected === '4.3.3') {
+    assert.throws(() => planVersion(files, 1, '2026-11-22'), /separate release authorization/);
+    for (const [path, bytes] of before) assert.deepEqual(readFileSync(path), bytes, path + ' must remain unchanged');
+    return;
+  }
+  const result = planVersion(files, 1, '2026-11-22');
+  assert.equal(result.oldVersion, current);
   assert.equal(result.version, expected);
   assert.equal(result.tag, 'v' + expected);
   assert.deepEqual(Object.keys(result.updates).sort(), [...VERSION_PATHS].sort());

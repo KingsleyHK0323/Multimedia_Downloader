@@ -23,7 +23,7 @@ const graphqlNode = (event, label = patch) => ({
 });
 function fixture(events, { labels = {}, nodes = {}, confirm = events } = {}) {
   const indexed = new Map(events.filter(event => ['labeled', 'unlabeled'].includes(event.event))
-    .map(event => [event.node_id, graphqlNode(event, labels[event.node_id] ?? patch)]));
+    .map(event => [event.node_id, event.actor ? graphqlNode(event, labels[event.node_id] ?? patch) : null]));
   for (const [id, value] of Object.entries(nodes)) indexed.set(id, value);
   return {
     rest: { issues: { listEventsForTimeline: 'issues.timeline' } },

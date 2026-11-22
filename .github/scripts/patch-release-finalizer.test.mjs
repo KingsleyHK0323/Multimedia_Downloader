@@ -265,6 +265,7 @@ function setup(options = {}) {
         createCommit: async ({ message, tree, parents }) => {
           state.writes.push('commit');
           const sha = (state.commitCounter++ === 0 ? 'c' : 'd').repeat(40);
+          assert.equal(state.commits.has(sha), false, 'Synthetic commit SHA must be unique');
           const commit = { sha, message, tree: { sha: tree }, parents: parents.map(value => ({ sha: value })) };
           state.commits.set(sha, commit);
           return { data: commit };
@@ -478,7 +479,9 @@ test('a withdrawn source with no tag is skipped, and a later source may proceed'
   assert.deepEqual(cancelled.skipped, [42]);
   assert.deepEqual(state.writes, []);
 
-  const B = fixedSha('d'), previous = state.commits.get(prepared.head);
+  const B = fixedSha('e'), previous = state.commits.get(prepared.head);
+  assert.notEqual(B, prepared.head);
+  assert.equal(state.commits.has(B), false, 'Synthetic source commit must not overwrite an existing commit');
   state.commits.set(B, { sha: B, tree: previous.tree, parents: [{ sha: prepared.head }], message: 'Merge later source PR' });
   state.refs.set('Source_Code', B);
   state.refs.delete('automation/protected-workflows');

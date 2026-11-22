@@ -400,7 +400,9 @@ test('only a patch label already active before merge authorizes PR creation', as
   assert.equal((await reconcileVersionPr(early.args)).status, 'idle');
   assert.deepEqual(early.state.writes, []);
   const late = setup({ lateLabel: true });
-  await assert.rejects(reconcileVersionPr(late.args), /authorization/);
+  assert.equal((await reconcileVersionPr(late.args)).status, 'idle');
+  assert.deepEqual(late.state.writes, []);
+  await assert.rejects(reconcileVersionPr({ ...late.args, requestedSource: 42 }), /authorization/);
   assert.deepEqual(late.state.writes, []);
   const { state, args } = setup({ sameSecond: true });
   await assert.rejects(reconcileVersionPr(args), /same second/);
