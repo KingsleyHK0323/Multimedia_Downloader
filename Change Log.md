@@ -2,6 +2,8 @@
 
 ## 2026-11-22
 
+- Run the non-deploying website build for the approved temporary website candidate branch. (OpenAI-Codex_ruleset_architecture)
+
 - Added a non-deploying build check for website pushes and pull requests without persisted checkout credentials. (OpenAI-Codex)
 
 ## 2026-11-04
