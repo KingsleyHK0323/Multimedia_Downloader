@@ -2,7 +2,7 @@
 
 ## 2026-11-22
 
-- Added a non-deploying build check for website pushes and pull requests. (OpenAI-Codex)
+- Added a non-deploying build check for website pushes and pull requests without persisted checkout credentials. (OpenAI-Codex)
 
 ## 2026-11-04
 
