@@ -10,8 +10,9 @@ on:
 
 permissions:
   actions: write
-  contents: write
-  pull-requests: write
+  checks: read
+  contents: read
+  pull-requests: read
 
 # OpenAI-Codex: serialize successful checks for the same dependency PR head.
 concurrency:
@@ -21,15 +22,20 @@ concurrency:
 jobs:
   auto-merge:
     if: >-
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.ref == 'refs/heads/Source_Code' &&
+      vars.AUTOMATION_DEPENDABOT_CAS == 'enabled' &&
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Merge successful Dependabot PR and request its release
+      - name: Verify eligible Dependabot PR and exact checks
+        id: candidate
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
         run: |
           set -euo pipefail
           if [[ ! "${HEAD_SHA}" =~ ^[0-9a-f]{40}$ ]]; then
@@ -37,11 +43,40 @@ jobs:
             exit 1
           fi
 
-          pr_number="$(gh api "repos/${GH_REPO}/commits/${HEAD_SHA}/pulls" \
-            --jq ".[] | select(.state == \"open\" and .user.login == \"dependabot[bot]\" and .base.ref == \"Source_Code\" and .head.sha == \"${HEAD_SHA}\") | .number" \
-            | head -n 1)"
-          if [ -z "${pr_number}" ]; then
-            echo "No open Dependabot PR targeting Source_Code is associated with this successful CI run."
+          # OpenAI-Codex_ruleset_architecture: paginate fully and require one exact candidate.
+          if ! candidate_pages="$(gh api --paginate --slurp "repos/${GH_REPO}/commits/${HEAD_SHA}/pulls?per_page=100")" ||
+             ! pr_number="$(printf '%s' "$candidate_pages" | node -e '
+              const fs = require("fs");
+              try {
+                const pages = JSON.parse(fs.readFileSync(0, "utf8"));
+                if (!Array.isArray(pages) || !pages.every(p => Array.isArray(p) && p.length <= 100)) process.exit(1);
+                const prs = pages.flat();
+                if (prs.length > 3000) process.exit(1);
+                const seen = new Set(), matches = [];
+                for (const pr of prs) {
+                  if (!Number.isSafeInteger(pr?.number) || pr.number < 1 || seen.has(pr.number) ||
+                      !["open", "closed"].includes(pr.state)) process.exit(1);
+                  seen.add(pr.number);
+                  if (pr.state === "closed") continue;
+                  if (typeof pr.head?.sha !== "string" || !/^[0-9a-f]{40}$/.test(pr.head.sha) ||
+                      typeof pr.base?.ref !== "string" || typeof pr.user?.login !== "string" ||
+                      !Number.isSafeInteger(pr.user?.id) || typeof pr.user?.type !== "string" ||
+                      !Number.isSafeInteger(pr.base?.repo?.id) ||
+                      !Number.isSafeInteger(pr.head?.repo?.id)) process.exit(1);
+                  if (pr.head.sha === process.env.HEAD_SHA && pr.base.ref === "Source_Code" &&
+                      pr.user.login === "dependabot[bot]" && pr.user.id === 49699333 &&
+                      pr.user.type === "Bot" && pr.base.repo.id === 1251103365 &&
+                      pr.head.repo.id === 1251103365) matches.push(pr.number);
+                }
+                if (matches.length > 1) process.exit(1);
+                if (matches.length === 1) process.stdout.write(String(matches[0]));
+              } catch { process.exit(1); }
+            ')"; then
+            echo "::warning::Associated PR data is incomplete or ambiguous; skipping merge."
+            exit 0
+          fi
+          if [ -z "$pr_number" ]; then
+            echo "No unique open Dependabot PR targeting Source_Code is associated with this run."
             exit 0
           fi
 
@@ -90,12 +125,18 @@ jobs:
                   !Array.isArray(pages) || !pages.every(Array.isArray)) process.exit(1);
               const files = pages.flat();
               if (files.length !== pr.changed_files) process.exit(1);
+              // OpenAI-Codex_ruleset_architecture: allow only the existing dependency manifests.
               const unsafe = p => p.startsWith(".github/");
-              if (!files.every(f => f && typeof f.filename === "string" && f.filename.length > 0 &&
-                  typeof f.status === "string" && f.status.length > 0 &&
-                  (f.status !== "renamed" || (typeof f.previous_filename === "string" && f.previous_filename.length > 0)) &&
-                  (f.previous_filename === undefined || (typeof f.previous_filename === "string" && f.previous_filename.length > 0)) &&
-                  !unsafe(f.filename) && (f.previous_filename === undefined || !unsafe(f.previous_filename)))) process.exit(1);
+              const allowed = new Set([
+                "package.json", "package-lock.json",
+                "frontend/package.json", "frontend/package-lock.json",
+                "engine/requirements.txt", "requirements-dev.txt", "requirements-tui.txt", "requirements-web.txt",
+                "src-tauri/Cargo.toml", "src-tauri/Cargo.lock",
+              ]);
+              if (new Set(files.map(f => f?.filename)).size !== files.length ||
+                  !files.every(f => f && typeof f.filename === "string" &&
+                    f.status === "modified" && f.previous_filename === undefined &&
+                    !unsafe(f.filename) && allowed.has(f.filename))) process.exit(1);
             } catch { process.exit(1); }
           '; then
             echo "::warning::PR file list or identity is unsafe or incomplete; skipping merge."
@@ -143,7 +184,11 @@ jobs:
                 const [pr, data, ci, matrix] = input.map(JSON.parse);
                 const sha = value => typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
                 if (!sha(process.env.BASE_HEAD) || pr.number !== Number(process.env.PR_NUMBER) ||
-                    pr.state !== "open" || pr.user?.login !== "dependabot[bot]" || pr.mergeable !== true ||
+                    pr.state !== "open" || pr.user?.login !== "dependabot[bot]" ||
+                    pr.user?.id !== 49699333 || pr.user?.type !== "Bot" || pr.mergeable !== true ||
+                    pr.base?.repo?.id !== 1251103365 || pr.head?.repo?.id !== 1251103365 ||
+                    pr.base?.repo?.full_name !== "KingsleyHK0323/Multimedia_Downloader" ||
+                    pr.head?.repo?.full_name !== "KingsleyHK0323/Multimedia_Downloader" ||
                     pr.base?.ref !== "Source_Code" || pr.base?.sha !== process.env.BASE_HEAD ||
                     pr.head?.sha !== process.env.HEAD_SHA || !sha(pr.merge_commit_sha)) process.exit(1);
                 const contextName = "dependabot-context-" + pr.base.sha + "-" + pr.head.sha + "-" + pr.merge_commit_sha;
@@ -156,14 +201,18 @@ jobs:
                 if (!Array.isArray(data.workflow_runs) || !Number.isSafeInteger(data.total_count) ||
                     data.total_count > 100 || data.total_count !== data.workflow_runs.length) process.exit(1);
                 const expected = [
-                  [".github/workflows/ci.yml", Number(process.env.CI_ID), Number(process.env.CI_ATTEMPT)],
-                  [".github/workflows/python-matrix.yml", Number(process.env.MATRIX_ID), Number(process.env.MATRIX_ATTEMPT)],
+                  [".github/workflows/ci.yml", Number(process.env.CI_ID), Number(process.env.CI_ATTEMPT), 318584423],
+                  [".github/workflows/python-matrix.yml", Number(process.env.MATRIX_ID), Number(process.env.MATRIX_ATTEMPT), 422035428],
                 ];
-                for (const [path, id, attempt] of expected) {
+                for (const [path, id, attempt, workflowId] of expected) {
                   const matches = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.HEAD_SHA);
                   if (matches.some(r => !Number.isSafeInteger(r.id) || r.id < 1)) process.exit(1);
                   const run = matches.sort((a, b) => b.id - a.id)[0];
                   if (!run || run.id !== id || run.run_attempt !== attempt ||
+                      run.workflow_id !== workflowId || run.event !== "pull_request" ||
+                      run.actor?.id !== 49699333 || run.actor?.login !== "dependabot[bot]" ||
+                      run.actor?.type !== "Bot" ||
+                      run.repository?.id !== 1251103365 || run.head_repository?.id !== 1251103365 ||
                       run.status !== "completed" || run.conclusion !== "success") process.exit(1);
                 }
               } catch { process.exit(1); }
@@ -172,15 +221,411 @@ jobs:
             exit 0
           fi
 
-          # OpenAI-Codex: merge only the exact commit whose CI run succeeded.
-          gh pr merge "${pr_number}" --squash --match-head-commit "${HEAD_SHA}"
-          # OpenAI-Codex: bot merges do not trigger normal PR workflows; request cleanup explicitly.
-          gh workflow run clean-merged-branches.yml --ref Source_Code -f pr_number="${pr_number}" -f dry_run=false
-          release_label="$(gh api "repos/${GH_REPO}/pulls/${pr_number}" \
-            --jq '[.labels[].name] | any(. == "release:patch")')"
-          if [ "${release_label}" = "true" ]; then
-            gh workflow run auto-patch-release.yml --ref Source_Code \
-              -f pr_number="${pr_number}"
-          else
-            echo "PR #${pr_number} does not have the release:patch label; skipping automatic release."
+          # OpenAI-Codex_ruleset_architecture: obtain App credentials only for a current, verified candidate.
+          if [[ "$WORKFLOW_SHA" != "$base_head" ]]; then
+            echo "::warning::Source_Code changed since this workflow revision; skipping merge."
+            exit 0
           fi
+          merge_sha="$(printf '%s' "$current_pr" | node -e '
+            const fs = require("fs");
+            const value = JSON.parse(fs.readFileSync(0, "utf8")).merge_commit_sha;
+            if (typeof value !== "string" || !/^[0-9a-f]{40}$/.test(value)) process.exit(1);
+            process.stdout.write(value);
+          ')"
+          {
+            echo "eligible=true"
+            echo "pr_number=$pr_number"
+            echo "base_sha=$base_head"
+            echo "merge_sha=$merge_sha"
+            echo "ci_id=$ci_id"
+            echo "ci_attempt=$ci_attempt"
+            echo "matrix_id=$matrix_id"
+            echo "matrix_attempt=$matrix_attempt"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create scoped automation App token
+        if: steps.candidate.outputs.eligible == 'true'
+        id: merge-app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          app-id: '5868451'
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          owner: KingsleyHK0323
+          repositories: Multimedia_Downloader
+          permission-contents: write
+
+      - name: Verify and update only Source_Code
+        if: steps.candidate.outputs.eligible == 'true'
+        env:
+          APP_TOKEN: ${{ steps.merge-app.outputs.token }}
+          APP_SLUG: ${{ steps.merge-app.outputs.app-slug }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          PR_NUMBER: ${{ steps.candidate.outputs.pr_number }}
+          BASE_SHA: ${{ steps.candidate.outputs.base_sha }}
+          MERGE_SHA: ${{ steps.candidate.outputs.merge_sha }}
+          CI_ID: ${{ steps.candidate.outputs.ci_id }}
+          CI_ATTEMPT: ${{ steps.candidate.outputs.ci_attempt }}
+          MATRIX_ID: ${{ steps.candidate.outputs.matrix_id }}
+          MATRIX_ATTEMPT: ${{ steps.candidate.outputs.matrix_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GH_REPO" != "KingsleyHK0323/Multimedia_Downloader" ||
+                "$APP_SLUG" != "kingsley-multimedia-automation" ||
+                ! "$PR_NUMBER" =~ ^[1-9][0-9]*$ || ! "$BASE_SHA" =~ ^[0-9a-f]{40}$ ||
+                ! "$MERGE_SHA" =~ ^[0-9a-f]{40}$ ||
+                "$WORKFLOW_SHA" != "$BASE_SHA" || ! "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ||
+                ! "$CI_ID" =~ ^[1-9][0-9]*$ || ! "$CI_ATTEMPT" =~ ^[1-9][0-9]*$ ||
+                ! "$MATRIX_ID" =~ ^[1-9][0-9]*$ || ! "$MATRIX_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Unexpected repository, App or candidate identity."
+            exit 1
+          fi
+
+          # OpenAI-Codex_ruleset_architecture: verify immutable App, bot and repository identities.
+          if ! app_info="$(GH_TOKEN="$APP_TOKEN" gh api "apps/$APP_SLUG")" ||
+             ! bot_info="$(GH_TOKEN="$APP_TOKEN" gh api "users/kingsley-multimedia-automation%5Bbot%5D")" ||
+             ! repo_info="$(GH_TOKEN="$APP_TOKEN" gh api "repos/$GH_REPO")" ||
+             ! printf '%s\0%s\0%s' "$app_info" "$bot_info" "$repo_info" | node -e '
+              const fs = require("fs");
+              try {
+                const values = fs.readFileSync(0, "utf8").split("\0");
+                if (values.length !== 3) process.exit(1);
+                const [app, bot, repo] = values.map(JSON.parse);
+                if (app.id !== 5868451 || app.slug !== "kingsley-multimedia-automation" ||
+                    bot.id !== 359694872 || bot.login !== "kingsley-multimedia-automation[bot]" ||
+                    bot.type !== "Bot" || repo.id !== 1251103365 ||
+                    repo.full_name !== "KingsleyHK0323/Multimedia_Downloader" || repo.fork !== false)
+                  process.exit(1);
+              } catch { process.exit(1); }
+            '; then
+            echo "::warning::Cannot confirm the App, bot or repository identity; skipping merge."
+            exit 0
+          fi
+
+          # Verify every active Source_Code ruleset with the actual App identity.
+          if ! rule_pages="$(GH_TOKEN="$APP_TOKEN" gh api --paginate --slurp \
+              "repos/$GH_REPO/rules/branches/Source_Code?per_page=100")" ||
+             ! rule_ids="$(printf '%s' "$rule_pages" | node -e '
+              const fs = require("fs");
+              try {
+                const pages = JSON.parse(fs.readFileSync(0, "utf8"));
+                if (!Array.isArray(pages) || !pages.every(Array.isArray)) process.exit(1);
+                const rules = pages.flat();
+                if (!rules.length || rules.length > 1000 || rules.some(r => !r ||
+                    !Number.isSafeInteger(r.ruleset_id) || r.ruleset_id < 1 ||
+                    !["Repository", "Organization"].includes(r.ruleset_source_type) ||
+                    typeof r.ruleset_source !== "string" || typeof r.type !== "string")) process.exit(1);
+                if (!rules.some(r => r.type === "non_fast_forward")) process.exit(1);
+                const checks = new Set();
+                for (const rule of rules.filter(r => r.type === "required_status_checks")) {
+                  if (rule.parameters?.strict_required_status_checks_policy !== true ||
+                      !Array.isArray(rule.parameters?.required_status_checks)) process.exit(1);
+                  for (const check of rule.parameters.required_status_checks)
+                    if (check?.integration_id === 15368) checks.add(check.context);
+                }
+                if (!checks.has("Required CI") || !checks.has("Required Python matrix")) process.exit(1);
+                process.stdout.write([...new Set(rules.map(r => r.ruleset_id))].join(" "));
+              } catch { process.exit(1); }
+            ')"; then
+            echo "::warning::Source_Code rules or required checks are unavailable; skipping merge."
+            exit 0
+          fi
+          for rule_id in $rule_ids; do
+            if ! rule_detail="$(GH_TOKEN="$APP_TOKEN" gh api "repos/$GH_REPO/rulesets/$rule_id?includes_parents=true")" ||
+               ! printf '%s' "$rule_detail" | RULE_ID="$rule_id" node -e '
+                const fs = require("fs");
+                try {
+                  const r = JSON.parse(fs.readFileSync(0, "utf8"));
+                  if (r.id !== Number(process.env.RULE_ID) || r.enforcement !== "active" ||
+                      r.target !== "branch" || r.current_user_can_bypass !== "never" ||
+                      !Array.isArray(r.rules)) process.exit(1);
+                } catch { process.exit(1); }
+              '; then
+              echo "::warning::The App can bypass a Source_Code rule, or its rules are unavailable; skipping merge."
+              exit 0
+            fi
+          done
+
+          # OpenAI-Codex_ruleset_architecture: prove that the PR merge tree is the
+          # checked single-parent commit and that trusted automation is unchanged.
+          if ! base_commit="$(gh api "repos/$GH_REPO/git/commits/$BASE_SHA")" ||
+             ! head_commit="$(gh api "repos/$GH_REPO/git/commits/$HEAD_SHA")" ||
+             ! merge_commit="$(gh api "repos/$GH_REPO/git/commits/$MERGE_SHA")" ||
+             ! head_identity="$(gh api "repos/$GH_REPO/commits/$HEAD_SHA")" ||
+             ! trees="$(printf '%s\0%s\0%s\0%s' "$base_commit" "$head_commit" "$merge_commit" "$head_identity" | node -e '
+              const fs = require("fs");
+              try {
+                const chunks = fs.readFileSync(0, "utf8").split("\0");
+                if (chunks.length !== 4) process.exit(1);
+                const [base, head, merge, identity] = chunks.map(JSON.parse);
+                const sha = s => typeof s === "string" && /^[0-9a-f]{40}$/.test(s);
+                if (base.sha !== process.env.BASE_SHA || head.sha !== process.env.HEAD_SHA ||
+                    merge.sha !== process.env.MERGE_SHA || identity.sha !== head.sha ||
+                    !Array.isArray(head.parents) || head.parents.length !== 1 ||
+                    head.parents[0].sha !== base.sha ||
+                    !Array.isArray(merge.parents) || merge.parents.length !== 2 ||
+                    merge.parents[0].sha !== base.sha || merge.parents[1].sha !== head.sha ||
+                    !sha(base.tree?.sha) || !sha(head.tree?.sha) || merge.tree?.sha !== head.tree.sha ||
+                    identity.author?.id !== 49699333 || identity.author?.login !== "dependabot[bot]" ||
+                    identity.author?.type !== "Bot" || identity.committer?.id !== 19864447 ||
+                    identity.committer?.login !== "web-flow" || identity.committer?.type !== "User" ||
+                    identity.commit?.verification?.verified !== true ||
+                    identity.commit?.verification?.reason !== "valid") process.exit(1);
+                process.stdout.write(base.tree.sha + " " + head.tree.sha);
+              } catch { process.exit(1); }
+            ')"; then
+            echo "::warning::Commit ancestry, merge tree or Dependabot signature is unsafe; skipping update."
+            exit 0
+          fi
+          read -r base_tree head_tree <<< "$trees"
+          if ! base_entries="$(gh api "repos/$GH_REPO/git/trees/$base_tree?recursive=1")" ||
+             ! head_entries="$(gh api "repos/$GH_REPO/git/trees/$head_tree?recursive=1")" ||
+             ! printf '%s\0%s' "$base_entries" "$head_entries" | BASE_TREE="$base_tree" HEAD_TREE="$head_tree" node -e '
+              const fs = require("fs");
+              try {
+                const chunks = fs.readFileSync(0, "utf8").split("\0");
+                if (chunks.length !== 2) process.exit(1);
+                const [base, head] = chunks.map(JSON.parse);
+                const allowed = new Set([
+                  "package.json", "package-lock.json",
+                  "frontend/package.json", "frontend/package-lock.json",
+                  "engine/requirements.txt", "requirements-dev.txt", "requirements-tui.txt", "requirements-web.txt",
+                  "src-tauri/Cargo.toml", "src-tauri/Cargo.lock",
+                ]);
+                const inventory = (tree, expected) => {
+                  if (tree.sha !== expected || tree.truncated !== false || !Array.isArray(tree.tree) ||
+                      tree.tree.length > 10000) throw Error("incomplete tree");
+                  const entries = new Map();
+                  for (const item of tree.tree) {
+                    if (!item || typeof item.path !== "string" || !item.path || entries.has(item.path) ||
+                        !/^[0-9a-f]{40}$/.test(item.sha || "")) throw Error("invalid entry");
+                    const modes = { tree: ["040000"], blob: ["100644", "100755", "120000"], commit: ["160000"] };
+                    if (!modes[item.type]?.includes(item.mode)) throw Error("unknown mode");
+                    entries.set(item.path, item);
+                  }
+                  const github = entries.get(".github");
+                  if (!github || github.type !== "tree" || github.mode !== "040000") throw Error("missing automation tree");
+                  for (const path of allowed) {
+                    const entry = entries.get(path);
+                    if (!entry || entry.type !== "blob" || entry.mode !== "100644") throw Error("unsafe manifest");
+                  }
+                  return entries;
+                };
+                const before = inventory(base, process.env.BASE_TREE);
+                const after = inventory(head, process.env.HEAD_TREE);
+                if (before.size !== after.size || before.get(".github").sha !== after.get(".github").sha)
+                  process.exit(1);
+                let changed = false;
+                for (const [path, old] of before) {
+                  const next = after.get(path);
+                  if (!next || old.type !== next.type || old.mode !== next.mode) process.exit(1);
+                  if (old.type !== "tree" && old.sha !== next.sha) {
+                    if (!allowed.has(path)) process.exit(1);
+                    changed = true;
+                  }
+                }
+                if (!changed) process.exit(1);
+              } catch { process.exit(1); }
+            '; then
+            echo "::warning::Source tree inventory, modes or dependency scope is unsafe; skipping update."
+            exit 0
+          fi
+
+          # Bind the required check-runs to the exact successful run attempts.
+          if ! ci_jobs_pre="$(gh api "repos/$GH_REPO/actions/runs/$CI_ID/attempts/$CI_ATTEMPT/jobs?per_page=100")" ||
+             ! matrix_jobs_pre="$(gh api "repos/$GH_REPO/actions/runs/$MATRIX_ID/attempts/$MATRIX_ATTEMPT/jobs?per_page=100")" ||
+             ! check_ids="$(printf '%s\0%s' "$ci_jobs_pre" "$matrix_jobs_pre" | node -e '
+              const fs = require("fs");
+              try {
+                const chunks = fs.readFileSync(0, "utf8").split("\0");
+                if (chunks.length !== 2) process.exit(1);
+                const pages = chunks.map(JSON.parse);
+                const expected = [["Required CI", Number(process.env.CI_ID)],
+                                  ["Required Python matrix", Number(process.env.MATRIX_ID)]];
+                const ids = pages.map((page, i) => {
+                  if (!Array.isArray(page.jobs) || !Number.isSafeInteger(page.total_count) ||
+                      page.total_count > 100 || page.total_count !== page.jobs.length) throw Error("incomplete jobs");
+                  const matches = page.jobs.filter(j => j.name === expected[i][0]);
+                  if (matches.length !== 1) throw Error("missing required job");
+                  const job = matches[0];
+                  const prefix = "https://api.github.com/repos/" + process.env.GH_REPO + "/check-runs/";
+                  if (job.run_id !== expected[i][1] || job.head_sha !== process.env.HEAD_SHA ||
+                      job.status !== "completed" || job.conclusion !== "success" ||
+                      typeof job.check_run_url !== "string" || !job.check_run_url.startsWith(prefix))
+                    throw Error("unexpected job");
+                  const id = job.check_run_url.slice(prefix.length);
+                  if (!/^[1-9][0-9]*$/.test(id) || !Number.isSafeInteger(Number(id))) throw Error("invalid check");
+                  return id;
+                });
+                if (ids[0] === ids[1]) process.exit(1);
+                process.stdout.write(ids.join(" "));
+              } catch { process.exit(1); }
+            ')"; then
+            echo "::warning::Required jobs are missing or incomplete; skipping update."
+            exit 0
+          fi
+          read -r ci_check_id matrix_check_id <<< "$check_ids"
+          if ! ci_check="$(gh api "repos/$GH_REPO/check-runs/$ci_check_id")" ||
+             ! matrix_check="$(gh api "repos/$GH_REPO/check-runs/$matrix_check_id")" ||
+             ! printf '%s\0%s' "$ci_check" "$matrix_check" | CI_CHECK_ID="$ci_check_id" MATRIX_CHECK_ID="$matrix_check_id" node -e '
+              const fs = require("fs");
+              try {
+                const chunks = fs.readFileSync(0, "utf8").split("\0");
+                if (chunks.length !== 2) process.exit(1);
+                const checks = chunks.map(JSON.parse);
+                const expected = [["Required CI", Number(process.env.CI_CHECK_ID)],
+                                  ["Required Python matrix", Number(process.env.MATRIX_CHECK_ID)]];
+                if (checks.some((c, i) => c.id !== expected[i][1] || c.name !== expected[i][0] ||
+                    c.head_sha !== process.env.HEAD_SHA || c.app?.id !== 15368 ||
+                    c.status !== "completed" || c.conclusion !== "success")) process.exit(1);
+              } catch { process.exit(1); }
+            '; then
+            echo "::warning::Required check-run identity or result is unsafe; skipping update."
+            exit 0
+          fi
+
+          # Compare the App-visible rules again before the last PR/check read.
+          if ! rules_final="$(GH_TOKEN="$APP_TOKEN" gh api --paginate --slurp \
+              "repos/$GH_REPO/rules/branches/Source_Code?per_page=100")" ||
+              [[ "$rules_final" != "$rule_pages" ]]; then
+            echo "::warning::Source_Code rules changed; skipping update."
+            exit 0
+          fi
+          for rule_id in $rule_ids; do
+            if ! rule_detail="$(GH_TOKEN="$APP_TOKEN" gh api "repos/$GH_REPO/rulesets/$rule_id?includes_parents=true")" ||
+               ! printf '%s' "$rule_detail" | RULE_ID="$rule_id" node -e '
+                const fs = require("fs");
+                try {
+                  const r = JSON.parse(fs.readFileSync(0, "utf8"));
+                  if (r.id !== Number(process.env.RULE_ID) || r.enforcement !== "active" ||
+                      r.target !== "branch" || r.current_user_can_bypass !== "never" ||
+                      !Array.isArray(r.rules)) process.exit(1);
+                } catch { process.exit(1); }
+              '; then
+              echo "::warning::App bypass or ruleset state changed; skipping update."
+              exit 0
+            fi
+          done
+
+          # Re-read exact PR, base and both run attempts after token creation.
+          pr_number="$PR_NUMBER"
+          selected="$CI_ID $CI_ATTEMPT $MATRIX_ID $MATRIX_ATTEMPT"
+          read -r ci_id ci_attempt matrix_id matrix_attempt <<< "$selected"
+          if ! ci_jobs="$(gh api "repos/$GH_REPO/actions/runs/$ci_id/attempts/$ci_attempt/jobs?per_page=100")" ||
+             ! matrix_jobs="$(gh api "repos/$GH_REPO/actions/runs/$matrix_id/attempts/$matrix_attempt/jobs?per_page=100")" ||
+             ! current_pr="$(gh api "repos/$GH_REPO/pulls/$pr_number")" ||
+             ! base_head="$(gh api "repos/$GH_REPO/git/ref/heads/Source_Code" --jq '.object.sha')" ||
+             ! latest_runs="$(gh api "repos/$GH_REPO/actions/runs?head_sha=$HEAD_SHA&event=pull_request&per_page=100")"; then
+            echo "::warning::Cannot recheck the PR, base branch and tested merge context; skipping merge."
+            exit 0
+          fi
+          if [[ "$base_head" != "$BASE_SHA" ]]; then
+            echo "::warning::Source_Code advanced; skipping merge."
+            exit 0
+          fi
+          if ! printf '%s\0%s\0%s\0%s' "$current_pr" "$latest_runs" "$ci_jobs" "$matrix_jobs" |
+            PR_NUMBER="$pr_number" BASE_HEAD="$base_head" CI_ID="$ci_id" CI_ATTEMPT="$ci_attempt" MATRIX_ID="$matrix_id" MATRIX_ATTEMPT="$matrix_attempt" \
+            node -e '
+              const fs = require("fs");
+              try {
+                const input = fs.readFileSync(0, "utf8").split("\0");
+                if (input.length !== 4) process.exit(1);
+                const [pr, data, ci, matrix] = input.map(JSON.parse);
+                const sha = value => typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
+                if (!sha(process.env.BASE_HEAD) || pr.number !== Number(process.env.PR_NUMBER) ||
+                    pr.state !== "open" || pr.user?.login !== "dependabot[bot]" ||
+                    pr.user?.id !== 49699333 || pr.user?.type !== "Bot" || pr.mergeable !== true ||
+                    pr.base?.repo?.id !== 1251103365 || pr.head?.repo?.id !== 1251103365 ||
+                    pr.base?.repo?.full_name !== "KingsleyHK0323/Multimedia_Downloader" ||
+                    pr.head?.repo?.full_name !== "KingsleyHK0323/Multimedia_Downloader" ||
+                    pr.base?.ref !== "Source_Code" || pr.base?.sha !== process.env.BASE_HEAD ||
+                    pr.head?.sha !== process.env.HEAD_SHA || pr.merge_commit_sha !== process.env.MERGE_SHA ||
+                    !sha(pr.merge_commit_sha)) process.exit(1);
+                const contextName = "dependabot-context-" + pr.base.sha + "-" + pr.head.sha + "-" + pr.merge_commit_sha;
+                for (const response of [ci, matrix]) {
+                  if (!Array.isArray(response.jobs) || !Number.isSafeInteger(response.total_count) ||
+                      response.total_count > 100 || response.total_count !== response.jobs.length) process.exit(1);
+                  const contexts = response.jobs.filter(j => j.name === contextName);
+                  if (contexts.length !== 1 || contexts[0].status !== "completed" || contexts[0].conclusion !== "success") process.exit(1);
+                }
+                if (!Array.isArray(data.workflow_runs) || !Number.isSafeInteger(data.total_count) ||
+                    data.total_count > 100 || data.total_count !== data.workflow_runs.length) process.exit(1);
+                const expected = [
+                  [".github/workflows/ci.yml", Number(process.env.CI_ID), Number(process.env.CI_ATTEMPT), 318584423],
+                  [".github/workflows/python-matrix.yml", Number(process.env.MATRIX_ID), Number(process.env.MATRIX_ATTEMPT), 422035428],
+                ];
+                for (const [path, id, attempt, workflowId] of expected) {
+                  const matches = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.HEAD_SHA);
+                  if (matches.some(r => !Number.isSafeInteger(r.id) || r.id < 1)) process.exit(1);
+                  const run = matches.sort((a, b) => b.id - a.id)[0];
+                  if (!run || run.id !== id || run.run_attempt !== attempt ||
+                      run.workflow_id !== workflowId || run.event !== "pull_request" ||
+                      run.actor?.id !== 49699333 || run.actor?.login !== "dependabot[bot]" ||
+                      run.actor?.type !== "Bot" ||
+                      run.repository?.id !== 1251103365 || run.head_repository?.id !== 1251103365 ||
+                      run.status !== "completed" || run.conclusion !== "success") process.exit(1);
+                }
+              } catch { process.exit(1); }
+            '; then
+            echo "::warning::The PR, base branch, merge commit or test runs changed; skipping merge."
+            exit 0
+          fi
+
+          # OpenAI-Codex_ruleset_architecture: do not indirectly close another PR
+          # that currently points to the same commit.
+          if ! associated="$(gh api --paginate --slurp "repos/$GH_REPO/commits/$HEAD_SHA/pulls?per_page=100")" ||
+             ! printf '%s' "$associated" | PR_NUMBER="$pr_number" node -e '
+              const fs = require("fs");
+              try {
+                const pages = JSON.parse(fs.readFileSync(0, "utf8"));
+                if (!Array.isArray(pages) || !pages.every(Array.isArray)) process.exit(1);
+                const prs = pages.flat();
+                if (prs.length > 3000) process.exit(1);
+                const numbers = new Set();
+                let matched = 0;
+                for (const pr of prs) {
+                  if (!Number.isSafeInteger(pr?.number) || pr.number < 1 || numbers.has(pr.number) ||
+                      !["open", "closed"].includes(pr.state)) process.exit(1);
+                  numbers.add(pr.number);
+                  if (pr.state === "closed") continue;
+                  if (!pr.head || typeof pr.head.sha !== "string" ||
+                      !/^[0-9a-f]{40}$/.test(pr.head.sha) || !pr.base ||
+                      typeof pr.base.ref !== "string") process.exit(1);
+                  if (pr.head.sha === process.env.HEAD_SHA) {
+                    if (pr.number !== Number(process.env.PR_NUMBER) ||
+                        pr.base.ref !== "Source_Code" || pr.head.repo?.id !== 1251103365 ||
+                        pr.base.repo?.id !== 1251103365) process.exit(1);
+                    matched++;
+                  }
+                }
+                if (matched !== 1) process.exit(1);
+              } catch { process.exit(1); }
+            '; then
+            echo "::warning::Associated open PRs changed or are incomplete; skipping update."
+            exit 0
+          fi
+
+          # App can update only this literal ref. GitHub atomically enforces B -> H.
+          repo_node="$(printf '%s' "$repo_info" | node -e '
+            const fs = require("fs");
+            const node = JSON.parse(fs.readFileSync(0, "utf8")).node_id;
+            if (typeof node !== "string" || !node) process.exit(1);
+            process.stdout.write(node);
+          ')"
+          mutation_id="dependabot-$PR_NUMBER-$HEAD_SHA"
+          payload="$(jq -cn --arg repositoryId "$repo_node" --arg before "$BASE_SHA" --arg after "$HEAD_SHA" --arg id "$mutation_id" '
+            {query:"mutation($input: UpdateRefsInput!) { updateRefs(input: $input) { clientMutationId } }",
+             variables:{input:{repositoryId:$repositoryId,clientMutationId:$id,
+               refUpdates:[{name:"refs/heads/Source_Code",beforeOid:$before,afterOid:$after,force:false}]}}}')"
+          if ! result="$(printf '%s' "$payload" | GH_TOKEN="$APP_TOKEN" gh api graphql --input -)" ||
+             [[ "$(printf '%s' "$result" | jq -r '.data.updateRefs.clientMutationId // ""')" != "$mutation_id" ]] ||
+             [[ "$(gh api "repos/$GH_REPO/git/ref/heads/Source_Code" --jq '.object.sha')" != "$HEAD_SHA" ]]; then
+            echo "::error::The exact Source_Code compare-and-swap was not confirmed."
+            exit 1
+          fi
+          echo "Updated Source_Code to verified Dependabot commit $HEAD_SHA; downstream events are not yet verified."
+          # Idempotent cleanup rechecks merged status and is also backed by schedule.
+          gh workflow run clean-merged-branches.yml --ref Source_Code -f pr_number="$pr_number" -f dry_run=false
