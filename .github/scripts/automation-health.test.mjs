@@ -361,7 +361,7 @@ test('checks the writer revision before creating an App token', () => {
   const guard = report.indexOf('      - name: Block health PR writes pending branch isolation\n');
   const token = report.indexOf('      - name: Create a repository-scoped App token\n');
   assert.ok(revision >= 0 && revision < guard && guard < token);
-  assert.ok(report.includes("WORKFLOW_SHA: \${{ job.workflow_sha }}".replace('\\', '')));
+  assert.ok(report.includes("WORKFLOW_SHA: ${{ job.workflow_sha }}"));
   assert.match(report, /source_sha.*git\/ref\/heads\/Source_Code/);
 });
 
