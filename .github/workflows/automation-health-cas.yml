@@ -319,14 +319,14 @@ jobs:
                 if (matches.length !== 1) throw new Error('Multiple push runs make the tested commit ambiguous.');
                 const run = matches[0];
                 if (['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(run.status)) return null;
-                const age = Date.now() - Date.parse(run.created_at);
+                const created = Date.parse(run.created_at);
                 if (!Number.isSafeInteger(run.id) || run.id < 1 || run.name !== workflowName ||
                     run.workflow_id !== workflowId || run.event !== 'push' || !isBot(run.actor) ||
                     run.repository?.id !== repositoryId || run.repository.full_name !== fullName ||
                     run.head_repository?.id !== repositoryId || run.head_repository.full_name !== fullName ||
                     run.status !== 'completed' || run.conclusion !== 'success' ||
                     !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1 || run.run_attempt > 10 ||
-                    !Number.isFinite(age) || age < -60000 || age > 6 * 24 * 60 * 60 * 1000) {
+                    !Number.isFinite(created) || created > Date.now() + 60000) {
                   throw new Error('The exact App push CI or matrix run is not trusted and successful.');
                 }
                 return { id: run.id, attempt: run.run_attempt, path: pathName, head: pr.head };
@@ -372,11 +372,14 @@ jobs:
                   throw new Error('Required job has no valid check-run identity: ' + name);
                 }
                 const check = (await github.rest.checks.get({ owner, repo, check_run_id: checkId })).data;
+                const completed = Date.parse(check?.completed_at);
+                const age = Date.now() - completed;
                 if (!check || check.id !== checkId || check.name !== name || check.head_sha !== run.head ||
-                    check.status !== 'completed' || check.conclusion !== 'success' || check.app?.id !== 15368) {
+                    check.status !== 'completed' || check.conclusion !== 'success' || check.app?.id !== 15368 ||
+                    !Number.isFinite(completed) || age < -60000 || age > 6 * 24 * 60 * 60 * 1000) {
                   throw new Error('Required job does not have the expected GitHub Actions check: ' + name);
                 }
-                evidence.push({ name, jobId: job.id, checkId, attempt: selected.attempt });
+                evidence.push({ name, jobId: job.id, checkId, attempt: selected.attempt, completed: check.completed_at });
               }
               return evidence;
             };

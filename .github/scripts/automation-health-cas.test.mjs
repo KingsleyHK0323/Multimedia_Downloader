@@ -44,7 +44,7 @@ function harness(options = {}) {
     source: base, temp: head, refReads: 0, prReads: 0, rulesReads: 0, runReads: 0,
     writes: [], notices: [], checks: new Map(), checkReads: 0, bypass: 'never', integration: 15368, nonForce: true,
     pullRule: false, updateRule: false, report, scheduled: { ...scheduled },
-    malformedTree: false, truncatedTree: false, badParent: false, extraParent: false, badCheckApp: false, mutateCheck: false,
+    malformedTree: false, truncatedTree: false, badParent: false, extraParent: false, badCheckApp: false, mutateCheck: false, oldCheck: false, oldRun: false,
     unverified: false, wrongAuthor: false, missingMatrix: false, duplicateRun: false, missingAttempt: false,
     pendingMatrix: false, mutateRules: false, mutateRuns: false, moveBase: false,
     moveHead: false, casConflict: false, rerunMatrix: false, failRerun: false,
@@ -68,6 +68,7 @@ function harness(options = {}) {
           { context: 'Required Python matrix', integration_id: state.integration },
         ] } },
   ];
+  const completedAt = new Date(Date.now() - (state.oldCheck ? 8 * 86400000 : 0)).toISOString();
   const contextName = 'dependabot-context-' + head + '-' + head + '-' + head;
   const ciNames = [contextName, 'Required CI', 'version-consistency', 'auto-format-guard',
     'release-input-guard', 'lint', 'python-tests', 'frontend-check', 'rust-check'];
@@ -81,7 +82,8 @@ function harness(options = {}) {
     id, name, path: workflowPath, workflow_id: workflowId, head_sha: head, head_branch: branch,
     event: 'push', actor: bot, repository: { id: repositoryId, full_name: full },
     head_repository: { id: repositoryId, full_name: full },
-    status: 'completed', conclusion: 'success', run_attempt: 1, created_at: new Date().toISOString(),
+    status: 'completed', conclusion: 'success', run_attempt: 1,
+    created_at: new Date(Date.now() - (state.oldRun ? 8 * 86400000 : 0)).toISOString(),
   });
   const ciRun = makeRun(200, 'CI', '.github/workflows/ci.yml', 318584423);
   const matrixRun = makeRun(201, 'Python matrix tests', '.github/workflows/python-matrix.yml', 422035428);
@@ -170,7 +172,8 @@ function harness(options = {}) {
           conclusion: state.failRerun && attempt_number === 2 && index === 0 ? 'failure' : 'success',
         }));
         for (const job of jobs) state.checks.set(job.id + 50000, { id: job.id + 50000, name: job.name, head_sha: head,
-          status: job.status, conclusion: job.conclusion, app: { id: 15368 } });
+          status: job.status, conclusion: job.conclusion, app: { id: 15368 },
+          completed_at: completedAt });
         return { data: { total_count: jobs.length, jobs } };
       },
     },
@@ -258,7 +261,7 @@ test('rejects stale report, pending scheduled run, release label and another aut
 });
 
 test('requires every matrix job, an unambiguous App push run and stable refs', async () => {
-  for (const options of [{ missingMatrix: true }, { badCheckApp: true }, { mutateCheck: true }, { duplicateRun: true }, { mutateRuns: true },
+  for (const options of [{ missingMatrix: true }, { badCheckApp: true }, { oldCheck: true }, { mutateCheck: true }, { duplicateRun: true }, { mutateRuns: true },
     { moveBase: true }, { moveHead: true }, { workflowSha: changed }]) {
     const h = harness(options);
     await assert.rejects(h.invoke());
@@ -267,7 +270,7 @@ test('requires every matrix job, an unambiguous App push run and stable refs', a
 });
 
 test('reuses earlier successful jobs only when a partial rerun succeeds', async () => {
-  const ok = harness({ rerunMatrix: true, missingAttempt: true });
+  const ok = harness({ rerunMatrix: true, missingAttempt: true, oldRun: true });
   await ok.invoke();
   assert.equal(ok.state.writes.length, 1);
   const bad = harness({ rerunMatrix: true, failRerun: true });
