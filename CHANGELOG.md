@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Keep staged health App writes and merges disabled until non-source branch isolation is verified. (OpenAI-Codex)
 - Reconcile merged-branch cleanup, first contributions, and PR labels from trusted events and scheduled scans. (OpenAI-Codex)
 - Isolate release builds from publication credentials, require active version-tag protection for releases and npm release packages, and verify installer provenance before draft uploads. (OpenAI-Codex)
 - Validate parameterless website update rules for this non-fork repository while requiring exact scope and no App bypass. (OpenAI-Codex)
