@@ -101,18 +101,29 @@ jobs:
             });
             if (!Array.isArray(openAlerts)) throw new Error("Cannot verify Dependabot alert state.");
             const ecosystemNames = { npm: "npm_and_yarn", pip: "pip", rust: "cargo" };
-            const openPackages = new Set();
+            // OpenAI-Codex: correlate update attempts with each alert's manifest directory.
+            const openTargets = new Set();
             const packageKey = (ecosystem, name) => ecosystem + "\0" +
               (ecosystem === "pip" ? name.toLowerCase().replace(/[-_.]+/g, "-") : name.toLowerCase());
+            const manifestDirectory = (manifest) => {
+              if (typeof manifest !== "string" || !manifest || manifest.length > 1024 ||
+                  manifest.startsWith("/") || manifest.includes("\\") || manifest.includes("\0")) return null;
+              const parts = manifest.split("/");
+              if (parts.some((part) => !part || part === "." || part === "..")) return null;
+              parts.pop();
+              return "/" + parts.join("/");
+            };
             let incompleteAlert = false;
             for (const alert of openAlerts) {
               const pkg = alert?.dependency?.package;
-              if (typeof pkg?.name !== "string" || !pkg.name ||
-                  typeof pkg.ecosystem !== "string" || !pkg.ecosystem) {
+              const directory = manifestDirectory(alert?.dependency?.manifest_path);
+              if (typeof pkg?.name !== "string" || !pkg.name || pkg.name.includes("\0") ||
+                  typeof pkg.ecosystem !== "string" || !pkg.ecosystem || pkg.ecosystem.includes("\0") ||
+                  directory === null) {
                 incompleteAlert = true;
                 continue;
               }
-              openPackages.add(packageKey(ecosystemNames[pkg.ecosystem] || pkg.ecosystem, pkg.name));
+              openTargets.add(directory + "\0" + packageKey(ecosystemNames[pkg.ecosystem] || pkg.ecosystem, pkg.name));
             }
             const securityRuns = new Map();
             for (const run of dependabotRuns) {
@@ -123,23 +134,23 @@ jobs:
               if (!Number.isFinite(time) || !Number.isSafeInteger(run.id) || !Number.isSafeInteger(run.run_number)) {
                 throw new Error("Cannot safely order Dependabot security update runs.");
               }
-              const key = match[2] + "\0" + packageKey(match[1], match[3]);
+              const key = (match[2] === "/." ? "/" : match[2]) + "\0" + packageKey(match[1], match[3]);
               const previous = securityRuns.get(key);
               if (!previous || time > previous.time || (time === previous.time && run.id > previous.run.id)) {
-                securityRuns.set(key, { run, time, packageKey: packageKey(match[1], match[3]) });
+                securityRuns.set(key, { run, time });
               }
             }
             if (incompleteAlert) findings.push("Could not correlate at least one open Dependabot alert with update attempts.");
             const attempted = new Set();
-            for (const { run, packageKey } of securityRuns.values()) {
-              if (!openPackages.has(packageKey)) continue;
-              attempted.add(packageKey);
+            for (const [key, { run }] of securityRuns) {
+              if (!openTargets.has(key)) continue;
+              attempted.add(key);
               if (run.status !== "completed" || run.conclusion !== "success") {
                 const url = "https://github.com/" + owner + "/" + repo + "/actions/runs/" + run.id;
                 findings.push("A security update for an open alert did not succeed: [run #" + run.run_number + "](" + url + ").");
               }
             }
-            if ([...openPackages].some((key) => !attempted.has(key))) {
+            if ([...openTargets].some((key) => !attempted.has(key))) {
               findings.push("At least one open Dependabot alert has no matching security-update attempt. Review the alert and current update configuration.");
             }
 

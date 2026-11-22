@@ -74,7 +74,7 @@ test('reports the latest failed security update only while a related alert is op
   const bases = [...rootDot, ...nonRoot];
   const oldRun = 'cargo in /src-tauri for glib - Update #7';
   const newRun = 'cargo in /src-tauri for glib - Update #8';
-  const alerts = [{ dependency: { package: { ecosystem: 'rust', name: 'glib' } } }];
+  const alerts = [{ dependency: { package: { ecosystem: 'rust', name: 'glib' }, manifest_path: 'src-tauri/Cargo.lock' } }];
   const failed = await run([...bases, oldRun], oldRun, alerts);
   assert.equal(failed.length, 1);
   assert.match(failed[0].body, /security update for an open alert did not succeed/);
@@ -89,7 +89,7 @@ test('reports the latest failed security update only while a related alert is op
 
 test('warns when open alerts cannot be matched and preview makes no issue changes', async () => {
   const bases = [...rootDot, ...nonRoot];
-  const alerts = [{ dependency: { package: { ecosystem: 'rust', name: 'glib' } } }];
+  const alerts = [{ dependency: { package: { ecosystem: 'rust', name: 'glib' }, manifest_path: 'src-tauri/Cargo.lock' } }];
   const missing = await run(bases, null, alerts);
   assert.equal(missing.length, 1);
   assert.match(missing[0].body, /no matching security-update attempt/);
@@ -101,8 +101,39 @@ test('warns when open alerts cannot be matched and preview makes no issue change
 test('normalizes Python package names when matching update attempts', async () => {
   const bases = [...rootDot, ...nonRoot];
   const failed = 'pip in / for example-package - Update #10';
-  const alerts = [{ dependency: { package: { ecosystem: 'pip', name: 'Example_Package' } } }];
+  const alerts = [{ dependency: { package: { ecosystem: 'pip', name: 'Example_Package' }, manifest_path: 'requirements.txt' } }];
   const result = await run([...bases, failed], failed, alerts);
   assert.equal(result.length, 1);
   assert.match(result[0].body, /security update for an open alert did not succeed/);
+});
+
+// OpenAI-Codex: one package in separate manifests needs separate security-update attempts.
+test('correlates security updates by manifest directory and package', async () => {
+  const bases = [...rootDot, ...nonRoot];
+  const first = 'cargo in /src-tauri for glib - Update #10';
+  const second = 'cargo in /other for glib - Update #11';
+  const alerts = ['src-tauri/Cargo.lock', 'other/Cargo.lock'].map((manifest_path) => ({
+    dependency: { package: { ecosystem: 'rust', name: 'glib' }, manifest_path },
+  }));
+  const partial = await run([...bases, first], null, alerts);
+  assert.equal(partial.length, 1);
+  assert.match(partial[0].body, /no matching security-update attempt/);
+  const complete = await run([...bases, first, second], null, alerts);
+  assert.equal(complete.length, 1);
+  assert.doesNotMatch(complete[0].body, /no matching security-update attempt/);
+  assert.match(complete[0].body, /not fully verified/);
+});
+
+test('normalizes security-update root aliases without accepting malformed alert paths', async () => {
+  const bases = [...rootDot, ...nonRoot];
+  const securityRun = 'npm_and_yarn in /. for example-package - Update #12';
+  const alert = { dependency: { package: { ecosystem: 'npm', name: 'example-package' }, manifest_path: 'package-lock.json' } };
+  const result = await run([...bases, securityRun], null, [alert]);
+  assert.equal(result.length, 1);
+  assert.doesNotMatch(result[0].body, /no matching security-update attempt/);
+  for (const manifest_path of ['', '../package-lock.json', '/package-lock.json', 'dir//package-lock.json', 'dir\\\\package-lock.json']) {
+    const invalid = await run(bases, null, [{ dependency: { ...alert.dependency, manifest_path } }]);
+    assert.equal(invalid.length, 1);
+    assert.match(invalid[0].body, /Could not correlate at least one open Dependabot alert/);
+  }
 });
