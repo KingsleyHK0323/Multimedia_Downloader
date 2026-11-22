@@ -12,6 +12,27 @@ name: Release build
 # independent of the build/upload and can happen before or after.
 
 on:
+  pull_request:
+    branches: [Source_Code]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/release.yml
+      - .github/workflows/release-build.yml
+      - .github/scripts/upload-release-assets.mjs
+      - .github/scripts/release-upload-create-only.test.mjs
+      - .github/scripts/select-release-artifacts.mjs
+      - .github/scripts/select-release-artifacts.test.mjs
+      - .github/scripts/download-release-artifacts.py
+      - .github/scripts/download-release-artifacts.test.py
+      - .github/scripts/stage-release-artifacts.py
+      - .github/scripts/stage-release-artifacts.test.py
+      - .github/scripts/verify-version-at-commit.mjs
+      - .github/scripts/verify-version-at-commit.test.mjs
+      - .github/scripts/release-input-guard.test.mjs
+      - .github/scripts/release-commit-notes.test.mjs
+      - .github/scripts/verify-release-assets.mjs
+      - .github/scripts/release-commit-notes.mjs
+
   push:
     tags: ["v*"]
   workflow_dispatch:
@@ -46,16 +67,116 @@ on:
         default: all
         type: string
 
-permissions:
-  contents: write
-  actions: read
+permissions: {}
 
 concurrency:
   group: release-${{ inputs.tag || github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  # OpenAI-Codex_format_architecture: resolve immutable source before any tag code runs.
+  metadata:
+    if: >-
+      github.event_name != 'pull_request' ||
+      (github.event.pull_request.user.id == 157894869 &&
+       github.event.sender.id == 157894869 &&
+       github.event.pull_request.head.ref == 'automation/protected-workflows' &&
+       github.event.pull_request.base.ref == 'Source_Code' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.base.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+      workflow_sha: ${{ steps.source.outputs.workflow_sha }}
+      tag: ${{ steps.source.outputs.tag }}
+      verify_only: ${{ steps.source.outputs.verify_only }}
+    steps:
+      - name: Validate tag and resolve its trusted source
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag || github.event.inputs.tag || github.ref_name }}
+          VERIFY_ONLY: ${{ inputs.verify_only }}
+          ONLY: ${{ inputs.only || github.event.inputs.only || 'all' }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          WORKFLOW_PATH: ${{ job.workflow_file_path }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == KingsleyHK0323/Multimedia_Downloader ]]
+          [[ "$WORKFLOW_REPOSITORY" == "$GITHUB_REPOSITORY" && "$WORKFLOW_PATH" == .github/workflows/release.yml ]]
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            [[ "$GITHUB_HEAD_REF" == automation/protected-workflows && "$GITHUB_BASE_REF" == Source_Code ]] || {
+              echo '::error::PR branch names do not exactly match the approved verification scope.'
+              exit 1
+            }
+            [[ "$GITHUB_REF" =~ ^refs/pull/[1-9][0-9]*/merge$ ]]
+            [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ && "$PR_HEAD" =~ ^[0-9a-f]{40}$ && "$PR_BASE" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$WORKFLOW_SHA" == "$GITHUB_SHA" || "$WORKFLOW_SHA" == "$PR_HEAD" ]]
+            commit="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$GITHUB_SHA")"
+            jq -e --arg base "$PR_BASE" --arg head "$PR_HEAD" \
+              '.parents | length == 2 and .[0].sha == $base and .[1].sha == $head' <<< "$commit" >/dev/null
+            package="$(gh api "repos/$GITHUB_REPOSITORY/contents/package.json?ref=$GITHUB_SHA" --jq .content | base64 --decode)"
+            TAG="v$(jq -er '.version | select(type == "string")' <<< "$package")"
+            VERIFY_ONLY=true
+            ONLY=all
+          fi
+          [[ ${#TAG} -le 51 && "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          case "$ONLY" in all|ubuntu-22.04|macos-15|windows-latest) ;; *) echo '::error::Invalid release platform.'; exit 1 ;; esac
+          if [[ "$TAG" == v4.3.3 && "$VERIFY_ONLY" != true ]]; then
+            echo '::error::v4.3.3 requires separate authorization after testing.'
+            exit 1
+          fi
+          case "$GITHUB_EVENT_NAME" in
+            push)
+              [[ "$GITHUB_REF" == "refs/tags/$TAG" ]] || { echo '::error::Push event and tag do not match.'; exit 1; }
+              ;;
+            workflow_dispatch|pull_request_target)
+              [[ "$GITHUB_REF" == refs/heads/Source_Code ]] || { echo '::error::Release must run from Source_Code.'; exit 1; }
+              ;;
+            pull_request) ;;
+            *) echo '::error::Unsupported release event.'; exit 1 ;;
+          esac
+          if [[ "$GITHUB_EVENT_NAME" == pull_request ]]; then
+            sha="$GITHUB_SHA"
+          else
+            item="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG")"
+            for attempt in $(seq 1 8); do
+              type="$(jq -er '.object.type' <<< "$item")"
+              sha="$(jq -er '.object.sha' <<< "$item")"
+              [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+              if [[ "$type" == commit ]]; then break; fi
+              [[ "$type" == tag ]] || { echo '::error::Invalid tag object.'; exit 1; }
+              item="$(gh api "repos/$GITHUB_REPOSITORY/git/tags/$sha")"
+            done
+            [[ "$type" == commit ]] || { echo '::error::Tag chain is too deep.'; exit 1; }
+            if [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_SHA" != "$sha" ]]; then
+              echo '::error::Tag push and resolved commit differ.'
+              exit 1
+            fi
+            # Both immutable commits must be part of the current Source_Code history.
+            for candidate in "$sha" "$WORKFLOW_SHA"; do
+              relation="$(gh api "repos/$GITHUB_REPOSITORY/compare/$candidate...Source_Code")"
+              jq -e --arg wanted "$candidate" '
+                .merge_base_commit.sha == $wanted and .behind_by == 0 and
+                (.status == "ahead" or .status == "identical")
+              ' <<< "$relation" >/dev/null
+            done
+          fi
+          if [[ "$VERIFY_ONLY" == true ]]; then verify=true; else verify=false; fi
+          printf 'source_sha=%s\nworkflow_sha=%s\ntag=%s\nverify_only=%s\n' "$sha" "$WORKFLOW_SHA" "$TAG" "$verify" >> "$GITHUB_OUTPUT"
+
   setup:
+    needs: [metadata]
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.m.outputs.matrix }}
@@ -65,7 +186,7 @@ jobs:
       # BEGIN RELEASE_INPUT_GUARD
       - name: Validate release inputs
         env:
-          RAW_TAG: ${{ inputs.tag || github.event.inputs.tag || github.ref_name }}
+          RAW_TAG: ${{ needs.metadata.outputs.tag }}
           RAW_ONLY: ${{ inputs.only || github.event.inputs.only || 'all' }}
         shell: bash
         run: |
@@ -82,7 +203,7 @@ jobs:
       # OpenAI-Codex: keep validated user input out of generated shell code.
       - id: tag
         env:
-          RELEASE_TAG: ${{ inputs.tag || github.event.inputs.tag || github.ref_name }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
         shell: bash
         run: printf 'tag=%s\n' "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
@@ -100,15 +221,20 @@ jobs:
 
       # OpenAI-Codex: verification cannot publish and must cover all platforms.
       - name: Validate verification-only mode
-        if: inputs.verify_only == true
+        if: needs.metadata.outputs.verify_only == 'true'
         env:
           SOURCE_REF: ${{ github.ref }}
-          ONLY: ${{ inputs.only }}
+          ONLY: ${{ inputs.only || 'all' }}
           EVENT: ${{ github.event_name }}
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$EVENT" == workflow_dispatch && "$SOURCE_REF" == refs/heads/Source_Code && "$ONLY" == all ]] || { echo "::error::Verification requires all platforms on Source_Code."; exit 1; }
+          [[ "$ONLY" == all ]] || { echo "::error::Verification requires all platforms."; exit 1; }
+          case "$EVENT" in
+            workflow_dispatch) [[ "$SOURCE_REF" == refs/heads/Source_Code ]] ;;
+            pull_request) [[ "$SOURCE_REF" =~ ^refs/pull/[1-9][0-9]*/merge$ ]] ;;
+            *) exit 1 ;;
+          esac
 
       # OpenAI-Codex: create the requested beta tag only from Source_Code.
       - name: Prepare v4.3.22 beta tag
@@ -136,22 +262,9 @@ jobs:
       # without this we would validate the wrong commit.
       - uses: actions/checkout@v7
         with:
-          ref: ${{ steps.tag.outputs.tag }}
+          ref: ${{ needs.metadata.outputs.source_sha }}
           fetch-depth: 0
           persist-credentials: false
-
-      # OpenAI-Codex: use the workflow revision to generate full commit notes.
-      - uses: actions/checkout@v7
-        if: inputs.verify_only != true && steps.tag.outputs.tag != 'v4.3.22'
-        with:
-          ref: ${{ github.sha }}
-          path: release-automation
-          persist-credentials: false
-
-      - uses: actions/setup-node@v7
-        if: inputs.verify_only != true && steps.tag.outputs.tag != 'v4.3.22'
-        with:
-          node-version: '22'
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -159,7 +272,7 @@ jobs:
           python-version: "3.12"
 
       - name: Check version consistency across project files
-        run: python scripts/check_version_consistency.py
+        run: python -I scripts/check_version_consistency.py
 
       # The files can agree with each other and still disagree with the tag
       # being released -- e.g. tagging v4.3.10 on a commit that was never
@@ -171,368 +284,264 @@ jobs:
         run: |
           tag="$RELEASE_TAG"
           tag_version="${tag#v}"
-          file_version="$(python -c "import json;print(json.load(open('package.json'))['version'])")"
+          file_version="$(python -I -c "import json;print(json.load(open('package.json'))['version'])")"
           if [ "$tag_version" != "$file_version" ]; then
             echo "::error::Tag '$tag' (version '$tag_version') does not match the project version '$file_version' -- bump the version files and re-tag, or tag the correct commit."
             exit 1
           fi
           echo "Tag $tag matches project version $file_version."
 
-      # Runs BEFORE any platform build starts, so there's no race between the
-      # 3 parallel jobs over who creates the release. If a release for this
-      # tag already exists (e.g. hand-crafted tri-lingual notes via
-      # `gh release create`/`gh release edit`), this is a no-op and those
-      # notes are left untouched — only missing releases get auto-generated
-      # notes as a placeholder.
-      # OpenAI-Codex: include direct commits and use the same base for PR notes.
-      - name: Generate commit changelog
-        id: release_notes
-        if: inputs.verify_only != true && steps.tag.outputs.tag != 'v4.3.22'
-        env:
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-        run: node release-automation/.github/scripts/release-commit-notes.mjs
 
-      - name: Ensure a GitHub Release exists for this tag
-        if: inputs.verify_only != true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ steps.tag.outputs.tag }}
-          PREVIOUS_TAG: ${{ steps.release_notes.outputs.previous_tag }}
-        run: |
-          tag="$RELEASE_TAG"
-          if [ "$tag" = "v4.3.22" ]; then
-            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,isPrerelease --jq '.isDraft and .isPrerelease' | grep -qx true
-            else
-              gh release create "$tag" --repo "$GITHUB_REPOSITORY" --draft --prerelease --title "$tag Public Beta" --notes "Public Beta: download cancellation and error guidance improvements. The application identifier changed; existing installations may require manual data migration. Network stalls can delay cancellation."
-            fi
-          elif gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            # OpenAI-Codex: never attach new builds to a published release.
-            gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' | grep -qx true
-          else
-            args=(--repo "$GITHUB_REPOSITORY" --verify-tag --draft --title "$tag" --generate-notes --notes-file "$RUNNER_TEMP/release-commit-notes.md")
-            previous="$PREVIOUS_TAG"
-            if [ -n "$previous" ]; then
-              args+=(--notes-start-tag "$previous")
-            fi
-            gh release create "$tag" "${args[@]}"
-          fi
+  build-linux:
+    if: >-
+      (inputs.only || github.event.inputs.only || 'all') == 'all' ||
+      (inputs.only || github.event.inputs.only || 'all') == 'ubuntu-22.04'
+    needs: [metadata, setup]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-build.yml
+    with:
+      platform: 'ubuntu-22.04'
+      source_sha: ${{ needs.metadata.outputs.source_sha }}
+      verify_only: ${{ needs.metadata.outputs.verify_only == 'true' }}
 
-  build:
-    needs: setup
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
-    runs-on: ${{ matrix.platform }}
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.setup.outputs.tag }}
-          persist-credentials: false
+  build-macos:
+    if: >-
+      (inputs.only || github.event.inputs.only || 'all') == 'all' ||
+      (inputs.only || github.event.inputs.only || 'all') == 'macos-15'
+    needs: [metadata, setup]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-build.yml
+    with:
+      platform: 'macos-15'
+      source_sha: ${{ needs.metadata.outputs.source_sha }}
+      verify_only: ${{ needs.metadata.outputs.verify_only == 'true' }}
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
-      - name: Set up Node
-        uses: actions/setup-node@v7
-        with:
-          node-version: "22"
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Cache Rust build
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "./src-tauri -> target"
-
-      - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            librsvg2-dev \
-            libappindicator3-dev \
-            patchelf
-
-      - name: Build Python engine sidecar (PyInstaller)
-        run: |
-          python -m pip install --upgrade pip
-          pip install pyinstaller yt-dlp mutagen brotli certifi requests websockets
-          pyinstaller packaging/engine_sidecar.spec --noconfirm --distpath packaging/dist --workpath packaging/build
-
-      # Two sources, and the download is verified before it is trusted.
-      # johnvansickle.com once answered with HTTP 200 and a 7KB HTML error page
-      # instead of the tarball, which sailed past curl and only blew up at
-      # `tar` -- a build failure several steps away from its cause. `xz -t`
-      # rejects anything that is not a real xz archive, so a bad response now
-      # fails over to the next source instead of failing the build. Both are
-      # GPL builds, matching third-party/LICENSE-ffmpeg-GPLv3.txt.
-      - name: Stage ffmpeg — Linux
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          set -u
-          sources="
-          https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-          https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
-          "
-          got=""
-          for url in $sources; do
-            echo "Trying $url"
-            if ! curl -fL --retry 3 --retry-delay 5 --max-time 300 -o ffmpeg.tar.xz "$url"; then
-              echo "  download failed, trying the next source"
-              continue
-            fi
-            if ! xz -t ffmpeg.tar.xz 2>/dev/null; then
-              echo "  not a valid xz archive ($(wc -c < ffmpeg.tar.xz) bytes) -- probably an"
-              echo "  error page served with HTTP 200; trying the next source"
-              continue
-            fi
-            got="$url"
-            break
-          done
-          if [ -z "$got" ]; then
-            echo "::error::Could not fetch a usable ffmpeg build from any source."
-            exit 1
-          fi
-          echo "Using $got"
-          mkdir ffmpeg-dl && tar -xf ffmpeg.tar.xz -C ffmpeg-dl
-          # Layouts differ between the two sources (./ffmpeg vs ./bin/ffmpeg),
-          # so search rather than assuming a depth.
-          bin="$(find ffmpeg-dl -name ffmpeg -type f | head -1)"
-          if [ -z "$bin" ]; then
-            echo "::error::No ffmpeg binary inside the archive from $got."
-            exit 1
-          fi
-          cp "$bin" packaging/dist/engine_sidecar/ffmpeg
-          chmod +x packaging/dist/engine_sidecar/ffmpeg
-          packaging/dist/engine_sidecar/ffmpeg -version | head -1
-
-      # Verified the same way as the Linux step: a download that arrives with
-      # HTTP 200 but is not really an archive must fail here, not several steps
-      # later inside unzip.
-      #
-      # Unlike Linux there is no clean second source on Apple Silicon --
-      # evermeet.cx publishes x86_64 only (checked: single-arch Mach-O,
-      # cputype 0x01000007), and the arm64 builds elsewhere are behind
-      # version-numbered filenames that would go stale. So arm64 stays
-      # single-source, and the fallback is used only where it is genuinely the
-      # right architecture.
-      #
-      # Hence the arch check: bundling an Intel binary into an arm64 app would
-      # not fail the build at all -- it would ship, and then fail on any user
-      # machine without Rosetta. That is worth catching here.
-      - name: Stage ffmpeg — macOS
-        if: matrix.platform == 'macos-15'
-        run: |
-          set -u
-          arch=$(uname -m)                       # arm64 on macos-15
-          if [ "$arch" = "arm64" ]; then
-            a=arm64
-            sources="https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip"
-          else
-            a=amd64
-            sources="
-            https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffmpeg.zip
-            https://evermeet.cx/ffmpeg/getrelease/zip
-            "
-          fi
-
-          got=""
-          for url in $sources; do
-            echo "Trying $url"
-            if ! curl -fL --retry 3 --retry-delay 5 --max-time 300 -o ffmpeg.zip "$url"; then
-              echo "  download failed, trying the next source"
-              continue
-            fi
-            if ! unzip -tqq ffmpeg.zip >/dev/null 2>&1; then
-              echo "  not a valid zip ($(wc -c < ffmpeg.zip) bytes) -- probably an"
-              echo "  error page served with HTTP 200; trying the next source"
-              continue
-            fi
-            got="$url"
-            break
-          done
-          if [ -z "$got" ]; then
-            echo "::error::Could not fetch a usable ffmpeg build for macOS/$a."
-            exit 1
-          fi
-          echo "Using $got"
-
-          rm -rf ffmpeg-dl && mkdir ffmpeg-dl && unzip -oq ffmpeg.zip -d ffmpeg-dl
-          bin="$(find ffmpeg-dl -name ffmpeg -type f | head -1)"
-          if [ -z "$bin" ]; then
-            echo "::error::No ffmpeg binary inside the archive from $got."
-            exit 1
-          fi
-
-          # An app bundled with the wrong architecture builds and ships fine,
-          # then breaks on the user's machine -- check before it gets that far.
-          archs="$(lipo -archs "$bin" 2>/dev/null || echo unknown)"
-          echo "Binary architectures: $archs"
-          case " $archs " in
-            *" $arch "*) ;;
-            *) echo "::error::ffmpeg from $got is built for '$archs', but this runner is $arch -- bundling it would ship an app that breaks on the user's machine."
-               exit 1 ;;
-          esac
-
-          cp "$bin" packaging/dist/engine_sidecar/ffmpeg
-          chmod +x packaging/dist/engine_sidecar/ffmpeg
-          packaging/dist/engine_sidecar/ffmpeg -version | head -1
-
-      - name: Stage ffmpeg — Windows
-        if: matrix.platform == 'windows-latest'
-        shell: bash
-        run: |
-          # OpenAI-Codex: reject HTTP errors and invalid archives before extraction.
-          set -euo pipefail
-          curl --fail --location --retry 3 --retry-delay 5 --max-time 300 -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
-          7z t ffmpeg.zip >/dev/null
-          7z x ffmpeg.zip -offmpeg-dl >/dev/null
-          bin="$(find ffmpeg-dl -name ffmpeg.exe -type f -print -quit)"
-          if [ -z "$bin" ]; then
-            echo "::error::No ffmpeg executable found in the Windows archive."
-            exit 1
-          fi
-          cp "$bin" packaging/dist/engine_sidecar/ffmpeg.exe
-          packaging/dist/engine_sidecar/ffmpeg.exe -version | head -1
-
-      - name: Install JS dependencies
-        run: |
-          npm ci --no-audit --no-fund
-          npm ci --no-audit --no-fund --prefix frontend
-
-      - name: Build the Tauri app
-        uses: tauri-apps/tauri-action@v1
-
-      # OpenAI-Codex: retain only installer files in verification-only runs.
-      - name: Stage installers for verification
-        if: inputs.verify_only == true
-        shell: bash
-        run: |
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          const root = path.resolve('src-tauri/target/release/bundle');
-          const out = path.join(process.env.RUNNER_TEMP, 'release-verify');
-          fs.mkdirSync(out);
-          let count = 0;
-          function walk(dir) {
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-              const file = path.join(dir, entry.name);
-              if (entry.isDirectory()) walk(file);
-              else if (entry.isFile() && (/\.(rpm|deb|AppImage|dmg|msi)$/.test(entry.name) || entry.name.endsWith('-setup.exe'))) {
-                fs.copyFileSync(file, path.join(out, entry.name), fs.constants.COPYFILE_EXCL);
-                count++;
-              }
-            }
-          }
-          walk(root);
-          if (!count) throw new Error('No installer artifacts were produced.');
-          NODE
-
-      - uses: actions/upload-artifact@v4
-        if: inputs.verify_only == true
-        with:
-          name: release-verify-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
-          path: ${{ runner.temp }}/release-verify/
-          if-no-files-found: error
-          retention-days: 1
-
-      - name: Upload installers to the release
-        if: inputs.verify_only != true
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          RELEASE_TAG: ${{ needs.setup.outputs.tag }}
-        run: |
-          tag="$RELEASE_TAG"
-          echo "Uploading bundles to release $tag"
-          find src-tauri/target/release/bundle -type f \
-            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
-               -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) -print
-          find src-tauri/target/release/bundle -type f \
-            \( -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \
-               -o -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' \) \
-            -print0 | xargs -0 gh release upload "$tag" --repo "$GITHUB_REPOSITORY"
+  build-windows:
+    if: >-
+      (inputs.only || github.event.inputs.only || 'all') == 'all' ||
+      (inputs.only || github.event.inputs.only || 'all') == 'windows-latest'
+    needs: [metadata, setup]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-build.yml
+    with:
+      platform: 'windows-latest'
+      source_sha: ${{ needs.metadata.outputs.source_sha }}
+      verify_only: ${{ needs.metadata.outputs.verify_only == 'true' }}
 
   # OpenAI-Codex: verify the same build jobs without changing a release.
   verify-only:
-    needs: [setup, build]
-    if: inputs.verify_only == true
+    needs: [metadata, setup, build-linux, build-macos, build-windows]
+    if: needs.metadata.outputs.verify_only == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     permissions:
       contents: read
+      actions: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.sha }}
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
           path: automation
           persist-credentials: false
-      - uses: actions/setup-node@v7
-        with:
-          node-version: '22'
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: release-verify-${{ github.run_id }}-${{ github.run_attempt }}-*
-          path: ${{ runner.temp }}/release-verify-download
-      - name: Validate the complete version-specific inventory
+      - name: Verify build artifact identities
         env:
-          TAG: ${{ needs.setup.outputs.tag }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINUX_ID: ${{ needs.build-linux.outputs.artifact_id }}
+          MAC_ID: ${{ needs.build-macos.outputs.artifact_id }}
+          WINDOWS_ID: ${{ needs.build-windows.outputs.artifact_id }}
+          LINUX_JOB_ID: ${{ needs.build-linux.outputs.job_id }}
+          MAC_JOB_ID: ${{ needs.build-macos.outputs.job_id }}
+          WINDOWS_JOB_ID: ${{ needs.build-windows.outputs.job_id }}
+          LINUX_DIGEST: ${{ needs.build-linux.outputs.artifact_digest }}
+          MAC_DIGEST: ${{ needs.build-macos.outputs.artifact_digest }}
+          WINDOWS_DIGEST: ${{ needs.build-windows.outputs.artifact_digest }}
+          RELEASE_ONLY: all
+          TAG: ${{ needs.metadata.outputs.tag }}
+          VERIFY_ONLY: 'true'
         shell: bash
         run: |
           set -euo pipefail
-          node <<'NODE'
-          const fs = require('fs');
-          const path = require('path');
-          const root = path.join(process.env.RUNNER_TEMP, 'release-verify-download');
-          const assets = [];
-          function walk(dir) {
-            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-              const file = path.join(dir, entry.name);
-              if (entry.isDirectory()) walk(file);
-              else if (entry.isFile()) assets.push({ name: entry.name, size: fs.statSync(file).size });
-              else throw new Error('Unexpected artifact entry.');
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" > "$RUNNER_TEMP/release-artifact-pages.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=all&per_page=100" > "$RUNNER_TEMP/release-job-pages.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$RUNNER_TEMP/release-run.json"
+          node automation/.github/scripts/select-release-artifacts.mjs "$RUNNER_TEMP/release-artifact-pages.json" "$RUNNER_TEMP/release-job-pages.json" "$RUNNER_TEMP/release-run.json" > "$RUNNER_TEMP/release-selection.json"
+          mkdir "$RUNNER_TEMP/release-download" "$RUNNER_TEMP/release-stage"
+          python -I automation/.github/scripts/download-release-artifacts.py "$RUNNER_TEMP/release-selection.json" "$RUNNER_TEMP/release-download"
+          python -I automation/.github/scripts/stage-release-artifacts.py "$TAG" "$RUNNER_TEMP/release-stage" "$RUNNER_TEMP/release-selection.json" "$RUNNER_TEMP/release-download" > "$RUNNER_TEMP/release-stage-manifest.json"
+          node -e 'const fs=require("node:fs");const p=process.env.RUNNER_TEMP;const a=JSON.parse(fs.readFileSync(p+"/release-stage-manifest.json","utf8"));fs.writeFileSync(p+"/release-verify-assets.json",JSON.stringify({assets:a}));'
+          node automation/.github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/release-verify-assets.json"
+
+
+  # OpenAI-Codex_format_architecture: fresh runner; artifacts are treated only as data.
+  publisher:
+    needs: [metadata, setup, build-linux, build-macos, build-windows]
+    if: >-
+      !cancelled() && github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' &&
+      needs.metadata.result == 'success' && needs.setup.result == 'success' &&
+      (needs.build-linux.result == 'success' || needs.build-linux.result == 'skipped') &&
+      (needs.build-macos.result == 'success' || needs.build-macos.result == 'skipped') &&
+      (needs.build-windows.result == 'success' || needs.build-windows.result == 'skipped') &&
+      (needs.build-linux.result == 'success' || needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      actions: read
+    outputs:
+      asset_manifest: ${{ steps.staging.outputs.manifest }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: automation
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify version data at the immutable source commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_TARGET_SHA: ${{ needs.metadata.outputs.source_sha }}
+        run: node automation/.github/scripts/verify-version-at-commit.mjs
+      - name: Resolve and verify build artifact identities
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LINUX_ID: ${{ needs.build-linux.outputs.artifact_id }}
+          LINUX_JOB_ID: ${{ needs.build-linux.outputs.job_id }}
+          MAC_ID: ${{ needs.build-macos.outputs.artifact_id }}
+          MAC_JOB_ID: ${{ needs.build-macos.outputs.job_id }}
+          WINDOWS_ID: ${{ needs.build-windows.outputs.artifact_id }}
+          WINDOWS_JOB_ID: ${{ needs.build-windows.outputs.job_id }}
+          LINUX_DIGEST: ${{ needs.build-linux.outputs.artifact_digest }}
+          MAC_DIGEST: ${{ needs.build-macos.outputs.artifact_digest }}
+          WINDOWS_DIGEST: ${{ needs.build-windows.outputs.artifact_digest }}
+          RELEASE_ONLY: ${{ inputs.only || github.event.inputs.only || 'all' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts?per_page=100" > "$RUNNER_TEMP/release-artifact-pages.json"
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?filter=all&per_page=100" > "$RUNNER_TEMP/release-job-pages.json"
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > "$RUNNER_TEMP/release-run.json"
+          node automation/.github/scripts/select-release-artifacts.mjs "$RUNNER_TEMP/release-artifact-pages.json" "$RUNNER_TEMP/release-job-pages.json" "$RUNNER_TEMP/release-run.json" > "$RUNNER_TEMP/release-selection.json"
+      - name: Download and safely stage installer data
+        id: staging
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/release-download" "$RUNNER_TEMP/release-stage"
+          python -I automation/.github/scripts/download-release-artifacts.py "$RUNNER_TEMP/release-selection.json" "$RUNNER_TEMP/release-download"
+          python -I automation/.github/scripts/stage-release-artifacts.py "$TAG" "$RUNNER_TEMP/release-stage" "$RUNNER_TEMP/release-selection.json" "$RUNNER_TEMP/release-download" > "$RUNNER_TEMP/release-staged-manifest.json"
+          encoded="$(base64 -w 0 "$RUNNER_TEMP/release-staged-manifest.json")"
+          [[ ${#encoded} -le 100000 ]]
+          printf 'manifest=%s\n' "$encoded" >> "$GITHUB_OUTPUT"
+      - name: Generate release notes from trusted automation
+        id: release_notes
+        if: needs.metadata.outputs.tag != 'v4.3.22' && (inputs.only || github.event.inputs.only || 'all') == 'all'
+        working-directory: automation
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+        run: node .github/scripts/release-commit-notes.mjs
+      - name: Create or verify the draft release
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          TARGET_SHA: ${{ needs.metadata.outputs.source_sha }}
+          PREVIOUS_TAG: ${{ steps.release_notes.outputs.previous_tag }}
+          RELEASE_ONLY: ${{ inputs.only || github.event.inputs.only || 'all' }}
+        with:
+          script: |
+            const fs = require('node:fs');
+            const path = require('node:path');
+            const { owner, repo } = context.repo;
+            const tag = process.env.RELEASE_TAG;
+            const target = process.env.TARGET_SHA;
+            if (owner !== 'KingsleyHK0323' || repo !== 'Multimedia_Downloader' ||
+                !/^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/.test(tag) ||
+                tag === 'v4.3.3' || !/^[0-9a-f]{40}$/.test(target)) throw new Error('Invalid release target.');
+            const params = { owner, repo };
+            let object = (await github.rest.git.getRef({ ...params, ref: 'tags/' + tag })).data.object;
+            for (let i = 0; i < 8 && object?.type === 'tag'; i++) {
+              object = (await github.rest.git.getTag({ ...params, tag_sha: object.sha })).data.object;
             }
-          }
-          walk(root);
-          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'release-verify-assets.json'), JSON.stringify({ assets }));
-          NODE
-          node automation/.github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/release-verify-assets.json" staged
+            if (object?.type !== 'commit' || object.sha !== target) throw new Error('Tag target changed.');
+            let release;
+            try {
+              release = (await github.rest.repos.getReleaseByTag({ ...params, tag })).data;
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              if (process.env.RELEASE_ONLY !== 'all') throw new Error('Partial recovery requires an existing draft release.');
+              const beta = tag === 'v4.3.22';
+              const notes = beta
+                ? 'Public Beta: download cancellation and error guidance improvements. The application identifier changed; existing installations may require manual data migration. Network stalls can delay cancellation.'
+                : fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'release-commit-notes.md'), 'utf8');
+              let body = notes;
+              if (!beta) {
+                const previous = process.env.PREVIOUS_TAG || '';
+                if (previous && !/^v[0-9A-Za-z._-]+$/.test(previous)) throw new Error('Invalid previous tag.');
+                const parameters = { ...params, tag_name: tag, target_commitish: target };
+                if (previous) parameters.previous_tag_name = previous;
+                const generated = (await github.rest.repos.generateReleaseNotes(parameters)).data;
+                if (typeof generated.body !== 'string') throw new Error('Invalid generated release notes.');
+                body += '\n\n' + generated.body;
+              }
+              const options = { ...params, tag_name: tag, target_commitish: target, draft: true, prerelease: beta,
+                name: beta ? tag + ' Public Beta' : tag, body };
+              try {
+                release = (await github.rest.repos.createRelease(options)).data;
+              } catch (createError) {
+                if (createError.status !== 422) throw createError;
+                release = (await github.rest.repos.getReleaseByTag({ ...params, tag })).data;
+              }
+            }
+            if (release.tag_name !== tag || release.draft !== true ||
+                (tag === 'v4.3.22' ? release.prerelease !== true : release.prerelease !== false)) {
+              throw new Error('Release is not the expected draft.');
+            }
+      - name: Upload or verify exact release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_TARGET_SHA: ${{ needs.metadata.outputs.source_sha }}
+          RELEASE_STAGE_DIR: ${{ runner.temp }}/release-stage
+          RELEASE_ONLY: ${{ inputs.only || github.event.inputs.only || 'all' }}
+        shell: bash
+        run: node automation/.github/scripts/upload-release-assets.mjs "$RELEASE_TAG"
 
   # OpenAI-Codex: apply the same asset and exact-commit checks to beta publication.
   publish-beta:
-    needs: [setup, build]
-    if: inputs.verify_only != true && needs.setup.outputs.tag == 'v4.3.22'
+    needs: [metadata, setup, publisher]
+    permissions:
+      contents: write
+      actions: read
+    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && needs.metadata.outputs.tag == 'v4.3.22'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ job.workflow_sha }}
           path: automation
-          persist-credentials: false
-      - uses: actions/checkout@v7
-        with:
-          ref: v4.3.22
-          path: beta-source
           persist-credentials: false
       - name: Verify exact beta assets and checks before publication
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TARGET_SHA: ${{ needs.metadata.outputs.source_sha }}
+          RELEASE_MANIFEST: ${{ needs.publisher.outputs.asset_manifest }}
         shell: bash
         run: |
           set -euo pipefail
+          node automation/.github/scripts/upload-release-assets.mjs v4.3.22 --verify-inventory
           gh release view v4.3.22 --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease > "$RUNNER_TEMP/beta-release.json"
           jq -e '.isDraft == true and .isPrerelease == true' "$RUNNER_TEMP/beta-release.json" >/dev/null
           node automation/.github/scripts/verify-release-assets.mjs v4.3.22 "$RUNNER_TEMP/beta-release.json"
-          sha="$(git -C beta-source rev-parse HEAD)"
+          sha="$RELEASE_TARGET_SHA"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           verified=false
           for attempt in $(seq 1 60); do
@@ -560,30 +569,39 @@ jobs:
             sleep 10
           done
           [[ "$verified" == true ]] || { echo "::error::Beta CI and matrix must pass for the tagged Source_Code commit."; exit 1; }
+          node automation/.github/scripts/upload-release-assets.mjs v4.3.22 --verify-inventory
           gh release edit v4.3.22 --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
 
   # OpenAI-Codex: publish only complete builds of a commit with passing CI.
   publish-stable:
-    needs: [setup, build]
-    if: inputs.verify_only != true && needs.setup.outputs.tag != 'v4.3.22' && needs.setup.outputs.tag != 'v4.3.3'
+    needs: [metadata, setup, publisher]
+    permissions:
+      contents: write
+      actions: read
+    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && needs.metadata.outputs.tag != 'v4.3.22' && needs.metadata.outputs.tag != 'v4.3.3'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ needs.setup.outputs.tag }}
+          ref: ${{ job.workflow_sha }}
+          path: automation
+          persist-credentials: false
       - name: Verify installers and exact-commit tests
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.setup.outputs.tag }}
+          TAG: ${{ needs.metadata.outputs.tag }}
+          RELEASE_TARGET_SHA: ${{ needs.metadata.outputs.source_sha }}
+          RELEASE_MANIFEST: ${{ needs.publisher.outputs.asset_manifest }}
         shell: bash
         run: |
           set -euo pipefail
-          sha="$(git rev-parse HEAD)"
+          sha="$RELEASE_TARGET_SHA"
+          node automation/.github/scripts/upload-release-assets.mjs "$TAG" --verify-inventory
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           # OpenAI-Codex: require the expected names and nonempty files for this exact version.
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets > "$RUNNER_TEMP/release-assets.json"
-          node .github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/release-assets.json"
+          node automation/.github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/release-assets.json"
           verified=false
           for attempt in $(seq 1 60); do
             runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100")"
@@ -607,12 +625,13 @@ jobs:
             sleep 10
           done
           [ "$verified" = true ] || { echo "::error::CI and matrix must both pass for the tagged Source_Code commit."; exit 1; }
+          node automation/.github/scripts/upload-release-assets.mjs "$TAG" --verify-inventory
           gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false
 
   # OpenAI-Codex: dispatch package publication after a verified stable release.
   request-npm-package:
-    needs: [setup, publish-stable]
-    if: needs.publish-stable.result == 'success'
+    needs: [metadata, setup, publish-stable]
+    if: github.event_name != 'pull_request' && needs.publish-stable.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -621,7 +640,7 @@ jobs:
       - name: Queue verified npm package publication
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ needs.setup.outputs.tag }}
+          TAG: ${{ needs.metadata.outputs.tag }}
         shell: bash
         run: |
           set -euo pipefail

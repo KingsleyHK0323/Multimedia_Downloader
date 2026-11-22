@@ -1,0 +1,267 @@
+# OpenAI-Codex_format_architecture: reusable, read-only release build.
+name: Release platform build
+
+on:
+  workflow_call:
+    inputs:
+      platform:
+        type: string
+        required: true
+      source_sha:
+        type: string
+        required: true
+      verify_only:
+        type: boolean
+        default: false
+    outputs:
+      artifact_id:
+        value: ${{ jobs.build.outputs.artifact_id }}
+      artifact_digest:
+        value: ${{ jobs.build.outputs.artifact_digest }}
+      job_id:
+        value: ${{ jobs.build.outputs.job_id }}
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    outputs:
+      platform: ${{ steps.values.outputs.platform }}
+      source_sha: ${{ steps.values.outputs.source_sha }}
+    steps:
+      - name: Validate the platform and source commit
+        id: values
+        env:
+          PLATFORM: ${{ inputs.platform }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == KingsleyHK0323/Multimedia_Downloader ]]
+          case "$PLATFORM" in ubuntu-22.04|macos-15|windows-latest) ;; *) exit 1 ;; esac
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          printf 'platform=%s\nsource_sha=%s\n' "$PLATFORM" "$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Release build (${{ inputs.platform }})
+    needs: [validate]
+    runs-on: ${{ needs.validate.outputs.platform }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      artifact_id: ${{ steps.stage.outputs.artifact-id }}
+      artifact_digest: ${{ steps.stage.outputs.artifact-digest }}
+      job_id: ${{ steps.job_identity.outputs.id }}
+    steps:
+      - name: Record the current job identity
+        id: job_identity
+        env:
+          JOB_ID: ${{ job.check_run_id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$JOB_ID" =~ ^[1-9][0-9]*$ ]]
+          printf 'id=%s\n' "$JOB_ID" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libappindicator3-dev \
+            patchelf
+
+      - name: Build Python engine sidecar (PyInstaller)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller yt-dlp mutagen brotli certifi requests websockets
+          pyinstaller packaging/engine_sidecar.spec --noconfirm --distpath packaging/dist --workpath packaging/build
+
+      # Two sources, and the download is verified before it is trusted.
+      # johnvansickle.com once answered with HTTP 200 and a 7KB HTML error page
+      # instead of the tarball, which sailed past curl and only blew up at
+      # `tar` -- a build failure several steps away from its cause. `xz -t`
+      # rejects anything that is not a real xz archive, so a bad response now
+      # fails over to the next source instead of failing the build. Both are
+      # GPL builds, matching third-party/LICENSE-ffmpeg-GPLv3.txt.
+      - name: Stage ffmpeg — Linux
+        if: runner.os == 'Linux'
+        run: |
+          set -u
+          sources="
+          https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+          https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+          "
+          got=""
+          for url in $sources; do
+            echo "Trying $url"
+            if ! curl -fL --retry 3 --retry-delay 5 --max-time 300 -o ffmpeg.tar.xz "$url"; then
+              echo "  download failed, trying the next source"
+              continue
+            fi
+            if ! xz -t ffmpeg.tar.xz 2>/dev/null; then
+              echo "  not a valid xz archive ($(wc -c < ffmpeg.tar.xz) bytes) -- probably an"
+              echo "  error page served with HTTP 200; trying the next source"
+              continue
+            fi
+            got="$url"
+            break
+          done
+          if [ -z "$got" ]; then
+            echo "::error::Could not fetch a usable ffmpeg build from any source."
+            exit 1
+          fi
+          echo "Using $got"
+          mkdir ffmpeg-dl && tar -xf ffmpeg.tar.xz -C ffmpeg-dl
+          # Layouts differ between the two sources (./ffmpeg vs ./bin/ffmpeg),
+          # so search rather than assuming a depth.
+          bin="$(find ffmpeg-dl -name ffmpeg -type f | head -1)"
+          if [ -z "$bin" ]; then
+            echo "::error::No ffmpeg binary inside the archive from $got."
+            exit 1
+          fi
+          cp "$bin" packaging/dist/engine_sidecar/ffmpeg
+          chmod +x packaging/dist/engine_sidecar/ffmpeg
+          packaging/dist/engine_sidecar/ffmpeg -version | head -1
+
+      # Verified the same way as the Linux step: a download that arrives with
+      # HTTP 200 but is not really an archive must fail here, not several steps
+      # later inside unzip.
+      #
+      # Unlike Linux there is no clean second source on Apple Silicon --
+      # evermeet.cx publishes x86_64 only (checked: single-arch Mach-O,
+      # cputype 0x01000007), and the arm64 builds elsewhere are behind
+      # version-numbered filenames that would go stale. So arm64 stays
+      # single-source, and the fallback is used only where it is genuinely the
+      # right architecture.
+      #
+      # Hence the arch check: bundling an Intel binary into an arm64 app would
+      # not fail the build at all -- it would ship, and then fail on any user
+      # machine without Rosetta. That is worth catching here.
+      - name: Stage ffmpeg — macOS
+        if: runner.os == 'macOS'
+        run: |
+          set -u
+          arch=$(uname -m)                       # arm64 on macos-15
+          if [ "$arch" = "arm64" ]; then
+            a=arm64
+            sources="https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip"
+          else
+            a=amd64
+            sources="
+            https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffmpeg.zip
+            https://evermeet.cx/ffmpeg/getrelease/zip
+            "
+          fi
+
+          got=""
+          for url in $sources; do
+            echo "Trying $url"
+            if ! curl -fL --retry 3 --retry-delay 5 --max-time 300 -o ffmpeg.zip "$url"; then
+              echo "  download failed, trying the next source"
+              continue
+            fi
+            if ! unzip -tqq ffmpeg.zip >/dev/null 2>&1; then
+              echo "  not a valid zip ($(wc -c < ffmpeg.zip) bytes) -- probably an"
+              echo "  error page served with HTTP 200; trying the next source"
+              continue
+            fi
+            got="$url"
+            break
+          done
+          if [ -z "$got" ]; then
+            echo "::error::Could not fetch a usable ffmpeg build for macOS/$a."
+            exit 1
+          fi
+          echo "Using $got"
+
+          rm -rf ffmpeg-dl && mkdir ffmpeg-dl && unzip -oq ffmpeg.zip -d ffmpeg-dl
+          bin="$(find ffmpeg-dl -name ffmpeg -type f | head -1)"
+          if [ -z "$bin" ]; then
+            echo "::error::No ffmpeg binary inside the archive from $got."
+            exit 1
+          fi
+
+          # An app bundled with the wrong architecture builds and ships fine,
+          # then breaks on the user's machine -- check before it gets that far.
+          archs="$(lipo -archs "$bin" 2>/dev/null || echo unknown)"
+          echo "Binary architectures: $archs"
+          case " $archs " in
+            *" $arch "*) ;;
+            *) echo "::error::ffmpeg from $got is built for '$archs', but this runner is $arch -- bundling it would ship an app that breaks on the user's machine."
+               exit 1 ;;
+          esac
+
+          cp "$bin" packaging/dist/engine_sidecar/ffmpeg
+          chmod +x packaging/dist/engine_sidecar/ffmpeg
+          packaging/dist/engine_sidecar/ffmpeg -version | head -1
+
+      - name: Stage ffmpeg — Windows
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          # OpenAI-Codex: reject HTTP errors and invalid archives before extraction.
+          set -euo pipefail
+          curl --fail --location --retry 3 --retry-delay 5 --max-time 300 -o ffmpeg.zip https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip
+          7z t ffmpeg.zip >/dev/null
+          7z x ffmpeg.zip -offmpeg-dl >/dev/null
+          bin="$(find ffmpeg-dl -name ffmpeg.exe -type f -print -quit)"
+          if [ -z "$bin" ]; then
+            echo "::error::No ffmpeg executable found in the Windows archive."
+            exit 1
+          fi
+          cp "$bin" packaging/dist/engine_sidecar/ffmpeg.exe
+          packaging/dist/engine_sidecar/ffmpeg.exe -version | head -1
+
+      - name: Install JS dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npm ci --no-audit --no-fund --prefix frontend
+
+      - name: Build the Tauri app
+        uses: tauri-apps/tauri-action@v1
+
+      # OpenAI-Codex_format_architecture: stage build output as data; no release token here.
+      - name: Stage release artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        id: stage
+        with:
+          name: release-stage-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.platform }}
+          path: |
+            src-tauri/target/release/bundle/**/*.deb
+            src-tauri/target/release/bundle/**/*.rpm
+            src-tauri/target/release/bundle/**/*.AppImage
+            src-tauri/target/release/bundle/**/*.dmg
+            src-tauri/target/release/bundle/**/*.msi
+            src-tauri/target/release/bundle/**/*-setup.exe
+          if-no-files-found: error
+          retention-days: 7

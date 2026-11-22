@@ -5,6 +5,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 import test from 'node:test';
 
 const generator = fileURLToPath(new URL('./release-commit-notes.mjs', import.meta.url));
@@ -70,66 +72,98 @@ test('rejects invalid input and missing tags without producing notes', () => {
   assert.notEqual(generate(dir, 'v1.2.3', '../other').result.status, 0);
 });
 
-test('workflow preserves generated PR notes and adds commit notes using the same base', () => {
-  assert.match(workflow, /fetch-depth: 0/);
-  assert.match(workflow, /--generate-notes --notes-file "\$RUNNER_TEMP\/release-commit-notes\.md"/);
-  assert.match(workflow, /--notes-start-tag "\$previous"/);
-  assert.match(workflow, /--verify-tag/);
-});
 
-// OpenAI-Codex: execute the real release-creation shell with a fake GitHub CLI.
-function ensureRelease(exists, draft, previous) {
-  const marker = '      - name: Ensure a GitHub Release exists for this tag\n';
-  assert.equal(workflow.split(marker).length, 2);
-  const block = workflow.split(marker)[1].split('\n  build:')[0];
-  assert.equal(block.split('        run: |\n').length, 2);
-  const shell = block.split('        run: |\n')[1].replace(/^          /gm, '');
-  assert.ok(!shell.includes('${{'));
-  const dir = mkdtempSync(join(tmpdir(), 'release-create-'));
-  const bin = join(dir, 'bin');
-  const log = join(dir, 'create-args.txt');
-  mkdirSync(bin);
-  const fake = '#!/bin/sh\n' +
-    'if [ "$1" = release ] && [ "$2" = view ]; then\n' +
-    '  [ "$FAKE_EXISTS" = 1 ] || exit 1\n' +
-    '  case " $* " in *" --json "*) if [ "$FAKE_DRAFT" = 1 ]; then echo true; else echo false; fi ;; esac\n' +
-    '  exit 0\nfi\n' +
-    'if [ "$1" = release ] && [ "$2" = create ]; then printf "%s\\n" "$@" > "$GH_LOG"; exit 0; fi\n' +
-    'exit 98\n';
-  writeFileSync(join(bin, 'gh'), fake, { mode: 0o755 });
-  const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', shell], {
-    cwd: dir,
-    encoding: 'utf8',
-    env: { ...process.env, PATH: bin + ':' + process.env.PATH, GITHUB_REPOSITORY: 'example/project',
-      RUNNER_TEMP: dir, GH_LOG: log, RELEASE_TAG: 'v1.0.1', PREVIOUS_TAG: previous,
-      FAKE_EXISTS: String(exists), FAKE_DRAFT: String(draft) },
-  });
-  if (result.error) throw result.error;
-  return { result, args: existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [] };
+// OpenAI-Codex_format_architecture: execute the actual draft-creation script with GitHub mocks.
+const creationBlock = workflow.split('      - name: Create or verify the draft release\n')[1]
+  ?.split('\n      - name: Upload or verify exact release assets')[0];
+const creationScript = creationBlock?.split('          script: |\n')[1]?.replace(/^ {12}/gm, '');
+assert.ok(creationScript);
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+const runCreation = new AsyncFunction('github', 'context', 'require', creationScript);
+const target = 'a'.repeat(40);
+function scenario(options = {}) {
+  const calls = [];
+  let reads = 0;
+  const api = {
+    rest: {
+      git: {
+        getRef: async () => ({ data: { object: { type: 'commit', sha: options.badTarget ? 'b'.repeat(40) : target } } }),
+      },
+      repos: {
+        getReleaseByTag: async () => {
+          reads++;
+          if (!options.exists && !(options.race && reads > 1)) throw Object.assign(new Error('missing'), { status: 404 });
+          return { data: { tag_name: 'v4.3.23', draft: options.published ? false : true, prerelease: false } };
+        },
+        generateReleaseNotes: async args => { calls.push(['notes', args]); return { data: { body: 'Generated PR notes' } }; },
+        createRelease: async args => {
+          calls.push(['create', args]);
+          if (options.race) throw Object.assign(new Error('conflict'), { status: 422 });
+          return { data: { ...args, tag_name: args.tag_name, draft: true, prerelease: false } };
+        },
+      },
+    },
+  };
+  const env = { RELEASE_TAG: options.tag || 'v4.3.23', TARGET_SHA: target,
+    PREVIOUS_TAG: 'v4.3.22', RELEASE_ONLY: options.only || 'all', RUNNER_TEMP: '/tmp' };
+  return { calls, api, env };
 }
-
-test('creates a draft with exact tag, generated PR notes and direct commit notes', () => {
-  const { result, args } = ensureRelease(0, 0, 'v1.0.0');
-  assert.equal(result.status, 0, result.stderr);
-  assert.deepEqual(args.slice(0, 3), ['release', 'create', 'v1.0.1']);
-  for (const flag of ['--draft', '--verify-tag', '--generate-notes', '--notes-file', '--notes-start-tag']) {
-    assert.ok(args.includes(flag), flag);
+async function executeCreation(options = {}) {
+  const state = scenario(options);
+  const old = Object.fromEntries(Object.keys(state.env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, state.env);
+  const req = name => name === 'node:fs' ? { readFileSync: () => 'Direct commit notes' } : require(name);
+  try {
+    await runCreation(state.api, { repo: { owner: 'KingsleyHK0323', repo: 'Multimedia_Downloader' } }, req);
+  } finally {
+    for (const [key, value] of Object.entries(old)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
-  assert.equal(args[args.indexOf('--notes-start-tag') + 1], 'v1.0.0');
-  assert.match(args[args.indexOf('--notes-file') + 1], /release-commit-notes\.md$/);
+  return state;
+}
+async function rejectCreation(options, pattern) {
+  const state = scenario(options);
+  const old = Object.fromEntries(Object.keys(state.env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, state.env);
+  const req = name => name === 'node:fs' ? { readFileSync: () => 'Direct commit notes' } : require(name);
+  try {
+    await assert.rejects(runCreation(state.api, { repo: { owner: 'KingsleyHK0323', repo: 'Multimedia_Downloader' } }, req), pattern);
+  } finally {
+    for (const [key, value] of Object.entries(old)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+  return state;
+}
+test('creates a draft from the exact tag with both commit and generated notes', async () => {
+  const state = await executeCreation();
+  assert.deepEqual(state.calls.map(item => item[0]), ['notes', 'create']);
+  const options = state.calls[1][1];
+  assert.equal(options.tag_name, 'v4.3.23');
+  assert.equal(options.target_commitish, target);
+  assert.equal(options.draft, true);
+  assert.equal(options.prerelease, false);
+  assert.match(options.body, /Direct commit notes/);
+  assert.match(options.body, /Generated PR notes/);
+  assert.equal(state.calls[0][1].previous_tag_name, 'v4.3.22');
+});
+test('preserves an existing draft and handles a concurrent matching draft', async () => {
+  assert.deepEqual((await executeCreation({ exists: true })).calls, []);
+  assert.deepEqual((await executeCreation({ race: true })).calls.map(item => item[0]), ['notes', 'create']);
+});
+test('published, retargeted and reserved releases fail without creating a release', async () => {
+  for (const options of [{ exists: true, published: true }, { badTarget: true }, { tag: 'v4.3.3' }]) {
+    const state = await rejectCreation(options, /expected draft|Tag target changed|Invalid release target/);
+    assert.deepEqual(state.calls, []);
+  }
 });
 
-test('preserves an existing draft and refuses to alter a published release', () => {
-  const draft = ensureRelease(1, 1, 'v1.0.0');
-  assert.equal(draft.result.status, 0, draft.result.stderr);
-  assert.deepEqual(draft.args, []);
-  const published = ensureRelease(1, 0, 'v1.0.0');
-  assert.notEqual(published.result.status, 0);
-  assert.deepEqual(published.args, []);
-});
-
-test('first release does not pass a nonexistent start tag', () => {
-  const { result, args } = ensureRelease(0, 0, '');
-  assert.equal(result.status, 0, result.stderr);
-  assert.ok(!args.includes('--notes-start-tag'));
+test('partial recovery requires an existing draft and cannot create one', async () => {
+  const state = await rejectCreation({ only: 'macos-15' }, /requires an existing draft/);
+  assert.deepEqual(state.calls, []);
+  const existing = await executeCreation({ only: 'macos-15', exists: true });
+  assert.deepEqual(existing.calls, []);
 });

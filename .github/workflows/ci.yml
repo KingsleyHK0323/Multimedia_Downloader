@@ -79,11 +79,34 @@ jobs:
   # OpenAI-Codex: test the actual release input guard on Linux.
   release-input-guard:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # OpenAI-Codex_format_architecture: check the release workflow before it is invoked.
+      - name: Check release workflow syntax and contexts
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RUNNER_TEMP/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl -fsSL --retry 3 --proto '=https' --tlsv1.2 \
+            'https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz' \
+            -o "$archive"
+          printf '%s  %s\n' '8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8' "$archive" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP" actionlint
+          # v1.7.12 predates these documented job context properties.
+          "$RUNNER_TEMP/actionlint" -shellcheck= -pyflakes= \
+            -ignore 'property "workflow_(sha|repository|file_path)" is not defined in object type' \
+            .github/workflows/release.yml .github/workflows/release-build.yml
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+      # OpenAI-Codex_format_architecture: run isolated artifact safety fixtures.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: "3.12"
       - name: Test release input validation
         run: node --test .github/scripts/release-input-guard.test.mjs
 
@@ -118,6 +141,14 @@ jobs:
       # OpenAI-Codex: simulate upload collisions without external calls.
       - name: Test release upload collisions
         run: node --test .github/scripts/release-upload-create-only.test.mjs
+
+      # OpenAI-Codex_format_architecture: verify immutable artifact provenance and safe extraction.
+      - name: Test release artifact selection and version data
+        run: node --test .github/scripts/select-release-artifacts.test.mjs .github/scripts/verify-version-at-commit.test.mjs
+      - name: Test release artifact download and extraction
+        run: |
+          python -I .github/scripts/download-release-artifacts.test.py
+          python -I .github/scripts/stage-release-artifacts.test.py
 
   lint:
     runs-on: ubuntu-latest
