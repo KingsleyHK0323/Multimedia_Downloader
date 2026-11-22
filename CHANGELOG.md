@@ -13,7 +13,8 @@
 ### Unreleased
 
 #### Repository automation
-- Handle an already merged formatter branch disappearing between read-only planning snapshots. (OpenAI-Codex_format_architecture)
+- Permit explicit opt-in for the owner-verified website update coordinator. (OpenAI-Codex_ruleset_architecture)
+- Handle an already merged service branch disappearing during or after read-only formatting plans. (OpenAI-Codex_format_architecture)
 - Stage a disabled website coordinator that verifies owner push checks and PR history before an App non-force update. (OpenAI-Codex_ruleset_architecture)
 - Update only root version fields in reordered JSON manifests and lockfiles. (OpenAI-Codex_format_architecture)
 - Pin the formatter planner to Ubuntu 24.04 for the required Python 3.12.8 runtime. (OpenAI-Codex_format_architecture)

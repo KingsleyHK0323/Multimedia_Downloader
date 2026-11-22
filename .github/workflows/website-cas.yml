@@ -35,12 +35,6 @@ jobs:
           [[ "$ACTUAL_REF" == 'refs/heads/Source_Code' && "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
           tip="$(gh api repos/KingsleyHK0323/Multimedia_Downloader/git/ref/heads/Source_Code --jq '.object.sha')"
           [[ "$tip" == "$WORKFLOW_SHA" ]]
-      # OpenAI-Codex_ruleset_architecture: keep App writes disabled until the full candidate is verified.
-      - name: Keep website App writing disabled
-        shell: bash
-        run: |
-          echo '::error::Website App writing remains disabled pending safe writer and CAS verification.'
-          exit 1
       - name: Create repository-scoped App token
         id: app-token
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3

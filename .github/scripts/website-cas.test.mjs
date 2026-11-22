@@ -236,7 +236,7 @@ test('rejects repeated timeline cursors and state changes between snapshots', as
   assert.equal(changed.state.writes.length, 0);
 });
 
-test('stages exact inline coordinator with an unconditional stop before any App token', () => {
+test('requires explicit opt-in before obtaining a token and uses the exact inline coordinator', () => {
   const workflow = readFileSync(new URL('../workflows/website-cas.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
   const module = readFileSync(new URL('./website-cas.mjs', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
   const start = '            // BEGIN EXACT WEBSITE CAS\n';
@@ -247,11 +247,12 @@ test('stages exact inline coordinator with an unconditional stop before any App 
     return line.slice(12);
   }).join('\n');
   assert.equal(embedded, module.replace(/^export /gm, '').trimEnd());
-  const stop = workflow.indexOf('name: Keep website App writing disabled');
-  const fail = workflow.indexOf('          exit 1', stop);
+  const revision = workflow.indexOf('name: Verify exact coordinator revision');
   const token = workflow.indexOf('name: Create repository-scoped App token');
-  assert.ok(stop > 0 && fail > stop && token > fail);
-  assert.match(workflow, /vars\.AUTOMATION_WEBSITE_CAS == 'enabled'/);
+  assert.ok(revision > 0 && token > revision);
+  assert.match(workflow.slice(0, revision), /github\.repository == 'KingsleyHK0323\/Multimedia_Downloader' &&[\s\S]*github\.ref == 'refs\/heads\/Source_Code' &&[\s\S]*vars\.AUTOMATION_WEBSITE_CAS == 'enabled'/);
+  assert.match(workflow.slice(revision, token), /\[\[ "\$tip" == "\$WORKFLOW_SHA" \]\]/);
+  assert.doesNotMatch(workflow, /name: Keep website App writing disabled/);
   assert.match(workflow, /group: automation-service-reconcile/);
   assert.doesNotMatch(workflow, /actions\/checkout|import\(/);
 });

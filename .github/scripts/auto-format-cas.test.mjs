@@ -260,6 +260,60 @@ test('merged cleanup race is a no-op without relying on branch rules', async () 
   }
 });
 
+test('a merged service ref moving after both snapshots is a no-op', async () => {
+  for (const [planned, current] of [[oid('a'), null], [null, oid('a')]]) {
+    const f = cleanupTransition({ requirePr: true, bypass: true });
+    try {
+      for (const name of ['one', 'two']) {
+        const path = join(f.state.root, name, 'manifest.json');
+        const plan = JSON.parse(readFileSync(path, 'utf8'));
+        plan.service = planned;
+        writeFileSync(path, JSON.stringify(plan));
+      }
+      if (current !== null) f.state.refs.set(service, current);
+      const result = await reconcileFormatter(f.args);
+      assert.deepEqual(result, { status: 'idle-after-merged-cleanup', pr: 88, head: oid('a') });
+      assert.deepEqual(f.state.writes, []);
+    } finally { f.dispose(); }
+  }
+});
+
+test('a moved ref cannot hide work, warnings, history, or an unmerged PR', async () => {
+  const mutations = [
+    plan => { plan.files = [{ path: 'test.py', mode: '100644', source: blob(source),
+      last_change: oid('a'), output: blob(formatted), sha256: hash(formatted), size: formatted.length }]; },
+    plan => { plan.warning_count = 1; plan.warnings = [{ path: 'test.py', reason: 'unsafe-path' }]; },
+    plan => { plan.limited = true; },
+    plan => { plan.prior = [{ base: oid('a'), head: oid('b'), tree: oid('c'), digest: '0'.repeat(64) }]; },
+  ];
+  for (const mutate of mutations) {
+    const f = cleanupTransition();
+    try {
+      for (const name of ['one', 'two']) {
+        const path = join(f.state.root, name, 'manifest.json');
+        const plan = JSON.parse(readFileSync(path, 'utf8'));
+        plan.service = oid('a');
+        mutate(plan);
+        writeFileSync(path, JSON.stringify(plan));
+      }
+      await assert.rejects(reconcileFormatter(f.args), /service branch moved/);
+      assert.deepEqual(f.state.writes, []);
+    } finally { f.dispose(); }
+  }
+  const f = cleanupTransition();
+  try {
+    for (const name of ['one', 'two']) {
+      const path = join(f.state.root, name, 'manifest.json');
+      const plan = JSON.parse(readFileSync(path, 'utf8'));
+      plan.service = oid('a');
+      writeFileSync(path, JSON.stringify(plan));
+    }
+    f.state.prs[0].merged_at = null;
+    await assert.rejects(reconcileFormatter(f.args));
+    assert.deepEqual(f.state.writes, []);
+  } finally { f.dispose(); }
+});
+
 test('merged cleanup race is rejected without exact merged PR identity', async () => {
   const mutations = [
     f => { f.state.prs[0].merged_at = null; },

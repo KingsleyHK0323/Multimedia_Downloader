@@ -284,7 +284,13 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
   }
   const previous = allPrs.find(pr => isBot(pr.user) && typeof pr.body === 'string' && pr.body.includes(MARKER));
   let serviceHead = await getRef(SERVICE, true);
-  if (mergedCleanupRace) {
+  // OpenAI-Codex_format_architecture: the ref can also disappear after both snapshots.
+  const noWork = plan.files.length === 0 && plan.warning_count === 0 &&
+    plan.warnings.length === 0 && plan.prior.length === 0 && plan.limited === false;
+  const cleanupRefMoved = plan.service !== serviceHead &&
+    (plan.service === null || plan.service === base) &&
+    (serviceHead === null || serviceHead === base);
+  if (noWork && (mergedCleanupRace || cleanupRefMoved)) {
     const verifyMergedCleanup = async values => {
       const latest = values[0];
       if (values.some(pr => pr.state === 'open') || !latest || latest.state !== 'closed' ||
