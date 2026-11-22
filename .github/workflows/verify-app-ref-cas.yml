@@ -51,10 +51,14 @@ jobs:
                 if (approved.object?.sha !== context.sha) throw new Error('Approved branch changed before token creation.');
                 if (pr.state !== 'open' || pr.user?.id !== 157894869 ||
                     pr.head?.repo?.id !== 1251103365 || pr.head?.ref !== branch ||
-                    pr.head?.sha !== context.sha || pr.base?.repo?.id !== 1251103365 ||
+                    pr.base?.repo?.id !== 1251103365 ||
                     pr.base?.ref !== 'Source_Code' || pr.base?.sha !== base.object?.sha ||
                     !Number.isSafeInteger(pr.number) || pr.number < 1) {
                   throw new Error('CAS verification PR identity or base is invalid.');
+                }
+                if (pr.head?.sha !== context.sha) {
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  continue;
                 }
                 core.setOutput('pr-number', String(pr.number));
                 core.setOutput('base-sha', pr.base.sha);
@@ -109,6 +113,16 @@ jobs:
                 branchRef.object?.sha !== context.sha) {
               throw new Error('PR or branch changed before CAS verification.');
             }
+            if (process.env.PROBE_BASE === context.sha) throw new Error('The PR head must differ from its base.');
+            const history = (await github.rest.repos.compareCommitsWithBasehead({
+              owner, repo, basehead: process.env.PROBE_BASE + '...' + context.sha, per_page: 1,
+            })).data;
+            if (history.base_commit?.sha !== process.env.PROBE_BASE ||
+                history.merge_base_commit?.sha !== process.env.PROBE_BASE ||
+                history.status !== 'ahead' || history.behind_by !== 0 ||
+                !Number.isSafeInteger(history.ahead_by) || history.ahead_by < 1) {
+              throw new Error('The approved base is not an ancestor of the temporary branch.');
+            }
             const app = getOctokit(process.env.APP_TOKEN);
             const info = (await app.request('GET /apps/{app_slug}', { app_slug: process.env.APP_SLUG })).data;
             if (info?.id !== 5868451 || info.slug !== process.env.APP_SLUG) {
@@ -120,11 +134,12 @@ jobs:
             }
             const message = 'test: record automation App CAS verification';
             const created = (await app.rest.git.createCommit({
-              owner, repo, message, tree: previous.tree.sha, parents: [context.sha],
+              owner, repo, message, tree: previous.tree.sha, parents: [context.sha, process.env.PROBE_BASE],
             })).data;
             if (!validSha(created.sha) || created.tree?.sha !== previous.tree.sha ||
                 created.message !== message || !Array.isArray(created.parents) ||
-                created.parents.length !== 1 || created.parents[0]?.sha !== context.sha) {
+                created.parents.length !== 2 || created.parents[0]?.sha !== context.sha ||
+                created.parents[1]?.sha !== process.env.PROBE_BASE) {
               throw new Error('Created CAS verification commit is not empty.');
             }
             const [original, unreferenced] = await Promise.all([
@@ -151,7 +166,8 @@ jobs:
             if (updated.object?.sha !== created.sha) throw new Error('Temporary branch did not advance as expected.');
             const confirmed = (await github.rest.git.getCommit({ owner, repo, commit_sha: created.sha })).data;
             if (confirmed.tree?.sha !== previous.tree.sha || !Array.isArray(confirmed.parents) ||
-                confirmed.parents.length !== 1 || confirmed.parents[0]?.sha !== context.sha) {
+                confirmed.parents.length !== 2 || confirmed.parents[0]?.sha !== context.sha ||
+                confirmed.parents[1]?.sha !== process.env.PROBE_BASE) {
               throw new Error('The updated commit is not an empty fast-forward.');
             }
             for (let attempt = 0; attempt < 20; attempt++) {
