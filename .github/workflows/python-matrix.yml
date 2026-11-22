@@ -3,7 +3,8 @@ name: Python matrix tests
 
 on:
   push:
-    branches: [Source_Code]
+    # OpenAI-Codex: verify the approved automation branch before a checked source update.
+    branches: [Source_Code, automation/protected-workflows]
   pull_request:
     branches: [Source_Code]
   workflow_dispatch:
