@@ -44,6 +44,7 @@ The build uses the repository project path `/Multimedia_Downloader/` so its stat
 
 - `src/` — Svelte site and mock app UI.
 - `.github/workflows/pages.yml` — static Pages build and deployment.
+- `.github/workflows/website-ci.yml` — non-deploying build checks for website pull requests and approved temporary candidates.
 - `PRODUCT.md` — product truth and preview constraints.
 - `THIRD_PARTY_NOTICES.md` — bundled font licenses and notices.
 
