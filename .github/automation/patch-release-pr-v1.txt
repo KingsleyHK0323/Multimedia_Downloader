@@ -1,0 +1,1 @@
+OpenAI-Codex_format_architecture: auto-patch PR mode migration v1

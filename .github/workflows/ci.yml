@@ -121,7 +121,8 @@ jobs:
             .github/workflows/auto-format.yml .github/workflows/formatter-plan.yml .github/workflows/formatter-app-cas.yml \
             .github/workflows/automation-health-cas.yml .github/workflows/website-cas.yml \
             .github/workflows/automation-health.yml .github/workflows/automation-health-merge.yml \
-            .github/workflows/patch-release-observer.yml
+            .github/workflows/patch-release-observer.yml .github/workflows/auto-patch-release.yml \
+            .github/workflows/auto-patch-staged.yml .github/workflows/auto-patch-cas-staged.yml
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -135,6 +136,28 @@ jobs:
       # OpenAI-Codex_health_release_architecture: verify exact release PR marker matching.
       - name: Test automatic release PR marker
         run: node --test .github/scripts/auto-patch-marker.test.mjs
+
+      # OpenAI-Codex_health_release_architecture: exercise the staged end-to-end patch path without publishing.
+      - name: Test staged patch automation safeguards
+        env:
+          PATCH_WRITER_LEGACY: ${{ vars.AUTOMATION_PATCH_PR_MODE == '' || vars.AUTOMATION_PATCH_PR_MODE == 'legacy' }}
+          PATCH_CAS_ENABLED: ${{ vars.AUTOMATION_PATCH_PR_MODE == 'enabled' && vars.AUTOMATION_PATCH_CAS == 'enabled' }}
+        run: |
+          printf 'Patch legacy mode: %s\n' "$PATCH_WRITER_LEGACY"
+          printf 'Patch CAS opt-in: %s\n' "$PATCH_CAS_ENABLED"
+          node --test \
+            .github/scripts/patch-release-policy.test.mjs \
+            .github/scripts/patch-source-authorization.test.mjs \
+            .github/scripts/patch-real-files.test.mjs \
+            .github/scripts/auto-patch-pr-writer.test.mjs \
+            .github/scripts/patch-push-checks.test.mjs \
+            .github/scripts/patch-candidate-policy.test.mjs \
+            .github/scripts/auto-patch-cas.test.mjs \
+            .github/scripts/auto-patch-staged.test.mjs \
+            .github/scripts/auto-patch-cas-staged.test.mjs \
+            .github/scripts/patch-legacy-mode.test.mjs \
+            .github/scripts/verify-published-patch.test.mjs \
+            .github/scripts/patch-release-finalizer.test.mjs
 
       # OpenAI-Codex: exercise trusted workflow checkout boundaries.
       - name: Test trusted workflow checkouts
