@@ -76,6 +76,15 @@ jobs:
       - name: Test formatter change selection
         run: node --test .github/scripts/auto-format.test.mjs
 
+      # OpenAI-Codex_format_architecture: prevent release-helper formatting from creating a later bot commit.
+      - name: Check release Python helper formatting
+        run: >-
+          python -I -m black --check --diff --no-color
+          .github/scripts/download-release-artifacts.py
+          .github/scripts/download-release-artifacts.test.py
+          .github/scripts/stage-release-artifacts.py
+          .github/scripts/stage-release-artifacts.test.py
+
   # OpenAI-Codex: test the actual release input guard on Linux.
   release-input-guard:
     runs-on: ubuntu-latest
