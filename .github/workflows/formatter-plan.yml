@@ -21,7 +21,8 @@ permissions:
 jobs:
   plan:
     name: Formatter plan ${{ inputs.replica }}
-    runs-on: ubuntu-latest
+    # OpenAI-Codex_format_architecture: Python 3.12.8 is available for this pinned runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     outputs:
       artifact_id: ${{ steps.retained.outputs.artifact-id }}

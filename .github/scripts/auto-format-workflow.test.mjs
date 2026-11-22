@@ -24,6 +24,8 @@ test('two independent, unprivileged planner calls retain their own artifact iden
   assert.equal((main.match(/uses: \.\/\.github\/workflows\/formatter-plan\.yml/g) || []).length, 2);
   assert.match(main, /replica: one/);
   assert.match(main, /replica: two/);
+  assert.match(plan, /runs-on: ubuntu-24\.04/);
+  assert.match(plan, /python-version: '3\.12\.8'/);
   assert.match(plan, /artifact_id: \$\{\{ steps\.retained\.outputs\.artifact-id \}\}/);
   assert.match(plan, /artifact_digest: \$\{\{ steps\.retained\.outputs\.artifact-digest \}\}/);
   assert.doesNotMatch(plan, /secrets\.|create-github-app-token|contents: write|pull-requests: write/);
