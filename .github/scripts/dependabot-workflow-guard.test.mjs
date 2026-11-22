@@ -203,7 +203,7 @@ test('auto-merge requires the exact tested head, base and merge context', { skip
     badCheckApp = false, failedCheck = false, moreOpenPRs = false, missingAssociated = false,
     badCommitter = false, badRunActor = false, ambiguousInitial = false, incompleteInitial = false,
     executableAllowed = false, symlinkAllowed = false, newPath = false, nonallowedChange = false,
-    draftInitial = false, draftFinal = false } = {}) => {
+    draftInitial = false, draftFinal = false, draftAssociated = false } = {}) => {
     const log = path.join(root, Math.random().toString(36).slice(2));
     const repo = { id: 1251103365, full_name: 'KingsleyHK0323/Multimedia_Downloader' };
     const pr = { number: 66, state: 'open', draft: draftInitial, user: { login: 'dependabot[bot]', id: 49699333, type: 'Bot' }, mergeable: true,
@@ -255,7 +255,7 @@ test('auto-merge requires the exact tested head, base and merge context', { skip
     ] });
     const check = (name, id) => ({ id, name, head_sha: sha, app: { id: badCheckApp ? 9 : 15368 },
       status: 'completed', conclusion: failedCheck ? 'failure' : 'success' });
-    const associated = missingAssociated ? [] : [pr, ...(moreOpenPRs ? [{ ...pr, number: 67 }] : [])];
+    const associated = missingAssociated ? [] : [{ ...pr, draft: draftAssociated }, ...(moreOpenPRs ? [{ ...pr, number: 67 }] : [])];
     const pages = [[{ filename: protectedFile ? '.github/actions/unsafe/action.yml' : 'requirements-dev.txt', status: 'modified' }]];
     const prelude = String.raw`
       gh() {
@@ -383,7 +383,8 @@ test('auto-merge requires the exact tested head, base and merge context', { skip
     { twoParents: true }, { wrongParent: true }, { wrongMergeParents: true }, { wrongMergeTree: true },
     { wrongGithubTree: true }, { incompleteTree: true }, { badSignature: true }, { badCommitAuthor: true }, { badCommitter: true },
     { badCheckApp: true }, { failedCheck: true }, { moreOpenPRs: true }, { missingAssociated: true },
-    { executableAllowed: true }, { symlinkAllowed: true }, { newPath: true }, { nonallowedChange: true }, { draftFinal: true }]) {
+    { executableAllowed: true }, { symlinkAllowed: true }, { newPath: true }, { nonallowedChange: true },
+    { draftFinal: true }, { draftAssociated: true }]) {
     const result = run(variant);
     assert.match(result, /APP_CREATED/);
     assert.doesNotMatch(result, /api graphql --input -/);
