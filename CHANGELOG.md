@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Retry Dependabot automation with a read-only PR scan and exact-head revalidation; provide a dry-run preview. (OpenAI-Codex_ruleset_architecture)
 - Stage opt-in Dependabot automation for existing dependency manifests, with verified checks and a protected non-force Source_Code App update. (OpenAI-Codex_ruleset_architecture)
 - Allow explicit opt-in for App patch proposals and checked source updates while retaining legacy mode by default. (OpenAI-Codex_health_release_architecture)
 - Stage disabled App patch-release proposals with owner-verified label history, checked Source_Code updates, and create-only tag reconciliation. (OpenAI-Codex_health_release_architecture)

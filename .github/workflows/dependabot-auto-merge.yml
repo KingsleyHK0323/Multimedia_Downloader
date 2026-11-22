@@ -7,6 +7,12 @@ on:
   workflow_run:
     workflows: [CI, Python matrix tests]
     types: [completed]
+  workflow_dispatch:
+    inputs:
+      head_sha:
+        description: Exact same-repository Dependabot PR head SHA
+        required: true
+        type: string
 
 permissions:
   actions: write
@@ -16,8 +22,9 @@ permissions:
 
 # OpenAI-Codex: serialize successful checks for the same dependency PR head.
 concurrency:
-  group: dependabot-auto-merge-${{ github.event.workflow_run.head_sha }}
-  cancel-in-progress: false
+  # OpenAI-Codex_ruleset_architecture: serialize retries for the same head without cancelling them.
+  group: dependabot-auto-merge-${{ github.event_name == 'workflow_dispatch' && inputs.head_sha || github.event.workflow_run.head_sha }}
+  queue: max
 
 jobs:
   auto-merge:
@@ -25,8 +32,10 @@ jobs:
       github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
       github.ref == 'refs/heads/Source_Code' &&
       vars.AUTOMATION_DEPENDABOT_CAS == 'enabled' &&
-      github.event.workflow_run.conclusion == 'success' &&
-      github.event.workflow_run.event == 'pull_request'
+      ((github.event_name == 'workflow_run' &&
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'pull_request') ||
+       github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       - name: Verify eligible Dependabot PR and exact checks
@@ -34,7 +43,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.head_sha || github.event.workflow_run.head_sha }}
           WORKFLOW_SHA: ${{ job.workflow_sha }}
         run: |
           set -euo pipefail
@@ -263,7 +272,7 @@ jobs:
           APP_SLUG: ${{ steps.merge-app.outputs.app-slug }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_SHA: ${{ github.event_name == 'workflow_dispatch' && inputs.head_sha || github.event.workflow_run.head_sha }}
           WORKFLOW_SHA: ${{ job.workflow_sha }}
           PR_NUMBER: ${{ steps.candidate.outputs.pr_number }}
           BASE_SHA: ${{ steps.candidate.outputs.base_sha }}

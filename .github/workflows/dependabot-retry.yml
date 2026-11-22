@@ -1,0 +1,139 @@
+# OpenAI-Codex_ruleset_architecture: retry fully checked Dependabot updates after transient failures.
+name: Retry Dependabot updates
+
+on:
+  schedule:
+    - cron: '23 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List candidate heads without dispatching the merge workflow
+        type: boolean
+        required: true
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: dependabot-retry-scan
+  queue: max
+
+jobs:
+  scan:
+    if: >-
+      github.repository_id == '1251103365' &&
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.ref == 'refs/heads/Source_Code' &&
+      (vars.AUTOMATION_DEPENDABOT_CAS == 'enabled' ||
+       (github.event_name == 'workflow_dispatch' && inputs.dry_run == true))
+    permissions:
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      heads: ${{ steps.scan.outputs.heads }}
+      count: ${{ steps.scan.outputs.count }}
+    steps:
+      - name: Scan open Dependabot PRs without writing
+        id: scan
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        with:
+          script: |
+            // OpenAI-Codex_ruleset_architecture: PR metadata is only a wake-up, never authorization.
+            const { owner, repo } = context.repo;
+            const sha = value => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+            if (owner + '/' + repo !== 'KingsleyHK0323/Multimedia_Downloader' ||
+                context.ref !== 'refs/heads/Source_Code' ||
+                !['schedule', 'workflow_dispatch'].includes(context.eventName) ||
+                !sha(process.env.WORKFLOW_SHA)) throw new Error('Unexpected scan context.');
+            const seen = new Set(), heads = new Set();
+            let complete = false, total = 0;
+            for (let page = 1; page <= 11; page++) {
+              const response = await github.rest.pulls.list({
+                owner, repo, state: 'open', base: 'Source_Code', per_page: 100, page,
+              });
+              const prs = response.data;
+              if (!Array.isArray(prs) || prs.length > 100) throw new Error('Invalid PR page.');
+              total += prs.length;
+              if (total > 1000) throw new Error('Too many open PRs for a complete retry scan.');
+              for (const pr of prs) {
+                if (!Number.isSafeInteger(pr?.number) || pr.number < 1 || seen.has(pr.number) ||
+                    pr.state !== 'open' || pr.base?.ref !== 'Source_Code' ||
+                    !Number.isSafeInteger(pr.user?.id) || typeof pr.user?.login !== 'string')
+                  throw new Error('Open PR listing is incomplete or changed while paging.');
+                seen.add(pr.number);
+                if (pr.user.id !== 49699333 || pr.user.login !== 'dependabot[bot]') continue;
+                if (pr.user.type !== 'Bot' || typeof pr.draft !== 'boolean' ||
+                    !Number.isSafeInteger(pr.base?.repo?.id) || !Number.isSafeInteger(pr.head?.repo?.id) ||
+                    !sha(pr.head?.sha)) throw new Error('Dependabot PR metadata is incomplete.');
+                if (pr.draft || pr.base.repo.id !== 1251103365 || pr.head.repo.id !== 1251103365) continue;
+                heads.add(pr.head.sha);
+                if (heads.size > 100) throw new Error('Too many Dependabot heads for one retry scan.');
+              }
+              if (prs.length < 100) { complete = true; break; }
+            }
+            if (!complete) throw new Error('The open PR listing exceeded its page limit.');
+            const ref = (await github.rest.git.getRef({ owner, repo, ref: 'heads/Source_Code' })).data;
+            if (ref?.ref !== 'refs/heads/Source_Code' || ref.object?.sha !== process.env.WORKFLOW_SHA)
+              throw new Error('Source_Code advanced during the retry scan.');
+            core.setOutput('heads', JSON.stringify([...heads].sort()));
+            core.setOutput('count', String(heads.size));
+            core.notice('Read-only scan found ' + heads.size + ' Dependabot heads.');
+
+  dispatch:
+    needs: scan
+    if: >-
+      needs.scan.outputs.count != '0' &&
+      vars.AUTOMATION_DEPENDABOT_CAS == 'enabled' &&
+      (github.event_name == 'schedule' ||
+       (github.event_name == 'workflow_dispatch' && inputs.dry_run == false))
+    permissions:
+      actions: write
+      contents: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Request exact-head revalidation
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          HEADS: ${{ needs.scan.outputs.heads }}
+        with:
+          script: |
+            // OpenAI-Codex_ruleset_architecture: dispatch cannot authorize a merge; every head is revalidated.
+            const { owner, repo } = context.repo;
+            const sha = value => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+            if (owner + '/' + repo !== 'KingsleyHK0323/Multimedia_Downloader' ||
+                context.ref !== 'refs/heads/Source_Code' ||
+                !['schedule', 'workflow_dispatch'].includes(context.eventName) ||
+                !sha(process.env.WORKFLOW_SHA)) throw new Error('Unexpected dispatch context.');
+            const heads = JSON.parse(process.env.HEADS);
+            if (!Array.isArray(heads) || !heads.length || heads.length > 100 ||
+                heads.some(h => !sha(h)) || new Set(heads).size !== heads.length)
+              throw new Error('Invalid scanned head set.');
+            const assertCurrent = async () => {
+              const ref = (await github.rest.git.getRef({ owner, repo, ref: 'heads/Source_Code' })).data;
+              if (ref?.ref !== 'refs/heads/Source_Code' || ref.object?.sha !== process.env.WORKFLOW_SHA)
+                throw new Error('Source_Code advanced before or during retry dispatch.');
+            };
+            let failures = 0;
+            for (const head of heads) {
+              await assertCurrent();
+              try {
+                const result = await github.request('POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches', {
+                  owner, repo, workflow_id: 'dependabot-auto-merge.yml', ref: 'Source_Code',
+                  inputs: { head_sha: head }, return_run_details: true,
+                  headers: { 'X-GitHub-Api-Version': '2022-11-28' },
+                });
+                if (!Number.isSafeInteger(result.data?.workflow_run_id) || result.data.workflow_run_id < 1)
+                  throw new Error('Workflow dispatch did not return a run ID.');
+                core.notice('Requested revalidation for ' + head + '; run ' + result.data.workflow_run_id + ' is not yet complete.');
+              } catch (error) {
+                failures++;
+                core.warning('A Dependabot revalidation dispatch could not be confirmed.');
+              }
+            }
+            if (failures) throw new Error(failures + ' retry dispatches could not be confirmed.');
