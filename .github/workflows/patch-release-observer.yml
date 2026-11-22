@@ -1,0 +1,55 @@
+# OpenAI-Codex_health_release_architecture: record merge-event evidence without privileged code.
+name: Observe merged patch PR
+on:
+  pull_request:
+    branches: [Source_Code]
+    types: [closed]
+permissions: {}
+jobs:
+  observe:
+    if: >-
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.event.repository.id == 1251103365 &&
+      github.event.sender.id == 157894869 &&
+      github.event.pull_request.user.id == 157894869 &&
+      github.event.pull_request.head.repo.id == 1251103365 &&
+      github.event.pull_request.base.repo.id == 1251103365 &&
+      github.event.pull_request.head.ref == 'automation/protected-workflows' &&
+      github.event.pull_request.base.ref == 'Source_Code' &&
+      github.event.pull_request.merged == true
+    name: patch-event-${{ github.event.pull_request.number }}-${{ github.event.pull_request.merge_commit_sha }}-${{ github.event.pull_request.head.sha }}-${{ github.event.pull_request.user.id }}-${{ contains(github.event.pull_request.labels.*.name, 'release:patch') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Validate the merged event metadata
+        env:
+          OBSERVED_REPOSITORY: ${{ github.repository }}
+          OBSERVED_REPOSITORY_ID: ${{ github.event.repository.id }}
+          OBSERVED_REF: ${{ github.ref }}
+          OBSERVED_ACTION: ${{ github.event.action }}
+          OBSERVED_NUMBER: ${{ github.event.pull_request.number }}
+          OBSERVED_MERGED: ${{ github.event.pull_request.merged }}
+          OBSERVED_MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          OBSERVED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          OBSERVED_AUTHOR_ID: ${{ github.event.pull_request.user.id }}
+          OBSERVED_SENDER_ID: ${{ github.event.sender.id }}
+          OBSERVED_HEAD_ID: ${{ github.event.pull_request.head.repo.id }}
+          OBSERVED_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          OBSERVED_BASE_ID: ${{ github.event.pull_request.base.repo.id }}
+          OBSERVED_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          OBSERVED_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'release:patch') }}
+        shell: bash
+        run: |
+          # BEGIN PATCH_OBSERVER_VALIDATION
+          set -euo pipefail
+          [[ "$OBSERVED_REPOSITORY" == 'KingsleyHK0323/Multimedia_Downloader' ]]
+          [[ "$OBSERVED_REPOSITORY_ID" == '1251103365' && "$OBSERVED_BASE_ID" == '1251103365' && "$OBSERVED_HEAD_ID" == '1251103365' ]]
+          [[ "$OBSERVED_REF" == 'refs/heads/Source_Code' && "$OBSERVED_BASE_REF" == 'Source_Code' ]]
+          [[ "$OBSERVED_HEAD_REF" == 'automation/protected-workflows' && "$OBSERVED_SENDER_ID" == '157894869' ]]
+          [[ "$OBSERVED_ACTION" == 'closed' && "$OBSERVED_MERGED" == 'true' ]]
+          [[ "$OBSERVED_NUMBER" =~ ^[1-9][0-9]*$ && "$OBSERVED_AUTHOR_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$OBSERVED_AUTHOR_ID" == '157894869' ]]
+          [[ "$OBSERVED_MERGE_SHA" =~ ^[0-9a-f]{40}$ && "$OBSERVED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$OBSERVED_LABEL" == 'true' || "$OBSERVED_LABEL" == 'false' ]]
+          echo 'Validated merge metadata; no release action was requested.'
+          # END PATCH_OBSERVER_VALIDATION
