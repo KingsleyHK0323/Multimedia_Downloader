@@ -143,6 +143,11 @@ jobs:
               findings.push("At least one open Dependabot alert has no matching security-update attempt. Review the alert and current update configuration.");
             }
 
+            // OpenAI-Codex: a successful update attempt does not resolve an open alert.
+            if (openAlerts.length > 0) {
+              findings.push("Dependabot maintenance is not fully verified; review current update activity.");
+            }
+
             const pullRequests = await github.paginate(
               github.rest.pulls.list,
               { owner, repo, state: "open", base: "Source_Code", per_page: 100 },

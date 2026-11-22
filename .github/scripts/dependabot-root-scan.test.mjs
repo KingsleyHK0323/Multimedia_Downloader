@@ -80,7 +80,11 @@ test('reports the latest failed security update only while a related alert is op
   assert.match(failed[0].body, /security update for an open alert did not succeed/);
   assert.doesNotMatch(failed[0].body, /glib/);
   assert.deepEqual(await run([...bases, oldRun], oldRun), []);
-  assert.deepEqual(await run([...bases, oldRun, newRun], oldRun, alerts), []);
+  const unresolved = await run([...bases, oldRun, newRun], oldRun, alerts);
+  assert.equal(unresolved.length, 1);
+  assert.match(unresolved[0].body, /Dependabot maintenance is not fully verified/);
+  assert.doesNotMatch(unresolved[0].body, /security update for an open alert did not succeed/);
+  assert.deepEqual(await run([...bases, oldRun, newRun], oldRun, alerts, true), []);
 });
 
 test('warns when open alerts cannot be matched and preview makes no issue changes', async () => {
