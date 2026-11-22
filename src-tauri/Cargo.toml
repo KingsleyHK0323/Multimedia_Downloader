@@ -17,3 +17,7 @@ tauri-plugin-opener = "2.5.4"
 [profile.release]
 strip = true
 lto = true
+
+# OpenAI-Codex: use the verified, pinned GLib 0.18 soundness backport.
+[patch.crates-io]
+glib = { git = "https://github.com/KingsleyHK0323/Multimedia_Downloader", rev = "1677375f54686a3fe2f1f383e068aa005606013b" }

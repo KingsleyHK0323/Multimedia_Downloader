@@ -42,6 +42,13 @@ released under [The Unlicense](https://github.com/yt-dlp/yt-dlp/blob/master/LICE
 public domain equivalent, no attribution legally required, credited here
 regardless.
 
+<!-- OpenAI-Codex: record the GLib backport and original license. -->
+### GLib 0.18 soundness backport — MIT
+
+The Linux GTK dependency graph uses `glib` 0.18.5 from [this pinned repository commit](https://github.com/KingsleyHK0323/Multimedia_Downloader/commit/1677375f54686a3fe2f1f383e068aa005606013b). The original crates.io archive has SHA-256 `233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5`; the source retains its [MIT license](https://github.com/KingsleyHK0323/Multimedia_Downloader/blob/1677375f54686a3fe2f1f383e068aa005606013b/src-tauri/vendor/glib/LICENSE) and applies the [upstream soundness fix](https://github.com/gtk-rs/gtk-rs-core/pull/1343) to `VariantStrIter`.
+
+The package version remains 0.18.5, so [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g) can still be reported. Continue monitoring it and replace the backport when the supported Tauri GTK stack accepts an official fixed release.
+
 ### Other dependencies
 
 The frontend (Svelte, Vite, Tailwind CSS, lucide-svelte) and desktop shell

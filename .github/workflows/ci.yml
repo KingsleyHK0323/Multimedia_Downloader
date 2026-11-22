@@ -351,16 +351,20 @@ jobs:
 
       - name: cargo check
         working-directory: src-tauri
-        run: cargo check --all-targets
+        run: cargo check --all-targets --locked
 
       - name: cargo clippy
         working-directory: src-tauri
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
       # OpenAI-Codex_Fork_GitHub_REPO: execute Rust unit tests in CI.
       - name: cargo test
         working-directory: src-tauri
-        run: cargo test --all-targets
+        run: cargo test --all-targets --locked
+
+      # OpenAI-Codex: exercise the patched iterator in an optimized build.
+      - name: Test optimized GLib backport
+        run: python .github/scripts/test-glib-backport.py
 
   weekly-preview-health:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'

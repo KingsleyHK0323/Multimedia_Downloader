@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Backport the upstream GLib iterator soundness fix and test optimized iteration. (OpenAI-Codex)
 - Match Dependabot security update attempts to each alert's manifest directory. (OpenAI-Codex)
 - Verify the automation App with its supported client ID input. (OpenAI-Codex)
 - Use the verified client ID input across automation token requests. (OpenAI-Codex)
