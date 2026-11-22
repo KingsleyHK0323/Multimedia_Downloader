@@ -2,6 +2,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 
@@ -15,9 +16,13 @@ TAURI = ROOT / "src-tauri"
 
 
 def main():
+    cargo = shutil.which("cargo")
+    if cargo is None:
+        raise RuntimeError("The trusted Rust toolchain is unavailable.")
+    cargo = str(Path(cargo).resolve(strict=True))
     metadata = json.loads(
         subprocess.check_output(
-            ["cargo", "metadata", "--locked", "--format-version", "1"],
+            [cargo, "metadata", "--locked", "--format-version", "1"],
             cwd=TAURI,
             text=True,
         )
@@ -76,8 +81,9 @@ mod tests {
         encoding="utf-8",
     )
     env = dict(os.environ, CARGO_TARGET_DIR=str(probe / "target"))
-    subprocess.run(
-        ["cargo", "test", "--release", "--offline", "--manifest-path", str(probe / "Cargo.toml")],
+    # OpenAI-Codex: cargo comes from the configured CI toolchain; arguments are fixed.
+    subprocess.run(  # noqa: S603
+        [cargo, "test", "--release", "--offline", "--manifest-path", str(probe / "Cargo.toml")],
         cwd=probe,
         env=env,
         check=True,
