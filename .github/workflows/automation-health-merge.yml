@@ -1,0 +1,357 @@
+# OpenAI-Codex_health_release_architecture: verify health PRs without executing PR code.
+name: Merge verified automation health PR
+on:
+  workflow_run:
+    workflows: [CI, Python matrix tests]
+    types: [completed]
+  workflow_dispatch:
+  schedule:
+    - cron: '45 */6 * * *'
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+jobs:
+  merge-health:
+    if: >-
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.ref == 'refs/heads/Source_Code' &&
+      vars.AUTOMATION_PR_MODE == 'enabled' &&
+      vars.AUTOMATION_SAFE_MERGE == 'enabled'
+    concurrency:
+      group: automation-health-report
+      queue: max
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create a repository-scoped App token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          app-id: '5868451'
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Verify and merge an exact health report
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        with:
+          script: |
+            // OpenAI-Codex_health_release_architecture: merge only a verified health report after strict checks.
+            const { owner, repo } = context.repo;
+            const fullName = 'KingsleyHK0323/Multimedia_Downloader';
+            const baseName = 'Source_Code';
+            const path = '.github/automation/ci-health.json';
+            const bot = 'kingsley-multimedia-automation[bot]';
+            const branchPattern = /^automation\/ci-health-[1-9][0-9]*-[1-9][0-9]*(?:-[0-9a-f]{40})?$/;
+            const sha = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+            const crypto = require('node:crypto');
+            if (owner + '/' + repo !== fullName || process.env.APP_SLUG !== 'kingsley-multimedia-automation' ||
+                typeof process.env.APP_TOKEN !== 'string' || !process.env.APP_TOKEN.trim()) {
+              throw new Error('Unexpected repository or App identity.');
+            }
+            const app = getOctokit(process.env.APP_TOKEN);
+            const appInfo = (await app.request('GET /apps/{app_slug}', { app_slug: process.env.APP_SLUG })).data;
+            const botInfo = (await app.rest.users.getByUsername({ username: bot })).data;
+            if (appInfo?.id !== 5868451 || appInfo.slug !== process.env.APP_SLUG ||
+                botInfo?.id !== 359694872 || botInfo.login !== bot || botInfo.type !== 'Bot') {
+              throw new Error('The automation App or bot identity cannot be verified.');
+            }
+            const isBot = (user) => user?.id === 359694872 && user.login === bot && user.type === 'Bot';
+            const blobSha = (bytes) => crypto.createHash('sha1')
+              .update('blob ' + bytes.length + '\0').update(bytes).digest('hex');
+            const getRef = async (branch) => {
+              const data = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + branch })).data;
+              if (!data || data.ref !== 'refs/heads/' + branch || data.object?.type !== 'commit' || !sha(data.object.sha)) {
+                throw new Error('Branch ref is incomplete.');
+              }
+              return data.object.sha;
+            };
+            const getCommit = async (commitSha) => {
+              const data = (await github.rest.git.getCommit({ owner, repo, commit_sha: commitSha })).data;
+              if (!data || data.sha !== commitSha || !sha(data.tree?.sha)) throw new Error('Commit metadata is incomplete.');
+              return data;
+            };
+            const treeEntry = async (treeSha, name) => {
+              const data = (await github.rest.git.getTree({ owner, repo, tree_sha: treeSha })).data;
+              if (!data || data.sha !== treeSha || data.truncated !== false || !Array.isArray(data.tree)) {
+                throw new Error('Git tree is incomplete.');
+              }
+              const entries = data.tree.filter((entry) => entry.path === name);
+              if (entries.length !== 1 || !sha(entries[0].sha)) throw new Error('Report tree entry is missing or ambiguous.');
+              return entries[0];
+            };
+            const reportEntry = async (commitSha) => {
+              const commit = await getCommit(commitSha);
+              const gh = await treeEntry(commit.tree.sha, '.github');
+              if (gh.type !== 'tree' || gh.mode !== '040000') throw new Error('Unexpected .github tree entry.');
+              const automation = await treeEntry(gh.sha, 'automation');
+              if (automation.type !== 'tree' || automation.mode !== '040000') throw new Error('Unexpected automation tree entry.');
+              const file = await treeEntry(automation.sha, 'ci-health.json');
+              if (file.type !== 'blob' || file.mode !== '100644') throw new Error('Health report is not a regular file.');
+              return file;
+            };
+            const readFile = async (ref, expectedSha) => {
+              const data = (await github.rest.repos.getContent({ owner, repo, path, ref })).data;
+              if (!data || data.type !== 'file' || data.encoding !== 'base64' ||
+                  typeof data.content !== 'string' || data.sha !== expectedSha) {
+                throw new Error('Report content is incomplete.');
+              }
+              const encoded = data.content.replace(/\s/g, '');
+              if (!encoded || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+                throw new Error('Report content is not valid base64.');
+              }
+              const bytes = Buffer.from(encoded, 'base64');
+              if (bytes.toString('base64') !== encoded || blobSha(bytes) !== expectedSha) {
+                throw new Error('Report content does not match its blob.');
+              }
+              return bytes;
+            };
+            const latestReport = async () => {
+              const data = (await github.rest.actions.listWorkflowRuns({
+                owner, repo, workflow_id: 'ci.yml', branch: baseName, event: 'schedule', status: 'completed', per_page: 1,
+              })).data;
+              if (!data || !Number.isSafeInteger(data.total_count) || data.total_count < 1 ||
+                  !Array.isArray(data.workflow_runs) || data.workflow_runs.length !== 1) {
+                throw new Error('The latest scheduled CI run is unavailable.');
+              }
+              const run = data.workflow_runs[0];
+              const conclusions = new Set(['success', 'failure', 'neutral', 'cancelled', 'skipped', 'timed_out', 'action_required', 'startup_failure', 'stale']);
+              if (!run || !Number.isSafeInteger(run.id) || run.id < 1 || !Number.isSafeInteger(run.run_attempt) ||
+                  run.run_attempt < 1 || run.path !== '.github/workflows/ci.yml' || run.event !== 'schedule' ||
+                  run.head_branch !== baseName || run.status !== 'completed' || !conclusions.has(run.conclusion) ||
+                  run.html_url !== 'https://github.com/' + fullName + '/actions/runs/' + run.id) {
+                throw new Error('The latest scheduled CI metadata is incomplete.');
+              }
+              return Buffer.from(JSON.stringify({
+                generated_by: 'OpenAI-Codex', workflow: 'ci.yml', event: 'schedule', branch: baseName,
+                run_id: run.id, status: run.status, conclusion: run.conclusion, url: run.html_url,
+              }, null, 2) + '\n', 'utf8');
+            };
+            const ruleSnapshot = async () => {
+              const rules = await app.paginate('GET /repos/{owner}/{repo}/rules/branches/{branch}', {
+                owner, repo, branch: baseName, per_page: 100,
+              });
+              if (!Array.isArray(rules) || !rules.length || rules.length > 1000) {
+                throw new Error('Active Source_Code rules are unavailable.');
+              }
+              for (const rule of rules) {
+                if (!rule || !Number.isSafeInteger(rule.ruleset_id) || rule.ruleset_id < 1 ||
+                    !['Repository', 'Organization'].includes(rule.ruleset_source_type) ||
+                    typeof rule.ruleset_source !== 'string' || typeof rule.type !== 'string') {
+                  throw new Error('An applicable rule is incomplete.');
+                }
+              }
+              const ids = [...new Set(rules.map((rule) => rule.ruleset_id))].sort((a, b) => a - b);
+              const details = [];
+              for (const id of ids) {
+                const detail = (await app.request('GET /repos/{owner}/{repo}/rulesets/{ruleset_id}', {
+                  owner, repo, ruleset_id: id, includes_parents: true,
+                })).data;
+                if (!detail || detail.id !== id || detail.enforcement !== 'active' || detail.target !== 'branch' ||
+                    detail.current_user_can_bypass !== 'never' || !Array.isArray(detail.rules)) {
+                  throw new Error('An active ruleset is missing or bypassable by the App.');
+                }
+                details.push(detail);
+              }
+              if (!rules.some((rule) => rule.type === 'pull_request')) {
+                throw new Error('Source_Code does not require pull requests.');
+              }
+              const protectedChecks = new Set();
+              for (const rule of rules.filter((entry) => entry.type === 'required_status_checks')) {
+                const parameters = rule.parameters;
+                if (!parameters || parameters.strict_required_status_checks_policy !== true ||
+                    !Array.isArray(parameters.required_status_checks) || !parameters.required_status_checks.length) continue;
+                for (const check of parameters.required_status_checks) {
+                  if (check?.integration_id === 15368 &&
+                      ['Required CI', 'Required Python matrix'].includes(check.context)) protectedChecks.add(check.context);
+                }
+              }
+              if (!protectedChecks.has('Required CI') || !protectedChecks.has('Required Python matrix')) {
+                throw new Error('Strict required CI and matrix rules from GitHub Actions are missing.');
+              }
+              // The merge API binds only the PR head; an independent website restriction must block retargeting.
+              const website = 'Multimedia_Downloader_Web_Preview';
+              const websiteRules = await app.paginate('GET /repos/{owner}/{repo}/rules/branches/{branch}', {
+                owner, repo, branch: website, per_page: 100,
+              });
+              if (!Array.isArray(websiteRules) || !websiteRules.length || websiteRules.length > 1000) {
+                throw new Error('Active website branch rules are unavailable.');
+              }
+              for (const rule of websiteRules) {
+                if (!rule || !Number.isSafeInteger(rule.ruleset_id) || rule.ruleset_id < 1 ||
+                    !['Repository', 'Organization'].includes(rule.ruleset_source_type) ||
+                    typeof rule.ruleset_source !== 'string' || typeof rule.type !== 'string') {
+                  throw new Error('An applicable website rule is incomplete.');
+                }
+              }
+              const safeUpdate = (rule) => {
+                const value = rule.parameters;
+                return !!value && typeof value === 'object' && !Array.isArray(value) &&
+                  Object.keys(value).length === 1 &&
+                  Object.hasOwn(value, 'update_allows_fetch_and_merge') &&
+                  value.update_allows_fetch_and_merge === false;
+              };
+              const updates = websiteRules.filter((rule) => rule.type === 'update');
+              if (!updates.length || !updates.every(safeUpdate)) {
+                throw new Error('Website branch update restriction is missing or permits fetch-and-merge.');
+              }
+              const websiteIds = [...new Set(updates.map((rule) => rule.ruleset_id))].sort((a, b) => a - b);
+              const websiteDetails = [];
+              for (const id of websiteIds) {
+                const detail = (await app.request('GET /repos/{owner}/{repo}/rulesets/{ruleset_id}', {
+                  owner, repo, ruleset_id: id, includes_parents: true,
+                })).data;
+                if (!detail || detail.id !== id || detail.enforcement !== 'active' || detail.target !== 'branch' ||
+                    detail.current_user_can_bypass !== 'never' || !Array.isArray(detail.rules) ||
+                    !detail.rules.some((rule) => rule.type === 'update') ||
+                    !detail.rules.filter((rule) => rule.type === 'update').every(safeUpdate)) {
+                  throw new Error('A website update restriction is missing or bypassable by the App.');
+                }
+                websiteDetails.push({ id: detail.id, enforcement: detail.enforcement, target: detail.target,
+                  current_user_can_bypass: detail.current_user_can_bypass, rules: detail.rules });
+              }
+              return JSON.stringify({
+                rules: [...rules].sort((a, b) => a.ruleset_id - b.ruleset_id || a.type.localeCompare(b.type)),
+                details: details.map((d) => ({
+                  id: d.id, enforcement: d.enforcement, target: d.target,
+                  current_user_can_bypass: d.current_user_can_bypass, rules: d.rules,
+                })),
+                websiteRules: [...websiteRules].sort((a, b) => a.ruleset_id - b.ruleset_id || a.type.localeCompare(b.type)),
+                websiteDetails,
+              });
+            };
+            const inspectPr = async (number) => {
+              const pr = (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
+              const base = await getRef(baseName);
+              if (!pr || pr.number !== number || pr.state !== 'open' || !isBot(pr.user) ||
+                  pr.base?.repo?.full_name !== fullName || pr.base?.ref !== baseName || pr.base?.sha !== base ||
+                  pr.head?.repo?.full_name !== fullName || typeof pr.head?.ref !== 'string' ||
+                  !branchPattern.test(pr.head.ref) || !sha(pr.head.sha) || !sha(pr.merge_commit_sha) ||
+                  pr.mergeable !== true || pr.draft !== false || pr.auto_merge !== null ||
+                  !Array.isArray(pr.labels) || !pr.labels.every((label) => typeof label?.name === 'string') ||
+                  pr.labels.some((label) => label.name === 'release:patch') ||
+                  pr.changed_files !== 1 || pr.html_url !== 'https://github.com/' + fullName + '/pull/' + number ||
+                  await getRef(pr.head.ref) !== pr.head.sha) {
+                throw new Error('Health PR identity, refs, release label, or mergeability is unsafe.');
+              }
+              const files = await github.paginate(github.rest.pulls.listFiles, { owner, repo, pull_number: number, per_page: 100 });
+              if (!Array.isArray(files) || files.length !== 1 || files[0]?.filename !== path ||
+                  files[0]?.status !== 'modified' || files[0]?.previous_filename !== undefined || !sha(files[0]?.sha)) {
+                throw new Error('Health PR must change exactly the report file.');
+              }
+              await reportEntry(base);
+              const entry = await reportEntry(pr.head.sha);
+              const report = await latestReport();
+              if (entry.sha !== files[0].sha || entry.sha !== blobSha(report) ||
+                  !(await readFile(pr.head.sha, entry.sha)).equals(report)) {
+                throw new Error('Health PR report is not the latest trusted CI report.');
+              }
+              return { number, base, head: pr.head.sha, merge: pr.merge_commit_sha, branch: pr.head.ref, report: entry.sha };
+            };
+            const getRuns = async (head) => {
+              const all = [];
+              let total;
+              for (let page = 1; page <= 10; page++) {
+                const data = (await github.rest.actions.listWorkflowRunsForRepo({
+                  owner, repo, event: 'pull_request', head_sha: head, per_page: 100, page,
+                })).data;
+                if (!data || !Number.isSafeInteger(data.total_count) || data.total_count < 0 || data.total_count > 1000 ||
+                    !Array.isArray(data.workflow_runs) || data.workflow_runs.length > 100 ||
+                    (total !== undefined && data.total_count !== total)) {
+                  throw new Error('PR workflow run pagination is incomplete.');
+                }
+                total = data.total_count;
+                all.push(...data.workflow_runs);
+                if (all.length >= total) break;
+                if (data.workflow_runs.length !== 100) throw new Error('PR workflow run page is incomplete.');
+              }
+              if (all.length !== total) throw new Error('PR workflow run count is incomplete.');
+              return all;
+            };
+            const selectRuns = (runs, pr) => {
+              const expected = [
+                ['.github/workflows/ci.yml', 'CI'],
+                ['.github/workflows/python-matrix.yml', 'Python matrix tests'],
+              ];
+              return expected.map(([pathName, workflowName]) => {
+                const matches = runs.filter((run) => run?.path === pathName && run.head_sha === pr.head);
+                if (matches.some((run) => !Number.isSafeInteger(run.id) || run.id < 1)) {
+                  throw new Error('A matching workflow run is malformed.');
+                }
+                matches.sort((a, b) => b.id - a.id);
+                const run = matches[0];
+                if (!run || ['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(run.status)) return null;
+                if (run.name !== workflowName || run.event !== 'pull_request' ||
+                    run.repository?.full_name !== fullName || run.head_repository?.full_name !== fullName ||
+                    run.head_branch !== pr.branch || run.status !== 'completed' || run.conclusion !== 'success' ||
+                    !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1) {
+                  throw new Error('The latest CI or matrix run has not passed for this PR head.');
+                }
+                return { id: run.id, attempt: run.run_attempt, path: pathName };
+              });
+            };
+            const successfulJobs = async (run, required) => {
+              const data = (await github.rest.actions.listJobsForWorkflowRunAttempt({
+                owner, repo, run_id: run.id, attempt_number: run.attempt, per_page: 100,
+              })).data;
+              if (!data || !Number.isSafeInteger(data.total_count) || data.total_count < 0 || data.total_count > 100 ||
+                  !Array.isArray(data.jobs) || data.jobs.length !== data.total_count) {
+                throw new Error('Workflow job list is incomplete.');
+              }
+              for (const name of required) {
+                const found = data.jobs.filter((job) => job?.name === name);
+                if (found.length !== 1 || found[0].run_id !== run.id ||
+                    found[0].status !== 'completed' || found[0].conclusion !== 'success') {
+                  throw new Error('Required job did not succeed: ' + name);
+                }
+              }
+            };
+            const open = await github.paginate(github.rest.pulls.list, { owner, repo, state: 'open', base: baseName, per_page: 100 });
+            if (!Array.isArray(open) || open.length > 1000) throw new Error('Open PR listing is incomplete.');
+            const candidates = open.filter((pr) => isBot(pr?.user) && typeof pr.head?.ref === 'string' &&
+              branchPattern.test(pr.head.ref) && pr.head?.repo?.full_name === fullName);
+            if (candidates.length === 0) {
+              core.info('No open App health PR is eligible.');
+              return;
+            }
+            if (candidates.length !== 1 || !Number.isSafeInteger(candidates[0].number) || candidates[0].number < 1) {
+              throw new Error('More than one App health PR is open or its identity is incomplete.');
+            }
+            const number = candidates[0].number;
+            const rulesBefore = await ruleSnapshot();
+            const pr = await inspectPr(number);
+            const runs = selectRuns(await getRuns(pr.head), pr);
+            if (runs.some((run) => run === null)) {
+              core.info('Waiting for the latest CI and Python matrix runs.');
+              return;
+            }
+            const contextName = 'dependabot-context-' + pr.base + '-' + pr.head + '-' + pr.merge;
+            const ciJobs = [
+              contextName, 'Required CI', 'version-consistency', 'auto-format-guard', 'release-input-guard',
+              'lint', 'python-tests', 'frontend-check', 'rust-check',
+            ];
+            const matrixJobs = [contextName, 'Required Python matrix'];
+            for (const os of ['ubuntu-22.04', 'macos-15', 'windows-latest']) {
+              for (const version of ['3.10', '3.11', '3.12', '3.13', '3.14']) {
+                matrixJobs.push('python-tests (' + os + ', ' + version + ')');
+              }
+            }
+            await successfulJobs(runs[0], ciJobs);
+            await successfulJobs(runs[1], matrixJobs);
+            const rulesAfter = await ruleSnapshot();
+            const current = await inspectPr(number);
+            const latest = selectRuns(await getRuns(pr.head), current);
+            if (rulesBefore !== rulesAfter || JSON.stringify(pr) !== JSON.stringify(current) ||
+                JSON.stringify(runs) !== JSON.stringify(latest)) {
+              throw new Error('Rules, PR context, report, or latest test run changed before merge.');
+            }
+            const result = (await app.rest.pulls.merge({
+              owner, repo, pull_number: number, sha: pr.head, merge_method: 'squash',
+              commit_title: 'chore: update scheduled CI health report',
+              commit_message: 'OpenAI-Codex_health_release_architecture',
+            })).data;
+            if (!result || result.merged !== true || !sha(result.sha)) throw new Error('GitHub did not confirm the health PR merge.');
+            core.notice('Merged verified health PR #' + number + ' at ' + result.sha + '.');

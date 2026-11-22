@@ -180,6 +180,14 @@ jobs:
       - name: Test self-commit health report
         run: node --test .github/scripts/automation-health.test.mjs
 
+      # OpenAI-Codex: verify the staged App health PR merger with mocked APIs.
+      - name: Test health PR merge safeguards
+        env:
+          HEALTH_MERGER_ENABLED: ${{ vars.AUTOMATION_PR_MODE == 'enabled' && vars.AUTOMATION_SAFE_MERGE == 'enabled' }}
+        run: |
+          printf 'Health merger opt-in enabled: %s\n' "$HEALTH_MERGER_ENABLED"
+          node --test .github/scripts/automation-health-merge.test.mjs
+
       # OpenAI-Codex: exercise issue and PR triage with mocked GitHub APIs.
       - name: Test issue and PR triage
         run: node --test .github/scripts/issue-pr-triage.test.mjs
