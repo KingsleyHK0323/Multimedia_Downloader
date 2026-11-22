@@ -14,6 +14,13 @@ const block = workflow.split(start)[1].split(end)[0];
 const marker = '        run: |\n';
 assert.equal(block.split(marker).length, 2);
 const shell = block.split(marker)[1].replace(/^          /gm, '');
+// OpenAI-Codex_format_architecture: exercise the real isolated pip command offline.
+const installMarker = '      - name: Install pinned formatter\n';
+assert.equal(workflow.split(installMarker).length, 2);
+const installBlock = workflow.split(installMarker)[1].split('\n      - name:')[0];
+const installLines = installBlock.split('\n').filter(line => line.startsWith('        run: '));
+assert.equal(installLines.length, 1);
+const installCommand = installLines[0].slice('        run: '.length);
 function git(root, ...args) {
   const result = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
   assert.equal(result.status, 0, result.stderr);
@@ -36,10 +43,10 @@ function fixture() {
   git(root, 'commit', '-qm', 'change');
   return { root, before, head: git(root, 'rev-parse', 'HEAD') };
 }
-function run(root, before, head) {
+function run(root, before, head, extraEnv = {}) {
   return spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', shell], {
     cwd: root, encoding: 'utf8', timeout: 30000,
-    env: { ...process.env, BEFORE_SHA: before, PUSH_SHA: head },
+    env: { ...process.env, ...extraEnv, BEFORE_SHA: before, PUSH_SHA: head },
   });
 }
 test('formats and stages only changed Python files', () => {
@@ -67,4 +74,26 @@ test('does not follow changed Python symlinks', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(readFileSync(join(root, 'untouched.py'), 'utf8'), 'untouched=  2\n');
   assert.equal(git(root, 'diff', '--cached', '--name-only'), '');
+});
+
+// OpenAI-Codex_format_architecture: checkout modules cannot replace pip, Python startup or Black.
+test('formatter installation ignores checkout-local pip and startup modules', () => {
+  const root = mkdtempSync(join(tmpdir(), 'mmdl-pip-isolation-test-'));
+  writeFileSync(join(root, 'sitecustomize.py'), 'raise SystemExit("unsafe checkout startup")\n');
+  writeFileSync(join(root, 'pip.py'), 'raise SystemExit("unsafe checkout pip")\n');
+  const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c',
+    installCommand + ' --no-index --no-deps'], {
+    cwd: root, encoding: 'utf8', timeout: 30000,
+    env: { ...process.env, PYTHONPATH: root, PIP_DISABLE_PIP_VERSION_CHECK: '1' },
+  });
+  assert.equal(result.status, 0, result.stderr);
+});
+test('formatting ignores checkout-local startup and Black modules', () => {
+  const { root, before, head } = fixture();
+  writeFileSync(join(root, 'sitecustomize.py'), 'raise SystemExit("unsafe checkout startup")\n');
+  writeFileSync(join(root, 'black.py'), 'raise SystemExit("unsafe checkout black")\n');
+  const result = run(root, before, head, { PYTHONPATH: root });
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(readFileSync(join(root, 'changed.py'), 'utf8'), 'value = 42\n');
+  assert.equal(git(root, 'diff', '--cached', '--name-only'), 'changed.py');
 });
