@@ -189,7 +189,7 @@ function harness(options = {}) {
     },
   };
   const core = { info: (s) => state.notices.push(s), notice: (s) => state.notices.push(s) };
-  const invoke = () => execute({ repo: { owner, repo } }, reader, core,
+  const invoke = () => execute({ repo: { owner, repo }, ref: state.sourceRef ?? 'refs/heads/Source_Code' }, reader, core,
     (token) => { assert.equal(token, 'test-token'); return writer; },
     { env: { APP_TOKEN: 'test-token', APP_SLUG: 'kingsley-multimedia-automation' } }, Buffer, localRequire);
   return { state, invoke };
@@ -280,4 +280,14 @@ test('the merger remains disabled by default and uses job-level shared concurren
   assert.match(workflow, /vars\.AUTOMATION_SAFE_MERGE == 'enabled'/);
   assert.match(workflow, /merge-health:[\s\S]*?concurrency:\n      group: automation-health-report\n      queue: max/);
   assert.doesNotMatch(workflow, /\nconcurrency:\n/);
+});
+
+test('refuses a case-mismatched source ref before merging', async () => {
+  const h = harness({ sourceRef: 'refs/heads/source_code' });
+  await assert.rejects(h.invoke(), /Unexpected repository/);
+  assert.deepEqual(h.state.writes, []);
+});
+
+test('checks the exact source ref before minting an App token', () => {
+  assert.ok(workflow.indexOf('Verify exact source ref') < workflow.indexOf('Create a repository-scoped App token'));
 });

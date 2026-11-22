@@ -24,6 +24,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Verify exact source ref
+        env:
+          ACTUAL_REF: ${{ github.ref }}
+        shell: bash
+        run: |
+          [[ "$ACTUAL_REF" == 'refs/heads/Source_Code' ]] ||
+            { echo '::error::Unexpected source ref.'; exit 1; }
       - name: Create a repository-scoped App token
         id: app-token
         uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
@@ -48,7 +55,8 @@ jobs:
             const branchPattern = /^automation\/ci-health-[1-9][0-9]*-[1-9][0-9]*(?:-[0-9a-f]{40})?$/;
             const sha = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
             const crypto = require('node:crypto');
-            if (owner + '/' + repo !== fullName || process.env.APP_SLUG !== 'kingsley-multimedia-automation' ||
+            if (owner + '/' + repo !== fullName || context.ref !== 'refs/heads/Source_Code' ||
+                process.env.APP_SLUG !== 'kingsley-multimedia-automation' ||
                 typeof process.env.APP_TOKEN !== 'string' || !process.env.APP_TOKEN.trim()) {
               throw new Error('Unexpected repository or App identity.');
             }

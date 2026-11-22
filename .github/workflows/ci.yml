@@ -183,8 +183,10 @@ jobs:
       # OpenAI-Codex: verify the staged App health PR merger with mocked APIs.
       - name: Test health PR merge safeguards
         env:
+          HEALTH_WRITER_LEGACY: ${{ vars.AUTOMATION_PR_MODE == '' || vars.AUTOMATION_PR_MODE == 'legacy' }}
           HEALTH_MERGER_ENABLED: ${{ vars.AUTOMATION_PR_MODE == 'enabled' && vars.AUTOMATION_SAFE_MERGE == 'enabled' }}
         run: |
+          printf 'Health writer legacy mode: %s\n' "$HEALTH_WRITER_LEGACY"
           printf 'Health merger opt-in enabled: %s\n' "$HEALTH_MERGER_ENABLED"
           node --test .github/scripts/automation-health-merge.test.mjs
 

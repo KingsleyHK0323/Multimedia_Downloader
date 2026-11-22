@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Stage an opt-in App health report writer while preserving the existing default schedule. (OpenAI-Codex)
 - Stage an opt-in App health report merger that requires strict checks and website branch isolation. (OpenAI-Codex)
 - Prevent automation App PRs from triggering patch releases. (OpenAI-Codex_ruleset_architecture)
 - Keep reporting open Dependabot alerts even when the update attempt itself succeeds. (OpenAI-Codex)
