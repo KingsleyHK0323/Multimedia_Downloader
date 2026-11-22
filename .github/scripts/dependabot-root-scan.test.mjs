@@ -13,29 +13,31 @@ const rootOld = ['npm_and_yarn in / - Update #1', 'pip in / - Update #3', 'githu
 const rootDot = rootOld.map((name) => name.replace(' in / - ', ' in /. - '));
 const nonRoot = ['npm_and_yarn in /frontend - Update #2', 'pip in /engine - Update #4', 'cargo in /src-tauri - Update #5'];
 
-async function run(names, failureName = null) {
+async function run(names, failureName = null, alerts = [], preview = false) {
   const runs = names.map((name, i) => ({
     name, path: 'dynamic/dependabot/dependabot-updates', created_at: new Date().toISOString(),
     status: 'completed', conclusion: name === failureName ? 'failure' : 'success',
-    run_number: i + 1, html_url: 'https://example.invalid/run',
+    id: i + 1, run_number: i + 1, html_url: 'https://example.invalid/run',
   }));
   const before = JSON.stringify(runs), calls = [], failures = [];
   const summary = { addHeading() { return this; }, addRaw() { return this; }, addList() { return this; }, async write() { return this; } };
   const actions = { listWorkflowRunsForRepo: async () => ({ data: { total_count: runs.length, workflow_runs: [] } }) };
   const pulls = { list() {} };
+  const dependabot = { listAlertsForRepo() {} };
   const repos = { listBranches() {} };
   const issues = {
     listForRepo() {},
     async create(input) { calls.push({ method: 'create', body: input.body }); return { data: { html_url: 'https://example.invalid/issue' } }; },
     async update(input) { calls.push({ method: 'update', body: input.body }); },
   };
-  const github = { rest: { actions, pulls, repos, issues }, async paginate(fn) {
+  const github = { rest: { actions, pulls, repos, issues, dependabot }, async paginate(fn) {
     if (fn === actions.listWorkflowRunsForRepo) return runs;
+    if (fn === dependabot.listAlertsForRepo) return alerts;
     if (fn === pulls.list || fn === repos.listBranches || fn === issues.listForRepo) return [];
     throw Error('Unexpected API call');
   } };
   const core = { summary, warning() {}, info() {}, setFailed(message) { failures.push(message); } };
-  await new AsyncFunction('github', 'core', 'context', script)(github, core, { repo: { owner: 'owner', repo: 'repo' } });
+  await new AsyncFunction('github', 'core', 'context', script)(github, core, { repo: { owner: 'owner', repo: 'repo' }, eventName: preview ? 'workflow_dispatch' : 'schedule', payload: { inputs: { preview: preview ? 'true' : 'false' } } });
   assert.deepEqual(failures, [], 'unexpected workflow failure');
   assert.equal(JSON.stringify(runs), before, 'input response objects changed');
   return calls;
@@ -66,3 +68,37 @@ test('non-root scan failures remain findings without false root findings', async
   }
 });
 
+
+// OpenAI-Codex: security update failures must not be lost among version scans.
+test('reports the latest failed security update only while a related alert is open', async () => {
+  const bases = [...rootDot, ...nonRoot];
+  const oldRun = 'cargo in /src-tauri for glib - Update #7';
+  const newRun = 'cargo in /src-tauri for glib - Update #8';
+  const alerts = [{ dependency: { package: { ecosystem: 'rust', name: 'glib' } } }];
+  const failed = await run([...bases, oldRun], oldRun, alerts);
+  assert.equal(failed.length, 1);
+  assert.match(failed[0].body, /security update for an open alert did not succeed/);
+  assert.doesNotMatch(failed[0].body, /glib/);
+  assert.deepEqual(await run([...bases, oldRun], oldRun), []);
+  assert.deepEqual(await run([...bases, oldRun, newRun], oldRun, alerts), []);
+});
+
+test('warns when open alerts cannot be matched and preview makes no issue changes', async () => {
+  const bases = [...rootDot, ...nonRoot];
+  const alerts = [{ dependency: { package: { ecosystem: 'rust', name: 'glib' } } }];
+  const missing = await run(bases, null, alerts);
+  assert.equal(missing.length, 1);
+  assert.match(missing[0].body, /no matching security-update attempt/);
+  const failed = 'cargo in /src-tauri for glib - Update #9';
+  assert.deepEqual(await run([...bases, failed], failed, alerts, true), []);
+  await assert.rejects(() => run(bases, null, null));
+});
+
+test('normalizes Python package names when matching update attempts', async () => {
+  const bases = [...rootDot, ...nonRoot];
+  const failed = 'pip in / for example-package - Update #10';
+  const alerts = [{ dependency: { package: { ecosystem: 'pip', name: 'Example_Package' } } }];
+  const result = await run([...bases, failed], failed, alerts);
+  assert.equal(result.length, 1);
+  assert.match(result[0].body, /security update for an open alert did not succeed/);
+});

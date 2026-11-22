@@ -6,11 +6,17 @@ on:
     # Tuesday 20:15 Hong Kong time, after the weekly update window.
     - cron: "15 12 * * 2"
   workflow_dispatch:
+    inputs:
+      preview:
+        description: Preview findings without modifying issues
+        type: boolean
+        default: false
 
 permissions:
   actions: read
   issues: write
   pull-requests: read
+  vulnerability-alerts: read
 
 concurrency:
   group: weekly-dependabot-watchdog
@@ -87,6 +93,54 @@ jobs:
                   `The ${label} Dependabot scan concluded \`${latest.conclusion}\`: [run #${latest.run_number}](${latest.html_url}).`,
                 );
               }
+            }
+
+            // OpenAI-Codex: report failed security updates while related alerts remain open.
+            const openAlerts = await github.paginate(github.rest.dependabot.listAlertsForRepo, {
+              owner, repo, state: "open", per_page: 100,
+            });
+            if (!Array.isArray(openAlerts)) throw new Error("Cannot verify Dependabot alert state.");
+            const ecosystemNames = { npm: "npm_and_yarn", pip: "pip", rust: "cargo" };
+            const openPackages = new Set();
+            const packageKey = (ecosystem, name) => ecosystem + "\0" +
+              (ecosystem === "pip" ? name.toLowerCase().replace(/[-_.]+/g, "-") : name.toLowerCase());
+            let incompleteAlert = false;
+            for (const alert of openAlerts) {
+              const pkg = alert?.dependency?.package;
+              if (typeof pkg?.name !== "string" || !pkg.name ||
+                  typeof pkg.ecosystem !== "string" || !pkg.ecosystem) {
+                incompleteAlert = true;
+                continue;
+              }
+              openPackages.add(packageKey(ecosystemNames[pkg.ecosystem] || pkg.ecosystem, pkg.name));
+            }
+            const securityRuns = new Map();
+            for (const run of dependabotRuns) {
+              if (typeof run.name !== "string") continue;
+              const match = /^([a-z_]+) in (\/.*?) for (.+) - Update #[0-9]+$/.exec(run.name);
+              if (!match) continue;
+              const time = Date.parse(run.created_at);
+              if (!Number.isFinite(time) || !Number.isSafeInteger(run.id) || !Number.isSafeInteger(run.run_number)) {
+                throw new Error("Cannot safely order Dependabot security update runs.");
+              }
+              const key = match[2] + "\0" + packageKey(match[1], match[3]);
+              const previous = securityRuns.get(key);
+              if (!previous || time > previous.time || (time === previous.time && run.id > previous.run.id)) {
+                securityRuns.set(key, { run, time, packageKey: packageKey(match[1], match[3]) });
+              }
+            }
+            if (incompleteAlert) findings.push("Could not correlate at least one open Dependabot alert with update attempts.");
+            const attempted = new Set();
+            for (const { run, packageKey } of securityRuns.values()) {
+              if (!openPackages.has(packageKey)) continue;
+              attempted.add(packageKey);
+              if (run.status !== "completed" || run.conclusion !== "success") {
+                const url = "https://github.com/" + owner + "/" + repo + "/actions/runs/" + run.id;
+                findings.push("A security update for an open alert did not succeed: [run #" + run.run_number + "](" + url + ").");
+              }
+            }
+            if ([...openPackages].some((key) => !attempted.has(key))) {
+              findings.push("At least one open Dependabot alert has no matching security-update attempt. Review the alert and current update configuration.");
             }
 
             const pullRequests = await github.paginate(
@@ -167,6 +221,12 @@ jobs:
                   `All six update scans succeeded; CI is current for ${dependabotPullRequests.length} open Dependabot pull request(s).`,
                 )
                 .write();
+              return;
+            }
+
+            // OpenAI-Codex: preview real findings without creating or changing issues.
+            if (context.eventName === "workflow_dispatch" && context.payload?.inputs?.preview === "true") {
+              await core.summary.addHeading("Dependabot watchdog preview").addList(findings).write();
               return;
             }
 
