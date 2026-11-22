@@ -18,7 +18,7 @@ const valid = {
   OBSERVED_REF: 'refs/heads/Source_Code', OBSERVED_BASE_REF: 'Source_Code',
   OBSERVED_ACTION: 'closed', OBSERVED_MERGED: 'true', OBSERVED_NUMBER: '77',
   OBSERVED_AUTHOR_ID: '157894869', OBSERVED_MERGE_SHA: 'a'.repeat(40),
-  OBSERVED_HEAD_SHA: 'b'.repeat(40), OBSERVED_LABEL: 'true',
+  OBSERVED_HEAD_SHA: 'b'.repeat(40), OBSERVED_WORKFLOW_SHA: 'c'.repeat(40), OBSERVED_LABEL: 'true',
 };
 const invoke = (changes = {}) => execFileSync('bash', ['-c', script], {
   env: { ...process.env, ...valid, ...changes }, encoding: 'utf8', stdio: 'pipe',
@@ -37,7 +37,7 @@ test('rejects malformed, out-of-scope, unmerged, and App-authored events', () =>
     { OBSERVED_ACTION: 'opened' }, { OBSERVED_MERGED: 'false' },
     { OBSERVED_NUMBER: '0' }, { OBSERVED_NUMBER: '1;exit 0' },
     { OBSERVED_AUTHOR_ID: '359694872' }, { OBSERVED_MERGE_SHA: 'A'.repeat(40) },
-    { OBSERVED_HEAD_SHA: 'a'.repeat(39) }, { OBSERVED_LABEL: 'TRUE' },
+    { OBSERVED_HEAD_SHA: 'a'.repeat(39) }, { OBSERVED_WORKFLOW_SHA: 'c'.repeat(39) }, { OBSERVED_LABEL: 'TRUE' },
   ]) assert.throws(() => invoke(change));
 });
 

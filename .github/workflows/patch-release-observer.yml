@@ -17,7 +17,7 @@ jobs:
       github.event.pull_request.head.ref == 'automation/protected-workflows' &&
       github.event.pull_request.base.ref == 'Source_Code' &&
       github.event.pull_request.merged == true
-    name: patch-event-${{ github.event.pull_request.number }}-${{ github.event.pull_request.merge_commit_sha }}-${{ github.event.pull_request.head.sha }}-${{ github.event.pull_request.user.id }}-${{ contains(github.event.pull_request.labels.*.name, 'release:patch') }}
+    name: patch-event-${{ github.event.pull_request.number }}-${{ github.event.pull_request.merge_commit_sha }}-${{ github.event.pull_request.head.sha }}-${{ github.event.pull_request.user.id }}-${{ contains(github.event.pull_request.labels.*.name, 'release:patch') }}-${{ github.workflow_sha }}
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
@@ -38,6 +38,7 @@ jobs:
           OBSERVED_BASE_ID: ${{ github.event.pull_request.base.repo.id }}
           OBSERVED_BASE_REF: ${{ github.event.pull_request.base.ref }}
           OBSERVED_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'release:patch') }}
+          OBSERVED_WORKFLOW_SHA: ${{ github.workflow_sha }}
         shell: bash
         run: |
           # BEGIN PATCH_OBSERVER_VALIDATION
@@ -49,7 +50,7 @@ jobs:
           [[ "$OBSERVED_ACTION" == 'closed' && "$OBSERVED_MERGED" == 'true' ]]
           [[ "$OBSERVED_NUMBER" =~ ^[1-9][0-9]*$ && "$OBSERVED_AUTHOR_ID" =~ ^[1-9][0-9]*$ ]]
           [[ "$OBSERVED_AUTHOR_ID" == '157894869' ]]
-          [[ "$OBSERVED_MERGE_SHA" =~ ^[0-9a-f]{40}$ && "$OBSERVED_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$OBSERVED_MERGE_SHA" =~ ^[0-9a-f]{40}$ && "$OBSERVED_HEAD_SHA" =~ ^[0-9a-f]{40}$ && "$OBSERVED_WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$OBSERVED_LABEL" == 'true' || "$OBSERVED_LABEL" == 'false' ]]
           echo 'Validated merge metadata; no release action was requested.'
           # END PATCH_OBSERVER_VALIDATION
