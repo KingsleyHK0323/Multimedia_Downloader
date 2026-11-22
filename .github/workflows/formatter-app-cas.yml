@@ -9,6 +9,12 @@ on:
   schedule:
     - cron: '47 */6 * * *'
   workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Preview formatter paths and hashes without App credentials or changes'
+        required: true
+        type: boolean
+        default: true
 permissions: {}
 jobs:
   invalid-mode:
@@ -20,7 +26,7 @@ jobs:
         run: exit 1
   ready:
     if: >-
-      vars.AUTOMATION_FORMAT_MODE == 'enabled' &&
+      (vars.AUTOMATION_FORMAT_MODE == 'enabled' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == true)) &&
       github.repository_id == '1251103365' && github.ref == 'refs/heads/Source_Code' &&
       (github.event_name != 'workflow_run' ||
        (github.event.workflow_run.event == 'push' &&
@@ -72,7 +78,7 @@ jobs:
     needs: [ready]
     if: >-
       needs.ready.outputs.ready == 'true' &&
-      vars.AUTOMATION_FORMAT_MODE == 'enabled' &&
+      (vars.AUTOMATION_FORMAT_MODE == 'enabled' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == true)) &&
       github.repository_id == '1251103365' && github.ref == 'refs/heads/Source_Code' &&
       (github.event_name != 'workflow_run' ||
        (github.event.workflow_run.event == 'push' &&
@@ -84,11 +90,12 @@ jobs:
     uses: ./.github/workflows/formatter-plan.yml
     with:
       replica: one
+      include_service: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run != true }}
   plan-two:
     needs: [ready]
     if: >-
       needs.ready.outputs.ready == 'true' &&
-      vars.AUTOMATION_FORMAT_MODE == 'enabled' &&
+      (vars.AUTOMATION_FORMAT_MODE == 'enabled' || (github.event_name == 'workflow_dispatch' && inputs.dry_run == true)) &&
       github.repository_id == '1251103365' && github.ref == 'refs/heads/Source_Code' &&
       (github.event_name != 'workflow_run' ||
        (github.event.workflow_run.event == 'push' &&
@@ -100,11 +107,45 @@ jobs:
     uses: ./.github/workflows/formatter-plan.yml
     with:
       replica: two
+      include_service: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run != true }}
+  dry-run:
+    needs: [plan-one, plan-two]
+    if: >-
+      !cancelled() && github.event_name == 'workflow_dispatch' && inputs.dry_run == true &&
+      needs.plan-one.result == 'success' && needs.plan-two.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Compare and display bounded formatter metadata
+        env:
+          ONE_SUMMARY: ${{ needs.plan-one.outputs.summary }}
+          TWO_SUMMARY: ${{ needs.plan-two.outputs.summary }}
+        shell: bash
+        run: |
+          node - <<'NODE'
+          // BEGIN FORMAT_DRY_RUN_SUMMARY
+          // OpenAI-Codex_format_architecture: display paths and hashes, never source or App credentials.
+          const one = process.env.ONE_SUMMARY || '';
+          const two = process.env.TWO_SUMMARY || '';
+          if (!one || one.length > 110000 || one !== two) throw new Error('Independent preview summaries disagree.');
+          const data = JSON.parse(one);
+          if (!data || !/^[0-9a-f]{40}$/.test(data.base || '') ||
+              !/^[0-9a-f]{64}$/.test(data.manifest_sha256 || '') ||
+              !Number.isSafeInteger(data.file_count) || !Array.isArray(data.files) ||
+              data.file_count !== data.files.length || data.file_count > 50 ||
+              !Number.isSafeInteger(data.warning_count) || !Array.isArray(data.warnings) ||
+              data.warnings.length > 5 || typeof data.warnings_truncated !== 'boolean' ||
+              typeof data.limited !== 'boolean') throw new Error('Preview metadata is invalid.');
+          console.log('FORMAT_DRY_RUN ' + one);
+          // END FORMAT_DRY_RUN_SUMMARY
+          NODE
   reconcile:
     needs: [plan-one, plan-two]
     if: >-
       !cancelled() && needs.plan-one.result == 'success' && needs.plan-two.result == 'success' &&
-      vars.AUTOMATION_FORMAT_MODE == 'enabled'
+      vars.AUTOMATION_FORMAT_MODE == 'enabled' &&
+      (github.event_name != 'workflow_dispatch' || inputs.dry_run != true)
     concurrency:
       group: automation-service-reconcile
       queue: max

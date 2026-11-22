@@ -1,6 +1,9 @@
 // OpenAI-Codex_format_architecture: check the formatter's opt-in and credential boundaries.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 const legacy = readFileSync('.github/workflows/auto-format.yml', 'utf8').replaceAll('\r\n', '\n');
@@ -131,4 +134,59 @@ test('push and schedule events can plan without waiting on old workflow-run meta
   f.context.eventName = 'push';
   await readyGate(f.context, f.github, f.core);
   assert.equal(f.outputs.ready, 'true');
+});
+
+test('manual dry-run plans independently while preventing every App-token step', () => {
+  assert.match(main, /dry_run:\n\s+description:.*\n\s+required: true\n\s+type: boolean\n\s+default: true/);
+  assert.match(main, /include_service: \$\{\{ github\.event_name != 'workflow_dispatch' \|\| inputs\.dry_run != true \}\}/);
+  const dry = main.split('  dry-run:\n')[1]?.split('\n  reconcile:\n')[0];
+  assert.ok(dry);
+  assert.match(dry, /permissions: \{\}/);
+  assert.match(plan, /name: Retain formatting plan as data\n\s+if: inputs\.include_service == true/);
+  assert.doesNotMatch(dry, /secrets\.|create-github-app-token|APP_TOKEN|contents: write|actions: write/);
+  const reconcile = main.split('  reconcile:\n')[1];
+  assert.ok(reconcile);
+  assert.match(reconcile, /github\.event_name != 'workflow_dispatch' \|\| inputs\.dry_run != true/);
+});
+
+const previewStart = "          # BEGIN FORMAT_PREVIEW_SUMMARY\n          python -I - <<'PY'\n";
+const previewEnd = "\n          PY\n          # END FORMAT_PREVIEW_SUMMARY";
+assert.equal(plan.split(previewStart).length, 2);
+const previewCode = plan.split(previewStart)[1].split(previewEnd)[0].replace(/^          /gm, '');
+function summarizePreview(manifest) {
+  const dir = mkdtempSync(join(tmpdir(), 'formatter-preview-'));
+  try {
+    const output = join(dir, 'output.txt');
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify(manifest));
+    writeFileSync(output, '');
+    const result = spawnSync('python', ['-I', '-c', previewCode], {
+      encoding: 'utf8', env: { ...process.env, FORMAT_OUTPUT: dir, GITHUB_OUTPUT: output },
+    });
+    return { result, output: readFileSync(output, 'utf8') };
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+}
+test('preview outputs only bounded paths, hashes and warnings from matching metadata', () => {
+  const value = { base: 'a'.repeat(40), service: null, prior: [], limited: false,
+    warning_count: 1, warnings: [{ path: 'warn.py', reason: 'black-file-failed', secret: 'do-not-output' }],
+    files: [{ path: 'dir/' + 'x'.repeat(200) + '.py', source: 'b'.repeat(40),
+      output: 'c'.repeat(40), sha256: 'd'.repeat(64), source_bytes: 'do-not-output' }] };
+  const { result, output } = summarizePreview(value);
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(output.includes('do-not-output'), false);
+  assert.ok(output.length < 110010);
+  assert.ok(output.startsWith('summary='));
+  const summary = JSON.parse(output.slice('summary='.length));
+  assert.equal(summary.file_count, 1);
+  assert.equal(summary.files[0].path_truncated, true);
+  assert.equal(summary.warnings[0].reason, 'black-file-failed');
+  assert.equal(summary.warnings_truncated, false);
+});
+test('preview rejects branch state and invalid hashes instead of emitting metadata', () => {
+  const base = { base: 'a'.repeat(40), service: null, prior: [], limited: false,
+    warning_count: 0, warnings: [], files: [] };
+  for (const manifest of [{ ...base, service: 'b'.repeat(40) }, { ...base, base: 'invalid' }]) {
+    const { result, output } = summarizePreview(manifest);
+    assert.notEqual(result.status, 0);
+    assert.equal(output, '');
+  }
 });

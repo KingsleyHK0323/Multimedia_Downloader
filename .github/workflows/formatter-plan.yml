@@ -6,11 +6,16 @@ on:
       replica:
         required: true
         type: string
+      include_service:
+        required: true
+        type: boolean
     outputs:
       artifact_id:
         value: ${{ jobs.plan.outputs.artifact_id }}
       artifact_digest:
         value: ${{ jobs.plan.outputs.artifact_digest }}
+      summary:
+        value: ${{ jobs.plan.outputs.summary }}
 permissions:
   contents: read
 jobs:
@@ -21,6 +26,7 @@ jobs:
     outputs:
       artifact_id: ${{ steps.retained.outputs.artifact-id }}
       artifact_digest: ${{ steps.retained.outputs.artifact-digest }}
+      summary: ${{ steps.preview.outputs.summary }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -52,6 +58,7 @@ jobs:
           FORMAT_GIT_DIR: ${{ runner.temp }}/format-source.git
           EXPECTED_WORKFLOW_SHA: ${{ job.workflow_sha }}
           PLAN_REPLICA: ${{ inputs.replica }}
+          PLAN_INCLUDE_SERVICE: ${{ inputs.include_service }}
           GIT_CONFIG_NOSYSTEM: '1'
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_TERMINAL_PROMPT: '0'
@@ -63,8 +70,12 @@ jobs:
           git init --bare --quiet "$FORMAT_GIT_DIR"
           git -C "$FORMAT_GIT_DIR" -c core.hooksPath=/dev/null fetch --no-recurse-submodules --no-tags https://github.com/KingsleyHK0323/Multimedia_Downloader.git refs/heads/Source_Code:refs/heads/source
           [[ "$(git -C "$FORMAT_GIT_DIR" rev-parse refs/heads/source)" == "$EXPECTED_WORKFLOW_SHA" ]]
-          set +e
-          git ls-remote --exit-code https://github.com/KingsleyHK0323/Multimedia_Downloader.git refs/heads/automation/protected-workflows > "$RUNNER_TEMP/service-ref"
+          [[ "$PLAN_INCLUDE_SERVICE" == true || "$PLAN_INCLUDE_SERVICE" == false ]]
+          if [[ "$PLAN_INCLUDE_SERVICE" == false ]]; then
+            printf 'service=\n' >> "$GITHUB_OUTPUT"
+          else
+            set +e
+            git ls-remote --exit-code https://github.com/KingsleyHK0323/Multimedia_Downloader.git refs/heads/automation/protected-workflows > "$RUNNER_TEMP/service-ref"
           status=$?
           set -e
           if [[ "$status" == 0 ]]; then
@@ -78,6 +89,7 @@ jobs:
             printf 'service=\n' >> "$GITHUB_OUTPUT"
           else
             exit "$status"
+          fi
           fi
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
@@ -103,7 +115,86 @@ jobs:
         shell: bash
         run: |
           python -I trusted-automation/.github/scripts/formatter-plan.py
+      # OpenAI-Codex_format_architecture: expose bounded metadata only for read-only previews.
+      - name: Summarize the read-only plan
+        if: inputs.include_service == false
+        id: preview
+        env:
+          FORMAT_OUTPUT: ${{ runner.temp }}/format-plan-${{ inputs.replica }}
+        shell: bash
+        run: |
+          # BEGIN FORMAT_PREVIEW_SUMMARY
+          python -I - <<'PY'
+          import hashlib
+          import json
+          import os
+          import pathlib
+          import re
+
+          root = pathlib.Path(os.environ["FORMAT_OUTPUT"])
+          raw = (root / "manifest.json").read_bytes()
+          if len(raw) > 4 * 1024 * 1024:
+              raise SystemExit("Preview manifest exceeds its size limit.")
+          plan = json.loads(raw)
+          sha = re.compile(r"[0-9a-f]{40}")
+          digest = re.compile(r"[0-9a-f]{64}")
+          if (
+              not isinstance(plan, dict)
+              or not sha.fullmatch(plan.get("base", ""))
+              or plan.get("service") is not None
+              or plan.get("prior") != []
+              or not isinstance(plan.get("files"), list)
+              or len(plan["files"]) > 50
+              or not isinstance(plan.get("warnings"), list)
+              or len(plan["warnings"]) > 256
+              or type(plan.get("warning_count")) is not int
+              or plan["warning_count"] < len(plan["warnings"])
+              or type(plan.get("limited")) is not bool
+          ):
+              raise SystemExit("Preview manifest is invalid.")
+          def path_metadata(path):
+              if not isinstance(path, str):
+                  raise SystemExit("Preview path is invalid.")
+              return {
+                  "path": path[:128],
+                  "path_sha256": hashlib.sha256(path.encode("utf-8", "strict")).hexdigest(),
+                  "path_truncated": len(path) > 128,
+              }
+          files = []
+          for item in plan["files"]:
+              if (
+                  not isinstance(item, dict)
+                  or not sha.fullmatch(item.get("source", ""))
+                  or not sha.fullmatch(item.get("output", ""))
+                  or not digest.fullmatch(item.get("sha256", ""))
+              ):
+                  raise SystemExit("Preview file identity is invalid.")
+              files.append({**path_metadata(item.get("path")), "source": item["source"],
+                            "output": item["output"], "sha256": item["sha256"]})
+          warnings = []
+          for item in plan["warnings"][:5]:
+              if not isinstance(item, dict) or not re.fullmatch(r"[a-z-]{1,80}", item.get("reason", "")):
+                  raise SystemExit("Preview warning is invalid.")
+              warnings.append({**path_metadata(item.get("path")), "reason": item["reason"]})
+          summary = {
+              "base": plan["base"],
+              "manifest_sha256": hashlib.sha256(raw).hexdigest(),
+              "file_count": len(files),
+              "files": files,
+              "limited": plan["limited"],
+              "warning_count": plan["warning_count"],
+              "warnings": warnings,
+              "warnings_truncated": plan["warning_count"] > len(warnings),
+          }
+          value = json.dumps(summary, sort_keys=True, ensure_ascii=True, separators=(",", ":"))
+          if len(value) > 110000:
+              raise SystemExit("Preview metadata exceeds its bounded output size.")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("summary=" + value + "\n")
+          PY
+          # END FORMAT_PREVIEW_SUMMARY
       - name: Retain formatting plan as data
+        if: inputs.include_service == true
         id: retained
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
