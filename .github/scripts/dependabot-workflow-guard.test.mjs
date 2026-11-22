@@ -202,10 +202,11 @@ test('auto-merge requires the exact tested head, base and merge context', { skip
     wrongGithubTree = false, incompleteTree = false, badSignature = false, badCommitAuthor = false,
     badCheckApp = false, failedCheck = false, moreOpenPRs = false, missingAssociated = false,
     badCommitter = false, badRunActor = false, ambiguousInitial = false, incompleteInitial = false,
-    executableAllowed = false, symlinkAllowed = false, newPath = false, nonallowedChange = false } = {}) => {
+    executableAllowed = false, symlinkAllowed = false, newPath = false, nonallowedChange = false,
+    draftInitial = false, draftFinal = false } = {}) => {
     const log = path.join(root, Math.random().toString(36).slice(2));
     const repo = { id: 1251103365, full_name: 'KingsleyHK0323/Multimedia_Downloader' };
-    const pr = { number: 66, state: 'open', user: { login: 'dependabot[bot]', id: 49699333, type: 'Bot' }, mergeable: true,
+    const pr = { number: 66, state: 'open', draft: draftInitial, user: { login: 'dependabot[bot]', id: 49699333, type: 'Bot' }, mergeable: true,
       base: { ref: 'Source_Code', sha: base, repo }, head: { sha, repo }, merge_commit_sha: merge, changed_files: 1 };
     const rules = noRules ? [] : [
       { ruleset_id: 7, ruleset_source_type: 'Repository', ruleset_source: 'KingsleyHK0323/Multimedia_Downloader', type: 'non_fast_forward' },
@@ -332,7 +333,7 @@ test('auto-merge requires the exact tested head, base and merge context', { skip
     const outputs = fs.existsSync(output) ? fs.readFileSync(output, 'utf8') : '';
     if (outputs.includes('eligible=true\n')) {
       fs.appendFileSync(log, 'APP_CREATED\n');
-      const finalPr = { ...pr,
+      const finalPr = { ...pr, draft: draftFinal,
         user: { ...pr.user, id: spoofBot ? 2 : pr.user.id },
         base: { ...pr.base, ref: retarget ? 'other' : pr.base.ref, repo: foreignBase ? { ...repo, id: 9 } : repo },
         head: { ...pr.head, sha: finalHeadMoved ? moved : sha, repo: foreignHead ? { ...repo, id: 9 } : repo } };
@@ -370,7 +371,7 @@ test('auto-merge requires the exact tested head, base and merge context', { skip
   assert.match(success, /workflow run clean-merged-branches\.yml/);
   for (const variant of [{ failure: true }, { protectedFile: true }, { noPr: true },
     { baseMoved: true }, { badContext: true }, { noJobs: true }, { badAttempt: true }, { staleWorkflow: true }, { badRunActor: true },
-    { ambiguousInitial: true }, { incompleteInitial: true }]) {
+    { ambiguousInitial: true }, { incompleteInitial: true }, { draftInitial: true }]) {
     const result = run(variant);
     assert.doesNotMatch(result, /APP_CREATED/);
     assert.doesNotMatch(result, /api graphql --input -/);
@@ -382,7 +383,7 @@ test('auto-merge requires the exact tested head, base and merge context', { skip
     { twoParents: true }, { wrongParent: true }, { wrongMergeParents: true }, { wrongMergeTree: true },
     { wrongGithubTree: true }, { incompleteTree: true }, { badSignature: true }, { badCommitAuthor: true }, { badCommitter: true },
     { badCheckApp: true }, { failedCheck: true }, { moreOpenPRs: true }, { missingAssociated: true },
-    { executableAllowed: true }, { symlinkAllowed: true }, { newPath: true }, { nonallowedChange: true }]) {
+    { executableAllowed: true }, { symlinkAllowed: true }, { newPath: true }, { nonallowedChange: true }, { draftFinal: true }]) {
     const result = run(variant);
     assert.match(result, /APP_CREATED/);
     assert.doesNotMatch(result, /api graphql --input -/);

@@ -58,6 +58,8 @@ jobs:
                       !["open", "closed"].includes(pr.state)) process.exit(1);
                   seen.add(pr.number);
                   if (pr.state === "closed") continue;
+                  if (typeof pr.draft !== "boolean") process.exit(1);
+                  if (pr.draft) continue;
                   if (typeof pr.head?.sha !== "string" || !/^[0-9a-f]{40}$/.test(pr.head.sha) ||
                       typeof pr.base?.ref !== "string" || typeof pr.user?.login !== "string" ||
                       !Number.isSafeInteger(pr.user?.id) || typeof pr.user?.type !== "string" ||
@@ -184,7 +186,7 @@ jobs:
                 const [pr, data, ci, matrix] = input.map(JSON.parse);
                 const sha = value => typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
                 if (!sha(process.env.BASE_HEAD) || pr.number !== Number(process.env.PR_NUMBER) ||
-                    pr.state !== "open" || pr.user?.login !== "dependabot[bot]" ||
+                    pr.state !== "open" || pr.draft !== false || pr.user?.login !== "dependabot[bot]" ||
                     pr.user?.id !== 49699333 || pr.user?.type !== "Bot" || pr.mergeable !== true ||
                     pr.base?.repo?.id !== 1251103365 || pr.head?.repo?.id !== 1251103365 ||
                     pr.base?.repo?.full_name !== "KingsleyHK0323/Multimedia_Downloader" ||
@@ -536,7 +538,7 @@ jobs:
                 const [pr, data, ci, matrix] = input.map(JSON.parse);
                 const sha = value => typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
                 if (!sha(process.env.BASE_HEAD) || pr.number !== Number(process.env.PR_NUMBER) ||
-                    pr.state !== "open" || pr.user?.login !== "dependabot[bot]" ||
+                    pr.state !== "open" || pr.draft !== false || pr.user?.login !== "dependabot[bot]" ||
                     pr.user?.id !== 49699333 || pr.user?.type !== "Bot" || pr.mergeable !== true ||
                     pr.base?.repo?.id !== 1251103365 || pr.head?.repo?.id !== 1251103365 ||
                     pr.base?.repo?.full_name !== "KingsleyHK0323/Multimedia_Downloader" ||
@@ -595,7 +597,7 @@ jobs:
                       !/^[0-9a-f]{40}$/.test(pr.head.sha) || !pr.base ||
                       typeof pr.base.ref !== "string") process.exit(1);
                   if (pr.head.sha === process.env.HEAD_SHA) {
-                    if (pr.number !== Number(process.env.PR_NUMBER) ||
+                    if (pr.number !== Number(process.env.PR_NUMBER) || pr.draft !== false ||
                         pr.base.ref !== "Source_Code" || pr.head.repo?.id !== 1251103365 ||
                         pr.base.repo?.id !== 1251103365) process.exit(1);
                     matched++;
