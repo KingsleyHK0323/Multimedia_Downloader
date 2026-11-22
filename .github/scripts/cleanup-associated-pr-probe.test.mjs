@@ -1,4 +1,5 @@
 // OpenAI-Codex_health_release_architecture: test the read-only ref-association probe with mock APIs.
+// OpenAI-Codex: assert the explicit fail-closed errors for changed or absent associations.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
@@ -51,7 +52,7 @@ test('observes the exact current same-repository PR and branch', async () => {
 });
 test('rejects a missing association, changed branch or changed PR', async () => {
   for (const options of [{ missingPr: true }, { badOid: true }, { movePr: true }]) {
-    const h = harness(options); await assert.rejects(h.invoke(), /association|pull request changed/i);
+    const h = harness(options); await assert.rejects(h.invoke(), /cannot confirm the exact open PR|pull request changed/i);
   }
 });
 test('rejects fork and non-owner events before using the API', async () => {
