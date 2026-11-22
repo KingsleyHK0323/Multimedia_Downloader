@@ -86,9 +86,9 @@ def download(repo, selection, destination):
         try:
             with os.fdopen(descriptor, "wb") as target:
                 # The executable and endpoint are fixed; repository and artifact ID are validated above.
-                process = subprocess.Popen(
+                process = subprocess.Popen(  # noqa: S603
                     command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
-                )  # noqa: S603
+                )
                 try:
                     copy_checked(process.stdout, target, expected, limit)
                 except BaseException:
