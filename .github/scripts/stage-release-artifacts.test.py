@@ -3,7 +3,6 @@
 
 import importlib.util
 import hashlib
-import os
 import stat
 import tempfile
 import unittest

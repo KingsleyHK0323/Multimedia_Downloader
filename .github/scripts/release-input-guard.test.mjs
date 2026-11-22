@@ -302,3 +302,16 @@ test('PR metadata requires exact branch casing before trusted API data is consum
   assert.notEqual(run('automation/Protected-workflows', 'Source_Code').status, 0);
   assert.notEqual(run('automation/protected-workflows', 'source_code').status, 0);
 });
+
+test('tag-rule visibility probe uses read-only token without a checkout', () => {
+  const ci = readFileSync(new URL('../workflows/ci.yml', import.meta.url), 'utf8');
+  const probe = ci.split('  tag-rule-probe:\n')[1]?.split('\n  # OpenAI-Codex: test the actual release input guard')[0];
+  assert.ok(probe);
+  assert.match(probe, /github\.event\.pull_request\.number == 74/);
+  assert.match(probe, /permissions:\n      contents: read/);
+  assert.doesNotMatch(probe, /actions\/checkout|AUTOMATION_APP_PRIVATE_KEY|contents: write/);
+  assert.match(probe, /rulesets\/27823531\?includes_parents=true/);
+  assert.match(probe, /bypass_actors_present/);
+  assert.match(probe, /bypass_actors_is_array/);
+  assert.match(probe, /bypass_actors_empty/);
+});

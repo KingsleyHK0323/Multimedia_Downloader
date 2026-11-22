@@ -113,7 +113,7 @@ test('release workflow calls the guarded uploader without a clobber flag', () =>
   const block = workflow.split('      - name: Upload or verify exact release assets\n')[1]
     ?.split('\n  # OpenAI-Codex: apply the same asset')[0];
   assert.ok(block);
-  assert.match(block, /node \.github\/scripts\/upload-release-assets\.mjs "\$RELEASE_TAG"/);
+  assert.match(block, /node automation\/\.github\/scripts\/upload-release-assets\.mjs "\$RELEASE_TAG"/);
   assert.doesNotMatch(block, /--clobber/);
 });
 

@@ -66,7 +66,8 @@ def download(repo, selection, destination):
         command = ["gh", "api", f"repos/{repo}/actions/artifacts/{artifact_id}/zip"]
         try:
             with os.fdopen(descriptor, "wb") as target:
-                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                # The executable and endpoint are fixed; repository and artifact ID are validated above.
+                process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)  # noqa: S603
                 try:
                     copy_checked(process.stdout, target, expected, limit)
                 except BaseException:
