@@ -1,0 +1,339 @@
+# OpenAI-Codex_health_release_architecture: temporary isolated branch-rules probe.
+name: Probe temporary branch required status
+on:
+  pull_request:
+    branches: [Source_Code]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: read
+  statuses: write
+  checks: read
+jobs:
+  probe:
+    if: >-
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.event.pull_request.user.id == 157894869 &&
+      github.event.sender.id == 157894869 &&
+      github.event.pull_request.head.repo.id == 1251103365 &&
+      github.event.pull_request.base.repo.id == 1251103365 &&
+      github.event.pull_request.head.ref == 'automation/protected-workflows' &&
+      github.event.pull_request.base.ref == 'Source_Code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Verify the owner-triggered PR before minting an App token
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // OpenAI-Codex_health_release_architecture: validate the exact owner-triggered PR before minting an App token.
+            const { owner, repo } = context.repo;
+            const full = 'KingsleyHK0323/Multimedia_Downloader';
+            const id = 1251103365;
+            const ownerId = 157894869;
+            const branch = 'automation/protected-workflows';
+            const base = 'Source_Code';
+            const eventPr = context.payload.pull_request;
+            const oid = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+            if (context.eventName !== 'pull_request' ||
+                !['opened', 'synchronize', 'reopened'].includes(context.payload.action) ||
+                owner + '/' + repo !== full || context.payload.repository?.id !== id ||
+                context.payload.repository.full_name !== full || context.payload.sender?.id !== ownerId ||
+                !eventPr || eventPr.state !== 'open' || !Number.isSafeInteger(eventPr.number) || eventPr.number < 1 ||
+                eventPr.user?.id !== ownerId ||
+                eventPr.head?.repo?.id !== id || eventPr.head.repo.full_name !== full ||
+                eventPr.head.ref !== branch || !oid(eventPr.head.sha) ||
+                eventPr.base?.repo?.id !== id || eventPr.base.repo.full_name !== full ||
+                eventPr.base.ref !== base || !oid(eventPr.base.sha)) {
+              throw new Error('Probe event identity is invalid.');
+            }
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: eventPr.number })).data;
+            if (!pr || pr.number !== eventPr.number || pr.state !== 'open' || pr.user?.id !== ownerId ||
+                pr.head?.repo?.id !== id || pr.head.repo.full_name !== full ||
+                pr.head.ref !== branch || pr.head.sha !== eventPr.head.sha ||
+                pr.base?.repo?.id !== id || pr.base.repo.full_name !== full ||
+                pr.base.ref !== base || pr.base.sha !== eventPr.base.sha) {
+              throw new Error('Probe PR no longer matches the event.');
+            }
+            for (const [name, expected] of [[branch, eventPr.head.sha], [base, eventPr.base.sha]]) {
+              const ref = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + name })).data;
+              if (!ref || ref.ref !== 'refs/heads/' + name || ref.object?.type !== 'commit' ||
+                  ref.object.sha !== expected) throw new Error('Probe branch no longer matches the event.');
+            }
+            const head = (await github.rest.git.getCommit({ owner, repo, commit_sha: eventPr.head.sha })).data;
+            if (!head || head.sha !== eventPr.head.sha || !oid(head.tree?.sha) ||
+                !Array.isArray(head.parents) || head.parents.length !== 1 || head.parents[0]?.sha !== eventPr.base.sha) {
+              throw new Error('Probe head is not a single direct child of the event base.');
+            }
+            core.info('Verified owner-triggered PR, exact refs, and parent before App token creation.');
+      - name: Create a repository-scoped App token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          app-id: '5868451'
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+      - name: Probe the exact temporary branch rule and atomic update
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        with:
+          script: |
+            // OpenAI-Codex_health_release_architecture: exercise only the approved temporary ref.
+            const { owner, repo } = context.repo;
+            const full = 'KingsleyHK0323/Multimedia_Downloader';
+            const repositoryId = 1251103365;
+            const ownerId = 157894869;
+            const branch = 'automation/protected-workflows';
+            const base = 'Source_Code';
+            const expectedContext = 'probe/app-approved-update';
+            const sameContext = (value) => typeof value === 'string' &&
+              value.toLowerCase() === expectedContext.toLowerCase();
+            const expectedIntegration = 15368;
+            const eventPr = context.payload.pull_request;
+            const oid = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+            if (context.eventName !== 'pull_request' ||
+                !['opened', 'synchronize', 'reopened'].includes(context.payload.action) ||
+                owner + '/' + repo !== full || context.payload.repository?.id !== repositoryId ||
+                context.payload.repository.full_name !== full || context.payload.sender?.id !== ownerId ||
+                !eventPr || eventPr.state !== 'open' || !Number.isSafeInteger(eventPr.number) || eventPr.number < 1 ||
+                eventPr.user?.id !== ownerId ||
+                eventPr.head?.repo?.id !== repositoryId || eventPr.head.repo.full_name !== full ||
+                eventPr.head.ref !== branch || !oid(eventPr.head.sha) ||
+                eventPr.base?.repo?.id !== repositoryId || eventPr.base.repo.full_name !== full ||
+                eventPr.base.ref !== base || !oid(eventPr.base.sha) ||
+                typeof process.env.APP_TOKEN !== 'string' || !process.env.APP_TOKEN ||
+                process.env.APP_SLUG !== 'kingsley-multimedia-automation') {
+              throw new Error('Probe identity or App token is invalid.');
+            }
+            const errorText = (error) => {
+              const messages = [error?.message];
+              if (Array.isArray(error?.errors)) messages.push(...error.errors.map((item) => item?.message));
+              return messages.filter((item) => typeof item === 'string').join(' | ')
+                .replaceAll(process.env.APP_TOKEN, '[redacted]')
+                .replace(/(?:Bearer|token)\s+[A-Za-z0-9_.-]+/gi, '[redacted]')
+                .replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 1500);
+            };
+            const runId = process.env.GITHUB_RUN_ID;
+            const attempt = process.env.GITHUB_RUN_ATTEMPT;
+            if (!/^[1-9][0-9]*$/.test(runId || '') || !/^[1-9][0-9]*$/.test(attempt || '')) {
+              throw new Error('Probe run identity is invalid.');
+            }
+            const app = getOctokit(process.env.APP_TOKEN);
+            const appInfo = (await app.request('GET /apps/{app_slug}', { app_slug: process.env.APP_SLUG })).data;
+            if (!appInfo || appInfo.id !== 5868451 || appInfo.slug !== 'kingsley-multimedia-automation') {
+              throw new Error('App identity cannot be verified.');
+            }
+            const repository = (await app.rest.repos.get({ owner, repo })).data;
+            if (!repository || repository.id !== repositoryId || repository.full_name !== full ||
+                typeof repository.node_id !== 'string' || !repository.node_id) {
+              throw new Error('App repository identity cannot be verified.');
+            }
+            const ref = async (name) => {
+              if (![branch, base].includes(name)) throw new Error('Unexpected ref requested.');
+              const value = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + name })).data;
+              if (!value || value.ref !== 'refs/heads/' + name || value.object?.type !== 'commit' || !oid(value.object.sha)) {
+                throw new Error('Probe ref identity is invalid.');
+              }
+              return value.object.sha;
+            };
+            const ensurePr = async () => {
+              const pr = (await github.rest.pulls.get({ owner, repo, pull_number: eventPr.number })).data;
+              if (!pr || pr.number !== eventPr.number || pr.state !== 'open' || pr.user?.id !== ownerId ||
+                  pr.head?.repo?.id !== repositoryId || pr.head.repo.full_name !== full ||
+                  pr.head.ref !== branch || pr.head.sha !== eventPr.head.sha ||
+                  pr.base?.repo?.id !== repositoryId || pr.base.repo.full_name !== full ||
+                  pr.base.ref !== base || pr.base.sha !== eventPr.base.sha ||
+                  await ref(branch) !== eventPr.head.sha || await ref(base) !== eventPr.base.sha) {
+                throw new Error('Probe PR or ref changed before the update.');
+              }
+            };
+            const ruleSnapshot = async () => {
+              const rules = await app.paginate('GET /repos/{owner}/{repo}/rules/branches/{branch}', {
+                owner, repo, branch, per_page: 100,
+              });
+              if (!Array.isArray(rules) || !rules.length || rules.length > 1000) {
+                throw new Error('Applicable temporary-branch rules are unavailable.');
+              }
+              const matching = rules.filter((rule) => rule?.type === 'required_status_checks' &&
+                Array.isArray(rule.parameters?.required_status_checks) &&
+                rule.parameters.required_status_checks.length === 1 &&
+                rule.parameters.required_status_checks[0]?.context === expectedContext &&
+                rule.parameters.required_status_checks[0]?.integration_id === expectedIntegration);
+              if (matching.length !== 1 || !Number.isSafeInteger(matching[0].ruleset_id) ||
+                  matching[0].ruleset_source_type !== 'Repository' || matching[0].ruleset_source !== full) {
+                throw new Error('Exact probe required-status rule is unavailable.');
+              }
+              const detail = (await app.request('GET /repos/{owner}/{repo}/rulesets/{ruleset_id}', {
+                owner, repo, ruleset_id: matching[0].ruleset_id, includes_parents: true,
+              })).data;
+              const names = detail?.conditions?.ref_name;
+              if (!detail || detail.id !== matching[0].ruleset_id || detail.target !== 'branch' ||
+                  detail.enforcement !== 'active' || detail.source_type !== 'Repository' || detail.source !== full ||
+                  detail.current_user_can_bypass !== 'never' ||
+                  !Array.isArray(names?.include) || names.include.length !== 1 ||
+                  names.include[0] !== 'refs/heads/' + branch ||
+                  !Array.isArray(names.exclude) || names.exclude.length !== 0 ||
+                  !Array.isArray(detail.rules)) {
+                throw new Error('Probe ruleset is not active, exact-scope, or non-bypassable by the App.');
+              }
+              const checks = detail.rules.filter((rule) => rule?.type === 'required_status_checks' &&
+                Array.isArray(rule.parameters?.required_status_checks) &&
+                rule.parameters.required_status_checks.length === 1 &&
+                rule.parameters.required_status_checks[0]?.context === expectedContext &&
+                rule.parameters.required_status_checks[0]?.integration_id === expectedIntegration);
+              if (checks.length !== 1) throw new Error('Probe ruleset details do not match the applicable rule.');
+              return JSON.stringify({ id: detail.id, rules: detail.rules, conditions: detail.conditions,
+                enforcement: detail.enforcement, bypass: detail.current_user_can_bypass });
+            };
+            const ensureNoMatchingChecks = async (sha) => {
+              let total;
+              const seen = new Set();
+              for (let page = 1; page <= 10; page++) {
+                const data = (await github.request('GET /repos/{owner}/{repo}/commits/{ref}/check-runs', {
+                  owner, repo, ref: sha, filter: 'all', per_page: 100, page,
+                })).data;
+                if (!data || !Number.isSafeInteger(data.total_count) || data.total_count < 0 ||
+                    data.total_count > 1000 || (total !== undefined && total !== data.total_count) ||
+                    !Array.isArray(data.check_runs) || data.check_runs.length > 100) {
+                  throw new Error('Probe check-run inventory is incomplete.');
+                }
+                total = data.total_count;
+                for (const check of data.check_runs) {
+                  if (!Number.isSafeInteger(check?.id) || check.id < 1 || seen.has(check.id) ||
+                      typeof check.name !== 'string') {
+                    throw new Error('Probe check-run identity is incomplete or duplicated.');
+                  }
+                  seen.add(check.id);
+                  if (sameContext(check.name)) throw new Error('A same-name probe check run already exists.');
+                }
+                if (seen.size === total) return;
+                if (data.check_runs.length !== 100 || seen.size > total) {
+                  throw new Error('Probe check-run pagination is inconsistent.');
+                }
+              }
+              throw new Error('Probe check-run inventory exceeds the bound.');
+            };
+            const ensureNoStatus = async (sha) => {
+              const data = (await github.request('GET /repos/{owner}/{repo}/commits/{ref}/statuses', {
+                owner, repo, ref: sha, per_page: 100,
+              })).data;
+              if (!Array.isArray(data) || data.length !== 0) throw new Error('New probe commit already has a status.');
+              await ensureNoMatchingChecks(sha);
+            };
+            const mark = async (sha) => {
+              const status = (await github.request('POST /repos/{owner}/{repo}/statuses/{sha}', {
+                owner, repo, sha, state: 'success', context: expectedContext,
+                description: 'Ruleset probe only; not CI',
+                target_url: 'https://github.com/' + full + '/actions/runs/' + runId,
+              })).data;
+              if (!status || !Number.isSafeInteger(status.id) || status.id < 1 ||
+                  !sameContext(status.context) || status.state !== 'success' ||
+                  status.creator?.login !== 'github-actions[bot]' || status.creator?.type !== 'Bot' ||
+                  status.creator?.id !== 41898282 || status.description !== 'Ruleset probe only; not CI' ||
+                  status.target_url !== 'https://github.com/' + full + '/actions/runs/' + runId) {
+                throw new Error('Probe status writer or response is unexpected.');
+              }
+              const data = (await github.request('GET /repos/{owner}/{repo}/commits/{ref}/statuses', {
+                owner, repo, ref: sha, per_page: 100,
+              })).data;
+              if (!Array.isArray(data) || data.filter((item) => item?.id === status.id &&
+                  sameContext(item.context) && item.state === 'success' &&
+                  item.creator?.login === 'github-actions[bot]').length !== 1 ||
+                  data.filter((item) => sameContext(item?.context)).length !== 1) {
+                throw new Error('Probe status could not be read back unambiguously.');
+              }
+              return status.id;
+            };
+            const verifyStatus = async (sha, statusId) => {
+              const data = (await github.request('GET /repos/{owner}/{repo}/commits/{ref}/statuses', {
+                owner, repo, ref: sha, per_page: 100,
+              })).data;
+              if (!Array.isArray(data)) throw new Error('Probe status inventory is unavailable.');
+              const matches = data.filter((item) => sameContext(item?.context));
+              if (matches.length !== 1 || matches[0].id !== statusId || matches[0].state !== 'success' ||
+                  matches[0].creator?.login !== 'github-actions[bot]' || matches[0].creator?.id !== 41898282) {
+                throw new Error('Probe status changed before the paired control.');
+              }
+              await ensureNoMatchingChecks(sha);
+            };
+            const createChild = async (parentSha, tree, suffix) => {
+              const created = (await app.rest.git.createCommit({
+                owner, repo, tree, parents: [parentSha],
+                message: 'chore: probe temporary branch rules\n\nOpenAI-Codex_health_release_architecture\nRun ' +
+                  runId + ' attempt ' + attempt + ' ' + suffix,
+              })).data;
+              if (!created || !oid(created.sha) || created.sha === parentSha || created.tree?.sha !== tree ||
+                  !Array.isArray(created.parents) || created.parents.length !== 1 ||
+                  created.parents[0]?.sha !== parentSha) {
+                throw new Error('Created commit does not have the exact requested tree and parent.');
+              }
+              return created.sha;
+            };
+            const update = async (before, after, suffix) => {
+              const mutationId = 'probe-' + runId + '-' + attempt + '-' + suffix;
+              const result = await app.graphql(
+                'mutation($input: UpdateRefsInput!) { updateRefs(input: $input) { clientMutationId } }',
+                { input: { repositoryId: repository.node_id, clientMutationId: mutationId,
+                  refUpdates: [{ name: 'refs/heads/' + branch, beforeOid: before, afterOid: after, force: false }] } },
+              );
+              if (result?.updateRefs?.clientMutationId !== mutationId) throw new Error('Ref update response is incomplete.');
+            };
+            await ensurePr();
+            const parent = (await app.rest.git.getCommit({ owner, repo, commit_sha: eventPr.head.sha })).data;
+            if (!parent || parent.sha !== eventPr.head.sha || !oid(parent.tree?.sha) ||
+                !Array.isArray(parent.parents) || parent.parents.length !== 1 ||
+                parent.parents[0]?.sha !== eventPr.base.sha) throw new Error('Probe head parent or tree is invalid.');
+            const snapshot = await ruleSnapshot();
+            const child = await createChild(eventPr.head.sha, parent.tree.sha, 'first');
+            await ensureNoStatus(child);
+            await ensurePr();
+            let rejectedMissing = false;
+            let missingRuleNamed = false;
+            try { await update(eventPr.head.sha, child, 'missing'); }
+            catch (error) {
+              rejectedMissing = true;
+              const message = errorText(error);
+              core.info('Missing-status rejection on ' + branch + ': ' + message);
+              missingRuleNamed = message.includes(expectedContext) && /status|check|rule/i.test(message);
+            }
+            if (await ref(branch) !== eventPr.head.sha || await ref(base) !== eventPr.base.sha) {
+              throw new Error('A branch changed after the missing-status attempt.');
+            }
+            if (!rejectedMissing || !missingRuleNamed) {
+              throw new Error('Missing-status attempt was not rejected for the expected named rule.');
+            }
+            if (await ruleSnapshot() !== snapshot) throw new Error('Probe rules changed after missing-status attempt.');
+            await mark(child);
+            await ensurePr();
+            if (await ruleSnapshot() !== snapshot) throw new Error('Probe rules changed before approved update.');
+            await update(eventPr.head.sha, child, 'approved');
+            if (await ref(branch) !== child || await ref(base) !== eventPr.base.sha) {
+              throw new Error('Approved update did not move only the temporary branch.');
+            }
+            if (await ruleSnapshot() !== snapshot) throw new Error('Probe rules changed after approved update.');
+            const second = await createChild(child, parent.tree.sha, 'second');
+            await ensureNoStatus(second);
+            const secondStatus = await mark(second);
+            if (await ref(branch) !== child || await ref(base) !== eventPr.base.sha ||
+                await ruleSnapshot() !== snapshot) throw new Error('Probe state changed before stale-CAS attempt.');
+            await verifyStatus(second, secondStatus);
+            let rejectedStale = false;
+            try { await update(eventPr.head.sha, second, 'paired'); }
+            catch (error) {
+              rejectedStale = true;
+              core.info('Stale-beforeOid rejection on ' + branch + ': ' + errorText(error));
+            }
+            if (!rejectedStale || await ref(branch) !== child || await ref(base) !== eventPr.base.sha) {
+              throw new Error('Stale beforeOid did not reject while preserving the temporary ref.');
+            }
+            if (await ruleSnapshot() !== snapshot) throw new Error('Probe rules changed during stale-CAS attempt.');
+            await verifyStatus(second, secondStatus);
+            // Only beforeOid changes between these two mutation requests.
+            await update(child, second, 'paired');
+            if (await ref(branch) !== second || await ref(base) !== eventPr.base.sha) {
+              throw new Error('Current-beforeOid paired control did not move only the temporary branch.');
+            }
+            if (await ruleSnapshot() !== snapshot) throw new Error('Probe rules changed during the paired control.');
+            core.notice('OBSERVED: stale beforeOid was rejected without changing the ref; the same candidate and status succeeded with the current beforeOid. A generic rejection alone does not prove its cause.');
