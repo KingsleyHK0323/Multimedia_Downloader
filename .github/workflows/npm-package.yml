@@ -2,6 +2,15 @@
 name: npm web package
 
 on:
+  # OpenAI-Codex_format_architecture: approved PRs verify the guard without building or publishing a package.
+  pull_request:
+    branches: [Source_Code]
+    types: [opened, synchronize, reopened]
+    paths:
+      - .github/workflows/npm-package.yml
+      - .github/scripts/npm-package-guard.test.mjs
+      - .github/scripts/verify-tag-protection.mjs
+      - .github/scripts/verify-tag-protection.test.mjs
   push:
     branches: [Source_Code]
     paths:
@@ -29,8 +38,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  verify-automation:
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.user.id == 157894869 &&
+      github.event.sender.id == 157894869 &&
+      github.event.pull_request.head.repo.id == 1251103365 &&
+      github.event.pull_request.base.repo.id == 1251103365 &&
+      github.event.pull_request.head.ref == 'automation/protected-workflows' &&
+      github.event.pull_request.base.ref == 'Source_Code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Verify approved PR workflow revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == KingsleyHK0323/Multimedia_Downloader && "$WORKFLOW_REPOSITORY" == "$GITHUB_REPOSITORY" ]]
+          [[ "$GITHUB_HEAD_REF" == automation/protected-workflows && "$GITHUB_BASE_REF" == Source_Code ]]
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ && "$GITHUB_REF" == "refs/pull/$PR_NUMBER/merge" ]]
+          [[ "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ && "$PR_HEAD" =~ ^[0-9a-f]{40}$ && "$PR_BASE" =~ ^[0-9a-f]{40}$ && "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$WORKFLOW_SHA" == "$PR_HEAD" || "$WORKFLOW_SHA" == "$GITHUB_SHA" ]]
+          jq -e --argjson number "$PR_NUMBER" '
+            .number == $number and .sender.id == 157894869 and .pull_request.user.id == 157894869 and
+            .pull_request.head.repo.id == 1251103365 and .pull_request.base.repo.id == 1251103365 and
+            .pull_request.head.ref == "automation/protected-workflows" and .pull_request.base.ref == "Source_Code"
+          ' "$GITHUB_EVENT_PATH" >/dev/null
+          commit="$(gh api "repos/$GITHUB_REPOSITORY/git/commits/$GITHUB_SHA")"
+          jq -e --arg base "$PR_BASE" --arg head "$PR_HEAD" \
+            '.parents | length == 2 and .[0].sha == $base and .[1].sha == $head' <<< "$commit" >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: automation
+          persist-credentials: false
+      - name: Verify tag protections with a read-only token
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node automation/.github/scripts/verify-tag-protection.mjs
+
   build:
-    if: github.event_name != 'release' || github.event.release.prerelease == false
+    if: github.event_name != 'pull_request' && (github.event_name != 'release' || github.event.release.prerelease == false)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -195,7 +253,7 @@ jobs:
 
   publish:
     needs: build
-    if: needs.build.outputs.mode == 'publish-dev' || needs.build.outputs.mode == 'release'
+    if: github.event_name != 'pull_request' && (needs.build.outputs.mode == 'publish-dev' || needs.build.outputs.mode == 'release')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -203,6 +261,33 @@ jobs:
       actions: read
       packages: write
     steps:
+      # OpenAI-Codex_format_architecture: check out only the trusted workflow revision for release guards.
+      - name: Verify trusted automation revision
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          WORKFLOW_REPOSITORY: ${{ job.workflow_repository }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REPOSITORY" == KingsleyHK0323/Multimedia_Downloader ]]
+          [[ "$WORKFLOW_REPOSITORY" == "$GITHUB_REPOSITORY" && "$WORKFLOW_SHA" =~ ^[0-9a-f]{40}$ ]]
+          relation="$(gh api "repos/$GITHUB_REPOSITORY/compare/$WORKFLOW_SHA...Source_Code")"
+          jq -e --arg sha "$WORKFLOW_SHA" '
+            .merge_base_commit.sha == $sha and .behind_by == 0 and
+            (.status == "ahead" or .status == "identical")
+          ' <<< "$relation" >/dev/null
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          repository: ${{ job.workflow_repository }}
+          ref: ${{ job.workflow_sha }}
+          path: automation
+          persist-credentials: false
+      - name: Verify version-tag protections
+        if: needs.build.outputs.mode == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node automation/.github/scripts/verify-tag-protection.mjs
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
@@ -267,6 +352,9 @@ jobs:
           [[ "$verified" == true ]] || { echo "::error::Exact-commit CI and matrix checks must pass before publishing."; exit 1; }
           mapfile -t archives < <(find "$RUNNER_TEMP/npm-delivery" -maxdepth 1 -type f -name '*.tgz' -print)
           [[ "${#archives[@]}" == 1 ]] || { echo "::error::Expected one tested package archive."; exit 1; }
+          if [[ "$MODE" == release ]]; then
+            node automation/.github/scripts/verify-tag-protection.mjs
+          fi
           npm publish "${archives[0]}" --registry=https://npm.pkg.github.com --tag "$dist_tag" --ignore-scripts
           verified=false
           for attempt in $(seq 1 8); do

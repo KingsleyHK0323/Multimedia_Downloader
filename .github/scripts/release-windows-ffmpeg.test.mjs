@@ -6,15 +6,24 @@ import { join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
-const workflow = readFileSync(resolve('.github/workflows/release.yml'), 'utf8');
-const start = '      - name: Stage ffmpeg — Windows\n';
-const end = '\n      - name: Install JS dependencies\n';
-assert.equal(workflow.split(start).length, 2);
-const block = workflow.split(start)[1].split(end)[0];
-const marker = '        run: |\n';
-assert.equal(block.split(marker).length, 2);
-const shell = block.split(marker)[1].replace(/^          /gm, '');
-function run(failCurl, failArchive) {
+// OpenAI-Codex_format_architecture: exercise each live Windows workflow independently.
+const workflows = [
+  { path: '.github/workflows/release-build.yml', start: '      - name: Stage ffmpeg — Windows\n',
+    end: '\n      - name: Install JS dependencies\n' },
+  { path: '.github/workflows/staged-build-only.yml', start: '      - name: Stage ffmpeg on Windows\n',
+    end: '\n      - name: Install JavaScript dependencies\n' },
+];
+function readShell({ path, start, end }) {
+  const workflow = readFileSync(resolve(path), 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(workflow.split(start).length, 2, path);
+  const after = workflow.split(start)[1];
+  assert.equal(after.split(end).length, 2, path);
+  const block = after.split(end)[0];
+  const marker = '        run: |\n';
+  assert.equal(block.split(marker).length, 2, path);
+  return block.split(marker)[1].replace(/^          /gm, '');
+}
+function run(shell, failCurl, failArchive) {
   const root = mkdtempSync(join(tmpdir(), 'ffmpeg-guard-'));
   const bin = join(root, 'bin');
   mkdirSync(bin);
@@ -28,18 +37,21 @@ function run(failCurl, failArchive) {
   assert.ifError(result.error);
   return { result, calls: existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n') : [] };
 }
-test('HTTP errors prevent archive handling', () => {
-  const { result, calls } = run(1, 0);
-  assert.notEqual(result.status, 0);
-  assert.deepEqual(calls, []);
-});
-test('invalid archive stops before extraction', () => {
-  const { result, calls } = run(0, 1);
-  assert.notEqual(result.status, 0);
-  assert.deepEqual(calls, ['t']);
-});
-test('an archive with no ffmpeg executable fails', () => {
-  const { result, calls } = run(0, 0);
-  assert.notEqual(result.status, 0);
-  assert.deepEqual(calls, ['t', 'x']);
-});
+for (const workflow of workflows) {
+  const shell = readShell(workflow);
+  test(workflow.path + ': HTTP errors prevent archive handling', () => {
+    const { result, calls } = run(shell, 1, 0);
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(calls, []);
+  });
+  test(workflow.path + ': invalid archive stops before extraction', () => {
+    const { result, calls } = run(shell, 0, 1);
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(calls, ['t']);
+  });
+  test(workflow.path + ': archive without ffmpeg executable fails', () => {
+    const { result, calls } = run(shell, 0, 0);
+    assert.notEqual(result.status, 0);
+    assert.deepEqual(calls, ['t', 'x']);
+  });
+}

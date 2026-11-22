@@ -19,7 +19,7 @@ function readValidationShell() {
       /^\s*-\s/m.test(workflow.slice(setup, begin))) throw new Error('guard must be the first setup step');
   const block = workflow.slice(begin + start.length, finish);
   if (!block.startsWith('      - name: Validate release inputs\n') || /^\s*(?:if|continue-on-error):/m.test(block) ||
-      !block.includes("          RAW_TAG: ${{ inputs.tag || github.event.inputs.tag || github.ref_name }}\n") ||
+      !block.includes("          RAW_TAG: ${{ needs.metadata.outputs.tag }}\n") ||
       !block.includes("          RAW_ONLY: ${{ inputs.only || github.event.inputs.only || 'all' }}\n") ||
       !block.includes('        shell: bash\n        run: |\n')) throw new Error('guard env or shell differs');
   const script = block.split('        shell: bash\n        run: |\n')[1];
@@ -73,39 +73,13 @@ test('rejects shell syntax as data and never echoes it', () => {
 });
 
 
-// OpenAI-Codex: verification-only runs must not reach release or package writes.
-test('verification-only mode isolates release and package publication paths', () => {
-  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
-  const between = (start, end) => {
-    assert.equal(source.split(start).length, 2, 'unique start required');
-    const tail = source.split(start)[1];
-    assert.ok(tail.includes(end), 'end required');
-    return tail.split(end)[0];
-  };
-  assert.match(between('      - name: Validate verification-only mode\n', '      # OpenAI-Codex: create the requested beta tag'),
-    /SOURCE_REF.*github\.ref[\s\S]*"\$ONLY" == all/);
-  assert.match(between('      - name: Ensure a GitHub Release exists for this tag\n', '\n  build:'),
-    /if: inputs\.verify_only != true/);
-  assert.match(between('      - name: Upload installers to the release\n', '\n  # OpenAI-Codex: verify the same build jobs'),
-    /if: inputs\.verify_only != true/);
-  assert.match(between('  publish-beta:\n', '  # OpenAI-Codex: publish only complete builds'),
-    /if: inputs\.verify_only != true/);
-  assert.match(between('  publish-stable:\n', '  # OpenAI-Codex: dispatch package publication'),
-    /if: inputs\.verify_only != true/);
-  const buildAction = between('      - name: Build the Tauri app\n', '      # OpenAI-Codex: retain only installer files');
-  assert.doesNotMatch(buildAction, /tagName|releaseName|releaseId|GITHUB_TOKEN/);
-  const verification = between('  verify-only:\n', '  # OpenAI-Codex: apply the same asset');
-  assert.match(verification, /contents: read/);
-  assert.doesNotMatch(verification, /gh release|npm publish|contents: write/);
-});
-
 // OpenAI-Codex: test that release inputs remain data, not generated shell code.
 test('release tag and platform inputs cannot inject shell commands', () => {
   const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
   const tagBlock = source.split('      - id: tag\n')[1]?.split('\n      - id: m\n')[0];
   const matrixBlock = source.split('      - id: m\n')[1]?.split('\n      # OpenAI-Codex: verification')[0];
   assert.ok(tagBlock && matrixBlock);
-  assert.ok(tagBlock.includes('          RELEASE_TAG: ${{ inputs.tag || github.event.inputs.tag || github.ref_name }}\n'));
+  assert.ok(tagBlock.includes('          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}\n'));
   assert.ok(matrixBlock.includes("          RELEASE_ONLY: ${{ inputs.only || github.event.inputs.only || 'all' }}\n"));
   const tagScript = tagBlock.match(/^        run: (.+)$/m)?.[1];
   const matrixBody = matrixBlock.split('        run: |\n')[1];
@@ -139,50 +113,216 @@ test('release tag and platform inputs cannot inject shell commands', () => {
     'matrix={"platform":["' + platformAttack + '"]}\n');
 });
 
-// OpenAI-Codex: exercise downstream release shells with local fake commands in CI.
-test('derived release tags stay data in version checks and release creation', () => {
+
+// OpenAI-Codex_format_architecture: verify trusted and untrusted jobs have separate permissions.
+test('builds and verification cannot obtain release write credentials', () => {
   const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
-  function scriptBetween(start, end) {
-    assert.equal(source.split(start).length, 2);
-    const block = source.split(start)[1].split(end)[0];
-    const body = block.split('        run: |\n')[1];
-    assert.ok(body);
-    assert.doesNotMatch(body, /\$\{\{/);
-    return body.split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  const between = (a, b) => {
+    assert.equal(source.split(a).length, 2);
+    const tail = source.split(a)[1];
+    assert.ok(tail.includes(b));
+    return tail.split(b)[0];
+  };
+  const setup = between('  setup:\n', '\n  build-linux:');
+  assert.match(setup, /contents: read/);
+  assert.doesNotMatch(setup, /contents: write|gh release create|repos\.createRelease/);
+  for (const [start, end] of [
+    ['  build-linux:\n', '\n  build-macos:'],
+    ['  build-macos:\n', '\n  build-windows:'],
+    ['  build-windows:\n', '\n  # OpenAI-Codex: verify the same build jobs'],
+  ]) {
+    const block = between(start, end);
+    assert.match(block, /contents: read/);
+    assert.doesNotMatch(block, /contents: write|GH_TOKEN|secrets\.|gh release upload/);
+    assert.match(block, /source_sha: \$\{\{ needs\.metadata\.outputs\.source_sha \}\}/);
+    assert.match(block, /uses: \.\/\.github\/workflows\/release-build\.yml/);
   }
-  const versionCheck = scriptBetween('      - name: Check the tag matches the project version\n',
-    '\n      # Runs BEFORE');
-  const ensureRelease = scriptBetween('      - name: Ensure a GitHub Release exists for this tag\n',
-    '\n  build:');
-  const root = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), 'release-shell-test-'));
-  const bin = join(root, 'bin');
+  const reusable = readFileSync(new URL('../workflows/release-build.yml', import.meta.url), 'utf8');
+  assert.match(reusable, /ref: \$\{\{ needs\.validate\.outputs\.source_sha \}\}/);
+  assert.match(reusable, /contents: read/);
+  assert.doesNotMatch(reusable, /contents: write|GH_TOKEN|secrets\./);
+  const publisher = between('  publisher:\n', '\n  # OpenAI-Codex: apply the same asset');
+  assert.match(publisher, /contents: write/);
+  assert.match(publisher, /!cancelled\(\)/);
+  assert.doesNotMatch(publisher, /always\(\)/);
+  assert.match(publisher, /actions: read/);
+  assert.match(publisher, /job\.workflow_sha/);
+  assert.match(publisher, /github\.event_name != 'pull_request'/);
+  assert.match(publisher, /stage-release-artifacts\.py/);
+  assert.match(publisher, /verify-version-at-commit\.mjs/);
+  assert.match(publisher, /upload-release-assets\.mjs/);
+  assert.doesNotMatch(publisher, /ref: \$\{\{ needs\.metadata\.outputs\.source_sha \}\}/);
+  assert.match(between('  publish-beta:\n', '\n  # OpenAI-Codex: publish only complete builds'), /publisher/);
+  assert.match(between('  publish-stable:\n', '\n  # OpenAI-Codex: dispatch package publication'), /publisher/);
+});
+test('v4.3.3 publication stops before the metadata job makes an API request', () => {
+  const workflow = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const block = workflow.split('      - name: Validate tag and resolve its trusted source\n')[1]
+    ?.split('\n  setup:')[0];
+  const body = block?.split('        run: |\n')[1];
+  assert.ok(body);
+  const shell = body.split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  const directory = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), 'release-metadata-'));
+  const bin = join(directory, 'bin');
   mkdirSync(bin);
-  writeFileSync(join(bin, 'python'), '#!/bin/sh\nprintf "4.3.22\\n"\n', { mode: 0o755 });
-  writeFileSync(join(bin, 'gh'), '#!/bin/sh\nif [ "$1" = release ] && [ "$2" = view ]; then exit 1; fi\nif [ "$1" = release ] && [ "$2" = create ]; then printf "%s\\n" "$@" > "$MOCK_ARGS"; exit 0; fi\nexit 99\n', { mode: 0o755 });
-  const argsFile = join(root, 'gh-args');
-  function run(script, tag, previous = '') {
-    const env = { ...process.env, PATH: bin + ':' + process.env.PATH, RELEASE_TAG: tag,
-      PREVIOUS_TAG: previous, GITHUB_REPOSITORY: 'example/repo', RUNNER_TEMP: root,
-      MOCK_ARGS: argsFile, GH_TOKEN: 'fixture' };
-    delete env.BASH_ENV;
-    delete env.ENV;
-    const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', script], {
-      cwd: root, env, encoding: 'utf8', timeout: 5000,
+  writeFileSync(join(bin, 'gh'), '#!/bin/sh\necho unexpected-api >&2\nexit 91\n', { mode: 0o755 });
+  const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', shell], {
+    cwd: directory, encoding: 'utf8', timeout: 5000,
+    env: { ...process.env, PATH: bin + ':' + process.env.PATH, GITHUB_REPOSITORY: 'KingsleyHK0323/Multimedia_Downloader',
+      TAG: 'v4.3.3', VERIFY_ONLY: 'false', ONLY: 'all', WORKFLOW_SHA: 'a'.repeat(40),
+      WORKFLOW_REPOSITORY: 'KingsleyHK0323/Multimedia_Downloader', WORKFLOW_PATH: '.github/workflows/release.yml',
+      GITHUB_EVENT_NAME: 'workflow_dispatch', GITHUB_REF: 'refs/heads/Source_Code' },
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stdout, /requires separate authorization/);
+  assert.doesNotMatch(result.stderr, /unexpected-api/);
+});
+
+test('single-platform recovery never publishes a release or npm package', () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8');
+  const beta = source.split('  publish-beta:\n')[1]?.split('  # OpenAI-Codex: publish only complete builds')[0];
+  const stable = source.split('  publish-stable:\n')[1]?.split('  # OpenAI-Codex: dispatch package publication')[0];
+  assert.ok(beta && stable);
+  assert.match(beta, /inputs\.only \|\| github\.event\.inputs\.only \|\| 'all'\) == 'all'/);
+  assert.match(stable, /inputs\.only \|\| github\.event\.inputs\.only \|\| 'all'\) == 'all'/);
+  assert.match(source, /Partial recovery requires an existing draft release/);
+});
+
+test('metadata resolves immutable tag targets and rejects non-ancestral commits', () => {
+  const workflow = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const body = workflow.split('      - name: Validate tag and resolve its trusted source\n')[1]
+    .split('\n  setup:')[0].split('        run: |\n')[1];
+  const shell = body.split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  const directory = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), 'release-metadata-api-'));
+  const bin = join(directory, 'bin');
+  mkdirSync(bin);
+  const fake = '#!/bin/sh\n' +
+    'case "$2" in\n' +
+    '  */git/ref/tags/*) printf "{\\"object\\":{\\"type\\":\\"commit\\",\\"sha\\":\\"%s\\"}}\\n" "$MOCK_TARGET" ;;\n' +
+    '  */compare/*) candidate=${2##*/compare/}; candidate=${candidate%%...*}; ' +
+    'if [ "$MOCK_BAD_REL" = 1 ]; then candidate=ffffffffffffffffffffffffffffffffffffffff; fi; ' +
+    'printf "{\\"merge_base_commit\\":{\\"sha\\":\\"%s\\"},\\"behind_by\\":0,\\"status\\":\\"ahead\\"}\\n" "$candidate" ;;\n' +
+    '  *) exit 91 ;;\n' +
+    'esac\n';
+  writeFileSync(join(bin, 'gh'), fake, { mode: 0o755 });
+  function run(tag, verifyOnly, bad) {
+    const output = join(directory, 'output-' + Math.random());
+    const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', shell], {
+      cwd: directory, encoding: 'utf8', timeout: 5000,
+      env: { ...process.env, PATH: bin + ':' + process.env.PATH,
+        GITHUB_REPOSITORY: 'KingsleyHK0323/Multimedia_Downloader', GITHUB_EVENT_NAME: 'workflow_dispatch',
+        GITHUB_REF: 'refs/heads/Source_Code', TAG: tag, VERIFY_ONLY: verifyOnly, ONLY: 'all',
+        WORKFLOW_SHA: 'a'.repeat(40), WORKFLOW_REPOSITORY: 'KingsleyHK0323/Multimedia_Downloader',
+        WORKFLOW_PATH: '.github/workflows/release.yml', MOCK_TARGET: 'b'.repeat(40),
+        MOCK_BAD_REL: bad ? '1' : '0', GITHUB_OUTPUT: output },
     });
-    if (result.error) throw result.error;
     return result;
   }
-  assert.equal(run(versionCheck, 'v4.3.22').status, 0);
-  assert.notEqual(run(versionCheck, 'v4.3.23').status, 0);
-  const attack = 'v4.3.22$(printf INJECTED)';
-  const checked = run(versionCheck, attack);
-  assert.notEqual(checked.status, 0);
-  assert.ok(checked.stdout.includes(attack));
-  assert.equal(run(ensureRelease, 'v4.3.23', 'v4.3.22').status, 0);
-  assert.ok(readFileSync(argsFile, 'utf8').split('\n').includes('v4.3.22'));
-  const previous = 'v4.3.21$(printf INJECTED)';
-  assert.equal(run(ensureRelease, attack, previous).status, 0);
-  const args = readFileSync(argsFile, 'utf8').split('\n');
-  assert.ok(args.includes(attack));
-  assert.ok(args.includes(previous));
+  assert.equal(run('v4.3.23', 'false', false).status, 0);
+  assert.notEqual(run('v4.3.23', 'false', true).status, 0);
+  assert.equal(run('v4.3.3', 'true', false).status, 0);
+  assert.notEqual(run('v4.3.3', 'false', false).status, 0);
+});
+
+test('owner-only temporary PR runs build-only against its exact synthetic merge', () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8');
+  const prTrigger = source.split('  pull_request:\n')[1]?.split('\n  push:')[0];
+  assert.ok(prTrigger);
+  assert.match(prTrigger, /paths:/);
+  assert.match(prTrigger, /\.github\/workflows\/release\.yml/);
+  assert.match(prTrigger, /\.github\/workflows\/release-build\.yml/);
+  const meta = source.split('  metadata:\n')[1]?.split('\n  setup:')[0];
+  assert.ok(meta);
+  assert.match(meta, /github\.event\.pull_request\.user\.id == 157894869/);
+  assert.match(meta, /github\.event\.sender\.id == 157894869/);
+  assert.match(meta, /head\.ref == 'automation\/protected-workflows'/);
+  assert.match(meta, /head\.repo\.full_name == github\.repository/);
+  assert.match(meta, /base\.repo\.full_name == github\.repository/);
+  assert.match(meta, /sha="\$GITHUB_SHA"/);
+  assert.match(meta, /VERIFY_ONLY=true/);
+  for (const job of ['publisher', 'publish-beta', 'publish-stable', 'request-npm-package']) {
+    const body = source.split('  ' + job + ':\n')[1];
+    assert.ok(body);
+    assert.match(body.split(/\n  [a-z][a-z-]*:\n/)[0], /github\.event_name != 'pull_request'/);
+  }
+});
+
+test('workflow concurrency uses an available context and npm job has one condition', () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8');
+  const group = source.split('\nconcurrency:\n')[1]?.split('\njobs:\n')[0];
+  assert.ok(group);
+  assert.doesNotMatch(group, /needs\./);
+  assert.match(group, /inputs\.tag \|\| github\.event\.inputs\.tag \|\| github\.ref_name/);
+  const npm = source.split('  request-npm-package:\n')[1];
+  assert.ok(npm);
+  assert.equal((npm.match(/^    if:/gm) || []).length, 1);
+  assert.match(npm, /github\.event_name != 'pull_request'.*needs\.publish-stable\.result == 'success'/);
+});
+
+test('cloud release workflow lint is pinned and runs with read-only permissions', () => {
+  const source = readFileSync(new URL('../workflows/ci.yml', import.meta.url), 'utf8');
+  const job = source.split('  release-input-guard:\n')[1]?.split('\n  lint:')[0];
+  assert.ok(job);
+  assert.match(job, /permissions:\n      contents: read/);
+  assert.match(job, /persist-credentials: false/);
+  assert.match(job, /actionlint_1\.7\.12_linux_amd64\.tar\.gz/);
+  assert.match(job, /8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8/);
+  assert.match(job, /\.github\/workflows\/release\.yml \.github\/workflows\/release-build\.yml/);
+});
+
+test('PR metadata requires exact branch casing before trusted API data is consumed', () => {
+  const workflow = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const body = workflow.split('      - name: Validate tag and resolve its trusted source\n')[1]
+    .split('\n  setup:')[0].split('        run: |\n')[1];
+  const shell = body.split('\n').map(line => line.startsWith('          ') ? line.slice(10) : line).join('\n');
+  const directory = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), 'release-pr-case-'));
+  const bin = join(directory, 'bin');
+  mkdirSync(bin);
+  const fake = '#!/bin/sh\n' +
+    'case "$2" in\n' +
+    '  */git/commits/*) printf "{\\"parents\\":[{\\"sha\\":\\"%s\\"},{\\"sha\\":\\"%s\\"}]}\\n" "$PR_BASE" "$PR_HEAD" ;;\n' +
+    '  */contents/package.json*) printf eyJ2ZXJzaW9uIjoiNC4zLjIyIn0= ;;\n' +
+    '  *) exit 91 ;;\n' +
+    'esac\n';
+  writeFileSync(join(bin, 'gh'), fake, { mode: 0o755 });
+  function run(headRef, baseRef) {
+    const output = join(directory, 'output-' + Math.random());
+    return spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c', shell], {
+      cwd: directory, encoding: 'utf8', timeout: 5000,
+      env: { ...process.env, PATH: bin + ':' + process.env.PATH,
+        GITHUB_REPOSITORY: 'KingsleyHK0323/Multimedia_Downloader', GITHUB_EVENT_NAME: 'pull_request',
+        GITHUB_REF: 'refs/pull/81/merge', GITHUB_SHA: 'c'.repeat(40),
+        GITHUB_HEAD_REF: headRef, GITHUB_BASE_REF: baseRef, TAG: '81/merge', VERIFY_ONLY: '', ONLY: 'all',
+        WORKFLOW_SHA: 'a'.repeat(40), WORKFLOW_REPOSITORY: 'KingsleyHK0323/Multimedia_Downloader',
+        WORKFLOW_PATH: '.github/workflows/release.yml', PR_HEAD: 'a'.repeat(40), PR_BASE: 'b'.repeat(40),
+        GITHUB_OUTPUT: output },
+    });
+  }
+  assert.equal(run('automation/protected-workflows', 'Source_Code').status, 0);
+  assert.notEqual(run('automation/Protected-workflows', 'Source_Code').status, 0);
+  assert.notEqual(run('automation/protected-workflows', 'source_code').status, 0);
+});
+
+
+test('version-tag protections are checked with each job token before release writes', () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8');
+  const block = name => {
+    const section = source.split('  ' + name + ':\n')[1];
+    assert.ok(section, name);
+    return section.split(/\n  (?:#|[a-z][a-z-]*:)/)[0];
+  };
+  const verify = block('verify-only');
+  assert.match(verify, /contents: read/);
+  assert.match(verify, /node automation\/\.github\/scripts\/verify-tag-protection\.mjs/);
+  const publisher = block('publisher');
+  const checks = [...publisher.matchAll(/node automation\/\.github\/scripts\/verify-tag-protection\.mjs/g)]
+    .map(match => match.index);
+  assert.equal(checks.length, 2);
+  assert.ok(checks[0] < publisher.indexOf('- name: Create or verify the draft release'));
+  assert.ok(checks[1] < publisher.indexOf('- name: Upload or verify exact release assets'));
+  for (const name of ['publish-beta', 'publish-stable']) {
+    const body = block(name);
+    assert.match(body, /node automation\/\.github\/scripts\/verify-tag-protection\.mjs/);
+    assert.ok(body.indexOf('verify-tag-protection.mjs') < body.indexOf('gh release edit '));
+  }
 });
