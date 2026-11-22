@@ -1,0 +1,187 @@
+# OpenAI-Codex: verify App ref compare-and-swap on the approved temporary branch.
+name: Verify automation App branch CAS
+
+on:
+  push:
+    branches: [automation/protected-workflows]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  verify:
+    if: >-
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.ref == 'refs/heads/automation/protected-workflows' &&
+      github.event.head_commit.message == 'test: verify automation App compare-and-swap'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify the approved branch and pull request
+        id: preflight
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // OpenAI-Codex: wait for the owner's PR before touching its temporary branch.
+            const { owner, repo } = context.repo;
+            const branch = 'automation/protected-workflows';
+            const expected = 'test: verify automation App compare-and-swap';
+            const payload = context.payload;
+            if (owner !== 'KingsleyHK0323' || repo !== 'Multimedia_Downloader' ||
+                context.eventName !== 'push' || context.ref !== 'refs/heads/' + branch ||
+                payload.repository?.id !== 1251103365 ||
+                payload.repository?.full_name !== owner + '/' + repo ||
+                payload.repository?.node_id !== 'R_kgDOSpJShQ' ||
+                payload.sender?.id !== 157894869 || payload.sender?.type !== 'User' ||
+                payload.deleted !== false || payload.forced !== false ||
+                payload.head_commit?.message !== expected ||
+                !/^[0-9a-f]{40}$/.test(context.sha || '') || payload.after !== context.sha) {
+              throw new Error('Untrusted CAS verification event.');
+            }
+            for (let attempt = 0; attempt < 20; attempt++) {
+              const prs = await github.paginate(github.rest.pulls.list, {
+                owner, repo, state: 'open', base: 'Source_Code', head: owner + ':' + branch, per_page: 100,
+              });
+              if (!Array.isArray(prs) || prs.length > 1) throw new Error('Ambiguous CAS verification PR.');
+              if (prs.length === 1) {
+                const pr = prs[0];
+                const base = (await github.rest.git.getRef({ owner, repo, ref: 'heads/Source_Code' })).data;
+                const approved = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + branch })).data;
+                if (approved.object?.sha !== context.sha) throw new Error('Approved branch changed before token creation.');
+                if (pr.state !== 'open' || pr.user?.id !== 157894869 ||
+                    pr.head?.repo?.id !== 1251103365 || pr.head?.ref !== branch ||
+                    pr.base?.repo?.id !== 1251103365 ||
+                    pr.base?.ref !== 'Source_Code' || pr.base?.sha !== base.object?.sha ||
+                    !Number.isSafeInteger(pr.number) || pr.number < 1) {
+                  throw new Error('CAS verification PR identity or base is invalid.');
+                }
+                if (pr.head?.sha !== context.sha) {
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  continue;
+                }
+                core.setOutput('pr-number', String(pr.number));
+                core.setOutput('base-sha', pr.base.sha);
+                return;
+              }
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+            throw new Error('Approved temporary-branch PR did not appear.');
+
+      - name: Create a limited App token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          app-id: '5868451'
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+
+      - name: Verify an atomic no-file-change ref update
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+          PROBE_PR: ${{ steps.preflight.outputs.pr-number }}
+          PROBE_BASE: ${{ steps.preflight.outputs.base-sha }}
+        with:
+          script: |
+            // OpenAI-Codex: the only write is a fast-forward of the approved temporary ref.
+            const { owner, repo } = context.repo;
+            const branch = 'automation/protected-workflows';
+            const fullName = owner + '/' + repo;
+            const validSha = value => /^[0-9a-f]{40}$/.test(value || '');
+            if (fullName !== 'KingsleyHK0323/Multimedia_Downloader' ||
+                context.ref !== 'refs/heads/' + branch ||
+                context.payload.sender?.id !== 157894869 || context.payload.sender?.type !== 'User' ||
+                context.payload.head_commit?.message !== 'test: verify automation App compare-and-swap' ||
+                process.env.APP_SLUG !== 'kingsley-multimedia-automation' ||
+                typeof process.env.APP_TOKEN !== 'string' || !process.env.APP_TOKEN ||
+                !/^[1-9][0-9]*$/.test(process.env.PROBE_PR || '') ||
+                !validSha(process.env.PROBE_BASE) || !validSha(context.sha)) {
+              throw new Error('Invalid CAS verification context.');
+            }
+            const number = Number(process.env.PROBE_PR);
+            if (!Number.isSafeInteger(number)) throw new Error('Invalid PR number.');
+            const pr = (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
+            const sourceRef = (await github.rest.git.getRef({ owner, repo, ref: 'heads/Source_Code' })).data;
+            const branchRef = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + branch })).data;
+            if (pr.state !== 'open' || pr.user?.id !== 157894869 ||
+                pr.head?.repo?.id !== 1251103365 || pr.head?.ref !== branch ||
+                pr.head?.sha !== context.sha || pr.base?.repo?.id !== 1251103365 ||
+                pr.base?.ref !== 'Source_Code' || pr.base?.sha !== process.env.PROBE_BASE ||
+                sourceRef.object?.sha !== process.env.PROBE_BASE ||
+                branchRef.object?.sha !== context.sha) {
+              throw new Error('PR or branch changed before CAS verification.');
+            }
+            if (process.env.PROBE_BASE === context.sha) throw new Error('The PR head must differ from its base.');
+            const history = (await github.rest.repos.compareCommitsWithBasehead({
+              owner, repo, basehead: process.env.PROBE_BASE + '...' + context.sha, per_page: 1,
+            })).data;
+            if (history.base_commit?.sha !== process.env.PROBE_BASE ||
+                history.merge_base_commit?.sha !== process.env.PROBE_BASE ||
+                history.status !== 'ahead' || history.behind_by !== 0 ||
+                !Number.isSafeInteger(history.ahead_by) || history.ahead_by < 1) {
+              throw new Error('The approved base is not an ancestor of the temporary branch.');
+            }
+            const app = getOctokit(process.env.APP_TOKEN);
+            const info = (await app.request('GET /apps/{app_slug}', { app_slug: process.env.APP_SLUG })).data;
+            if (info?.id !== 5868451 || info.slug !== process.env.APP_SLUG) {
+              throw new Error('Unexpected automation App identity.');
+            }
+            const previous = (await github.rest.git.getCommit({ owner, repo, commit_sha: context.sha })).data;
+            if (previous.sha !== context.sha || !validSha(previous.tree?.sha)) {
+              throw new Error('Cannot verify the existing commit tree.');
+            }
+            const message = 'test: record automation App CAS verification';
+            const created = (await app.rest.git.createCommit({
+              owner, repo, message, tree: previous.tree.sha, parents: [context.sha, process.env.PROBE_BASE],
+            })).data;
+            if (!validSha(created.sha) || created.tree?.sha !== previous.tree.sha ||
+                created.message !== message || !Array.isArray(created.parents) ||
+                created.parents.length !== 2 || created.parents[0]?.sha !== context.sha ||
+                created.parents[1]?.sha !== process.env.PROBE_BASE) {
+              throw new Error('Created CAS verification commit is not empty.');
+            }
+            const [original, unreferenced] = await Promise.all([
+              github.rest.repos.getContent({ owner, repo, path: 'CHANGELOG.md', ref: context.sha }),
+              github.rest.repos.getContent({ owner, repo, path: 'CHANGELOG.md', ref: created.sha }),
+            ]);
+            if (!original.data || !unreferenced.data || original.data.type !== 'file' ||
+                unreferenced.data.type !== 'file' || original.data.sha !== unreferenced.data.sha) {
+              throw new Error('Unreferenced commit content cannot be verified.');
+            }
+            const mutationId = 'app-cas-probe-' + context.runId;
+            const result = await app.graphql(
+              'mutation($input: UpdateRefsInput!) { updateRefs(input: $input) { clientMutationId } }',
+              { input: {
+                repositoryId: 'R_kgDOSpJShQ',
+                clientMutationId: mutationId,
+                refUpdates: [{ name: 'refs/heads/' + branch, beforeOid: context.sha, afterOid: created.sha, force: false }],
+              } },
+            );
+            if (result?.updateRefs?.clientMutationId !== mutationId) {
+              throw new Error('CAS verification response is incomplete.');
+            }
+            const updated = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + branch })).data;
+            if (updated.object?.sha !== created.sha) throw new Error('Temporary branch did not advance as expected.');
+            const confirmed = (await github.rest.git.getCommit({ owner, repo, commit_sha: created.sha })).data;
+            if (confirmed.tree?.sha !== previous.tree.sha || !Array.isArray(confirmed.parents) ||
+                confirmed.parents.length !== 2 || confirmed.parents[0]?.sha !== context.sha ||
+                confirmed.parents[1]?.sha !== process.env.PROBE_BASE) {
+              throw new Error('The updated commit is not an empty fast-forward.');
+            }
+            for (let attempt = 0; attempt < 20; attempt++) {
+              const current = (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
+              if (current.state !== 'open' || current.user?.id !== 157894869 ||
+                  current.head?.repo?.id !== 1251103365 || current.head?.ref !== branch ||
+                  current.base?.repo?.id !== 1251103365 || current.base?.ref !== 'Source_Code' ||
+                  current.base?.sha !== process.env.PROBE_BASE) {
+                throw new Error('PR identity or base changed during CAS verification.');
+              }
+              if (current.head?.sha === created.sha) {
+                core.notice('Verified App CAS and unreferenced commit access for PR #' + number + '.');
+                return;
+              }
+              await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+            throw new Error('PR did not observe the updated temporary branch.');

@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Harden staged health PR base updates with an atomic, non-force ref comparison and a scoped App verification workflow. (OpenAI-Codex)
 - Stage an opt-in App health report writer while preserving the existing default schedule. (OpenAI-Codex)
 - Stage an opt-in App health report merger that requires strict checks and website branch isolation. (OpenAI-Codex)
 - Prevent automation App PRs from triggering patch releases. (OpenAI-Codex_ruleset_architecture)

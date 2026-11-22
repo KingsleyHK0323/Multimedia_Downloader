@@ -61,7 +61,7 @@ function harness(options = {}) {
     incompleteTree: false, openOthers: [], currentBase: base, finishUpdate: true,
     mergeCandidate: null, refreshCandidate: null, firstCandidate: null, refs: {},
     previousReport: null, badIdentity: false, casConflict: false, closedOthers: [],
-    manyRecentClosed: false, ...options,
+    manyRecentClosed: false, treeUnexpected: false, retargetDuringCas: false, ...options,
   };
   const oldBlob = () => blob(state.old);
   const currentBlob = () => blob(state.newReport);
@@ -86,6 +86,7 @@ function harness(options = {}) {
       }),
     },
     repos: {
+      get: async () => ({ data: { full_name: fullName, node_id: 'R_test_repository' } }),
       getContent: async ({ ref }) => {
         const value = ref === base || ref === moved ? state.old :
           ref === refreshedCommit || ref === mergedCommit || ref === secondCommit ? state.newReport :
@@ -113,9 +114,23 @@ function harness(options = {}) {
         if (state.firstCandidate && commit_sha === state.firstCandidate.sha) return { data: state.firstCandidate };
         throw missing();
       },
-      getTree: async ({ tree_sha }) => {
+      getTree: async ({ tree_sha, recursive }) => {
         const oldSha = oldBlob();
         const newSha = state.newReport === null ? oldSha : currentBlob();
+        if (recursive === 'true') {
+          const isBase = tree_sha === baseTree;
+          if (![baseTree, newTree, refreshedTree].includes(tree_sha)) throw missing();
+          const ghTree = isBase ? baseGithub : (tree_sha === refreshedTree ? refreshedGithub : newGithub);
+          const automationTree = isBase ? baseAutomation : (tree_sha === refreshedTree ? refreshedAutomation : newAutomation);
+          const content = isBase ? oldSha : newSha;
+          return { data: tree(tree_sha,
+            entry('.github', 'tree', '040000', ghTree),
+            entry('.github/automation', 'tree', '040000', automationTree),
+            entry(path, 'blob', '100644', content),
+            entry('README.md', 'blob', '100644', state.treeUnexpected && !isBase ? '3'.repeat(40) : 'e1'.repeat(20)),
+            entry('scripts', 'tree', '040000', 'e2'.repeat(20)),
+            entry('scripts/tool.py', 'blob', '100644', 'e3'.repeat(20))) };
+        }
         const trees = {
           [baseTree]: tree(baseTree, entry('.github', 'tree', '040000', baseGithub)),
           [baseGithub]: tree(baseGithub, entry('automation', 'tree', '040000', baseAutomation)),
@@ -181,6 +196,22 @@ function harness(options = {}) {
   };
   const writer = {
     graphql: async (query, { input }) => {
+      if (query.includes('updateRefs')) {
+        state.writes.push({ kind: 'updateRefs', input });
+        if (state.casConflict) throw new Error('beforeOid conflict');
+        assert.equal(input.repositoryId, 'R_test_repository');
+        assert.equal(input.refUpdates.length, 1);
+        const change = input.refUpdates[0];
+        assert.equal(change.name, 'refs/heads/' + branch);
+        assert.equal(change.beforeOid, state.branchHead);
+        assert.equal(change.afterOid, mergedCommit);
+        assert.equal(change.force, false);
+        if (state.retargetDuringCas) state.pr.base.ref = 'Multimedia_Downloader_Web_Preview';
+        state.branchHead = mergedCommit;
+        state.refs['heads/' + branch] = mergedCommit;
+        state.pr.head.sha = mergedCommit;
+        return { updateRefs: { clientMutationId: input.clientMutationId } };
+      }
       state.writes.push({ kind: 'graphql', input });
       if (state.casConflict) throw new Error('expectedHeadOid conflict');
       assert.match(query, /createCommitOnBranch/);
@@ -213,10 +244,15 @@ function harness(options = {}) {
       },
       createTree: async (args) => {
         state.writes.push({ kind: 'tree', args });
-        return { data: { sha: state.candidate && state.pr?.state === 'closed' ? refreshedTree : newTree } };
+        return { data: { sha: state.refreshCandidate || (state.candidate && state.pr?.state === 'closed') ? refreshedTree : newTree } };
       },
       createCommit: async (args) => {
         state.writes.push({ kind: 'commit', args });
+        if (args.parents.length === 2) {
+          state.mergeCandidate = { sha: mergedCommit, message: args.message,
+            tree: { sha: args.tree }, parents: args.parents.map((value) => ({ sha: value })) };
+          return { data: state.mergeCandidate };
+        }
         if (state.candidate) state.firstCandidate = state.candidate;
         state.candidate = { sha: state.firstCandidate ? secondCommit : newCommit, message: args.message,
           tree: { sha: args.tree }, parents: args.parents.map((value) => ({ sha: value })) };
@@ -238,18 +274,6 @@ function harness(options = {}) {
         assert.equal(args.state, 'closed');
         state.pr.state = 'closed';
         return { data: state.pr };
-      },
-      updateBranch: async (args) => {
-        state.writes.push({ kind: 'update', args });
-        if (state.finishUpdate) {
-          state.mergeCandidate = { sha: mergedCommit, message: 'Merge Source_Code into health branch',
-            tree: { sha: state.refreshCandidate ? refreshedTree : newTree },
-            parents: [{ sha: state.branchHead }, { sha: state.currentBase }] };
-          state.branchHead = mergedCommit;
-          state.refs['heads/' + branch] = mergedCommit;
-          state.pr.head.sha = mergedCommit;
-        }
-        return { status: 202 };
       },
       create: async (args) => {
         state.writes.push({ kind: 'pr', args });
@@ -353,24 +377,27 @@ test('updates an existing stale health PR without forcing and verifies the new h
   h.state.pr.base.sha = moved;
   const count = h.state.writes.length;
   await h.invoke();
-  const updates = h.state.writes.filter((entry) => entry.kind === 'update');
+  const updates = h.state.writes.filter((entry) => entry.kind === 'updateRefs');
   assert.equal(updates.length, 1);
-  assert.equal(updates[0].args.expected_head_sha, newCommit);
-  assert.equal(updates[0].args.pull_number, 75);
-  assert.equal(Object.hasOwn(updates[0].args, 'force'), false);
+  assert.equal(updates[0].input.refUpdates[0].beforeOid, newCommit);
+  assert.equal(updates[0].input.refUpdates[0].afterOid, mergedCommit);
+  assert.equal(updates[0].input.refUpdates[0].force, false);
+  assert.deepEqual(h.state.mergeCandidate.parents.map((item) => item.sha), [newCommit, moved]);
   assert.equal(h.state.branchHead, mergedCommit);
-  assert.equal(h.state.writes.length, count + 1);
+  assert.equal(h.state.writes.length, count + 3);
   await h.invoke();
-  assert.equal(h.state.writes.length, count + 1);
+  assert.equal(h.state.writes.length, count + 3);
 });
 
-test('reports an unobserved asynchronous update instead of claiming success', async () => {
-  const h = harness({ finishUpdate: false });
+test('preserves the branch when atomic ref comparison fails', async () => {
+  const h = harness();
   await h.invoke();
   h.state.currentBase = moved;
   h.state.pr.base.sha = moved;
-  await assert.rejects(h.invoke(), /completion was not observed/);
-  assert.equal(h.state.writes.filter((entry) => entry.kind === 'update').length, 1);
+  h.state.casConflict = true;
+  await assert.rejects(h.invoke(), /beforeOid conflict/);
+  assert.equal(h.state.branchHead, newCommit);
+  assert.equal(h.state.refs['heads/automation/ci-health-123-1-' + base], newCommit);
 });
 
 test('refuses stale updates when mergeability or auto-merge is unsafe', async () => {
@@ -380,7 +407,7 @@ test('refuses stale updates when mergeability or auto-merge is unsafe', async ()
   conflict.state.pr.base.sha = moved;
   conflict.state.pr.mergeable = false;
   await assert.rejects(conflict.invoke(), /mergeability is unavailable or conflicted/);
-  assert.equal(conflict.state.writes.some((entry) => entry.kind === 'update'), false);
+  assert.equal(conflict.state.writes.some((entry) => entry.kind === 'updateRefs'), false);
 
   const auto = harness();
   await auto.invoke();
@@ -388,7 +415,7 @@ test('refuses stale updates when mergeability or auto-merge is unsafe', async ()
   auto.state.pr.base.sha = moved;
   auto.state.pr.auto_merge = { enabled_by: { login: 'owner' } };
   await assert.rejects(auto.invoke(), /auto-merge setting is unsafe/);
-  assert.equal(auto.state.writes.some((entry) => entry.kind === 'update'), false);
+  assert.equal(auto.state.writes.some((entry) => entry.kind === 'updateRefs'), false);
 });
 
 test('ignores health-like PRs from forks or other identities', async () => {
@@ -467,9 +494,11 @@ test('refreshes a newer report and then updates a stale base without force', asy
   h.state.pr.base.sha = moved;
   await h.invoke();
   const refresh = h.state.writes.find((entry) => entry.kind === 'graphql');
-  const update = h.state.writes.find((entry) => entry.kind === 'update');
+  const update = h.state.writes.find((entry) => entry.kind === 'updateRefs');
   assert.equal(refresh.input.expectedHeadOid, newCommit);
-  assert.equal(update.args.expected_head_sha, refreshedCommit);
+  assert.equal(update.input.refUpdates[0].beforeOid, refreshedCommit);
+  assert.equal(update.input.refUpdates[0].force, false);
+  assert.deepEqual(h.state.mergeCandidate.parents.map((item) => item.sha), [refreshedCommit, moved]);
   assert.equal(h.state.branchHead, mergedCommit);
   assert.equal(JSON.parse(h.state.newReport).run_id, 124);
 });
@@ -582,4 +611,25 @@ test('checks the exact source ref before either legacy writing or minting an App
   assert.ok(legacy >= 0 && app > legacy);
   assert.ok(workflow.indexOf('Verify exact source ref', legacy) < workflow.indexOf('Update report when scheduled CI changes', legacy));
   assert.ok(workflow.indexOf('Verify exact source ref', app) < workflow.indexOf('Create a repository-scoped App token', app));
+});
+
+test('rejects an unrelated change in a generated base tree before the ref update', async () => {
+  const h = harness();
+  await h.invoke();
+  h.state.currentBase = moved;
+  h.state.pr.base.sha = moved;
+  h.state.treeUnexpected = true;
+  await assert.rejects(h.invoke(), /changed an unrelated object/);
+  assert.equal(h.state.writes.some((entry) => entry.kind === 'updateRefs'), false);
+  assert.equal(h.state.branchHead, newCommit);
+});
+
+test('a concurrent retarget cannot alter the fixed Source_Code parent', async () => {
+  const h = harness({ retargetDuringCas: true });
+  await h.invoke();
+  h.state.currentBase = moved;
+  h.state.pr.base.sha = moved;
+  await assert.rejects(h.invoke(), /identity, head, base, or auto-merge setting is unsafe/);
+  assert.deepEqual(h.state.mergeCandidate.parents.map((item) => item.sha), [newCommit, moved]);
+  assert.equal(h.state.branchHead, mergedCommit);
 });
