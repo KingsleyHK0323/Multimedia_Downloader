@@ -112,7 +112,9 @@ jobs:
             -ignore '^unexpected key "queue" for "concurrency" section[.]' \
             .github/workflows/release.yml .github/workflows/release-build.yml .github/workflows/npm-package.yml \
             .github/workflows/clean-merged-branches.yml .github/workflows/cleanup-associated-pr-probe.yml \
-            .github/workflows/first-interaction.yml .github/workflows/issue-pr-triage.yml
+            .github/workflows/first-interaction.yml .github/workflows/issue-pr-triage.yml \
+            .github/workflows/automation-health-cas.yml \
+            .github/workflows/automation-health.yml .github/workflows/automation-health-merge.yml
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
@@ -237,6 +239,14 @@ jobs:
           printf 'Health writer legacy mode: %s\n' "$HEALTH_WRITER_LEGACY"
           printf 'Health merger opt-in enabled: %s\n' "$HEALTH_MERGER_ENABLED"
           node --test .github/scripts/automation-health-merge.test.mjs
+
+      # OpenAI-Codex_ruleset_architecture: test the opt-in checked health update.
+      - name: Test checked health update safeguards
+        env:
+          HEALTH_CAS_ENABLED: ${{ vars.AUTOMATION_PR_MODE == 'enabled' && vars.AUTOMATION_HEALTH_CAS == 'enabled' }}
+        run: |
+          printf 'Health CAS opt-in enabled: %s\n' "$HEALTH_CAS_ENABLED"
+          node --test .github/scripts/automation-health-cas.test.mjs
 
       # OpenAI-Codex: exercise issue and PR triage with mocked GitHub APIs.
       - name: Test issue and PR triage

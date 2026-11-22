@@ -13,6 +13,9 @@
 ### Unreleased
 
 #### Repository automation
+- Prepare the health report writer to share the approved temporary branch and coordination lock. (OpenAI-Codex)
+- Record the scheduled CI run attempt in the health report for accurate rerun tracking. (OpenAI-Codex_health_release_architecture)
+- Stage an opt-in health report update that verifies the App commit, complete tree, push checks, and protected source ref before a non-force compare-and-swap. (OpenAI-Codex_ruleset_architecture)
 - Exercise App compare-and-swap with paired stale and current branch references. (OpenAI-Codex)
 - Verify missing and synthetic passing status behavior on a temporary protected branch. (OpenAI-Codex)
 - Run the cross-platform Python matrix for pushes to the approved temporary automation branch. (OpenAI-Codex)

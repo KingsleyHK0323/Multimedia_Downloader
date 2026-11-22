@@ -35,7 +35,7 @@ const scheduled = {
 };
 const report = JSON.stringify({
   generated_by: 'OpenAI-Codex', workflow: 'ci.yml', event: 'schedule', branch: 'Source_Code',
-  run_id: 101, status: 'completed', conclusion: 'success', url: scheduled.html_url,
+  run_id: 101, run_attempt: scheduled.run_attempt, status: 'completed', conclusion: 'success', url: scheduled.html_url,
 }, null, 2) + '\n';
 const entry = (name, type, mode, value) => ({ path: name, type, mode, sha: value });
 const tree = (value, ...entries) => ({ sha: value, truncated: false, tree: entries });
