@@ -22,7 +22,8 @@ jobs:
   # OpenAI-Codex: expose the tested PR merge context through the GitHub job name.
   dependabot-merge-context:
     name: dependabot-context-${{ github.event.pull_request.base.sha || github.sha }}-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.sha }}
-    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]')
+    # OpenAI-Codex_ruleset_architecture: capture the tested context for every pull request.
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}
@@ -69,8 +70,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
+      # OpenAI-Codex_format_architecture: isolate pip from checkout-local modules.
       - name: Install pinned Black
-        run: python -m pip install black==25.1.0
+        run: python -I -m pip install black==25.1.0
       - name: Test formatter change selection
         run: node --test .github/scripts/auto-format.test.mjs
 
@@ -84,6 +86,10 @@ jobs:
           node-version: "22"
       - name: Test release input validation
         run: node --test .github/scripts/release-input-guard.test.mjs
+
+      # OpenAI-Codex_health_release_architecture: verify exact release PR marker matching.
+      - name: Test automatic release PR marker
+        run: node --test .github/scripts/auto-patch-marker.test.mjs
 
       # OpenAI-Codex: exercise trusted workflow checkout boundaries.
       - name: Test trusted workflow checkouts

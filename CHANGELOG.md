@@ -13,6 +13,9 @@
 ### Unreleased
 
 #### Repository automation
+- Record the tested base, head, and merge context for every pull request. (OpenAI-Codex_ruleset_architecture)
+- Isolate automated formatting from checkout-local Python modules. (OpenAI-Codex_format_architecture)
+- Prevent automatic patch releases from matching another PR's number. (OpenAI-Codex_health_release_architecture)
 - Add a manually triggered, read-only verification of the repository automation App. (OpenAI-Codex)
 - Report failed or missing Dependabot security-update attempts for open alerts, with a read-only preview mode. (OpenAI-Codex)
 - Publish stable required check results for the complete CI and cross-platform Python test suites. (OpenAI-Codex)
