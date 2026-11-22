@@ -2,6 +2,15 @@ name: Weekly Dependabot Watchdog
 # OpenAI-Codex: pin actions/github-script v9.0.0 to its release commit.
 
 on:
+  # OpenAI-Codex: recheck the mitigation whenever its source or guard changes.
+  push:
+    branches: [Source_Code]
+    paths:
+      - "src-tauri/Cargo.toml"
+      - "src-tauri/Cargo.lock"
+      - ".github/scripts/test-glib-backport.py"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/weekly-dependabot-watchdog.yml"
   schedule:
     # Tuesday 20:15 Hong Kong time, after the weekly update window.
     - cron: "15 12 * * 2"
@@ -14,6 +23,7 @@ on:
 
 permissions:
   actions: read
+  contents: read
   issues: write
   pull-requests: read
   vulnerability-alerts: read
@@ -24,6 +34,7 @@ concurrency:
 
 jobs:
   audit:
+    if: github.repository == 'KingsleyHK0323/Multimedia_Downloader' && github.ref == 'refs/heads/Source_Code'
     runs-on: ubuntu-latest
     steps:
       - name: Check Dependabot scans and open pull requests
@@ -157,6 +168,63 @@ jobs:
             // OpenAI-Codex: a successful update attempt does not resolve an open alert.
             if (openAlerts.length > 0) {
               findings.push("Dependabot maintenance is not fully verified; review current update activity.");
+            }
+
+            // OpenAI-Codex: verify the exact backport without dismissing the version-based alert.
+            const trackedGlib = openAlerts.some((alert) =>
+              alert?.security_advisory?.ghsa_id === "GHSA-wrw7-89jp-8q8g" &&
+              alert?.dependency?.package?.ecosystem === "rust" &&
+              alert?.dependency?.package?.name === "glib" &&
+              alert?.dependency?.manifest_path === "src-tauri/Cargo.lock" &&
+              alert?.dependency?.version_requirement === "= 0.18.5",
+            );
+            if (trackedGlib) {
+              const revision = "1677375f54686a3fe2f1f383e068aa005606013b";
+              const origin = "https://github.com/KingsleyHK0323/Multimedia_Downloader";
+              const expectedSource = `git+${origin}?rev=${revision}#${revision}`;
+              const expectedPatch = `glib = { git = "${origin}", rev = "${revision}" }`;
+              const readFile = async (path, ref) => {
+                const file = (await github.rest.repos.getContent({ owner, repo, path, ref })).data;
+                if (!file || file.type !== "file" || file.encoding !== "base64" ||
+                    typeof file.content !== "string" || !Number.isSafeInteger(file.size) || file.size > 262144) {
+                  throw new Error("Cannot verify repository file.");
+                }
+                const bytes = Buffer.from(file.content, "base64");
+                if (bytes.length !== file.size) throw new Error("Repository file size mismatch.");
+                return bytes.toString("utf8").replaceAll("\r\n", "\n");
+              };
+              const sourceRef = async () => {
+                const ref = (await github.rest.git.getRef({ owner, repo, ref: "heads/Source_Code" })).data;
+                if (ref?.ref !== "refs/heads/Source_Code" || ref.object?.type !== "commit" ||
+                    !/^[0-9a-f]{40}$/.test(ref.object?.sha || "")) throw new Error("Cannot verify source ref.");
+                return ref.object.sha;
+              };
+              try {
+                if (owner !== "KingsleyHK0323" || repo !== "Multimedia_Downloader") throw new Error("Unexpected repository.");
+                const sourceSha = await sourceRef();
+                const [manifest, lock, comparison, patched] = await Promise.all([
+                  readFile("src-tauri/Cargo.toml", sourceSha),
+                  readFile("src-tauri/Cargo.lock", sourceSha),
+                  github.rest.repos.compareCommitsWithBasehead({ owner, repo, basehead: `${revision}...${sourceSha}` }),
+                  github.rest.repos.getContent({ owner, repo, path: "src-tauri/vendor/glib/src/variant_iter.rs", ref: revision }),
+                ]);
+                const sections = manifest.split(/^\[patch\.crates-io\][ \t]*$/m);
+                const patchSection = sections.length === 2 ? sections[1].split(/^\[/m)[0] : "";
+                const patchMatches = patchSection.split("\n").filter((line) => line.trim() === expectedPatch).length === 1;
+                const packages = lock.split(/^\[\[package\]\][ \t]*$/m)
+                  .filter((block) => /^name = "glib"$/m.test(block));
+                const lockMatches = packages.length === 1 && /^version = "0\.18\.5"$/m.test(packages[0]) &&
+                  packages[0].split("\n").filter((line) => line === `source = "${expectedSource}"`).length === 1;
+                const history = comparison?.data;
+                const reachable = (history?.status === "ahead" || history?.status === "identical") && history.behind_by === 0;
+                const blobMatches = patched?.data?.type === "file" && patched.data.sha === "9b44570e77e5aa4b9fd1efda5aa07a8271cff6be";
+                if (!patchMatches || !lockMatches || !reachable || !blobMatches || await sourceRef() !== sourceSha) {
+                  throw new Error("GLib backport verification failed.");
+                }
+                findings.push("The tracked GLib alert is mitigated by a verified pinned backport; the version-based alert remains open for the upstream upgrade.");
+              } catch {
+                findings.push("The tracked GLib backport could not be verified; treat the alert as unmitigated and investigate.");
+              }
             }
 
             const pullRequests = await github.paginate(

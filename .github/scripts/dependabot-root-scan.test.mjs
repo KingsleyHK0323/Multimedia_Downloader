@@ -13,7 +13,7 @@ const rootOld = ['npm_and_yarn in / - Update #1', 'pip in / - Update #3', 'githu
 const rootDot = rootOld.map((name) => name.replace(' in / - ', ' in /. - '));
 const nonRoot = ['npm_and_yarn in /frontend - Update #2', 'pip in /engine - Update #4', 'cargo in /src-tauri - Update #5'];
 
-async function run(names, failureName = null, alerts = [], preview = false) {
+async function run(names, failureName = null, alerts = [], preview = false, backport = {}) {
   const runs = names.map((name, i) => ({
     name, path: 'dynamic/dependabot/dependabot-updates', created_at: new Date().toISOString(),
     status: 'completed', conclusion: name === failureName ? 'failure' : 'success',
@@ -24,20 +24,48 @@ async function run(names, failureName = null, alerts = [], preview = false) {
   const actions = { listWorkflowRunsForRepo: async () => ({ data: { total_count: runs.length, workflow_runs: [] } }) };
   const pulls = { list() {} };
   const dependabot = { listAlertsForRepo() {} };
-  const repos = { listBranches() {} };
+  const revision = '1677375f54686a3fe2f1f383e068aa005606013b';
+  const sourceSha = 'c'.repeat(40);
+  const origin = 'https://github.com/KingsleyHK0323/Multimedia_Downloader';
+  let refCalls = 0;
+  const git = { async getRef() {
+    refCalls += 1;
+    const sha = backport.moved && refCalls > 1 ? 'd'.repeat(40) : sourceSha;
+    return { data: { ref: 'refs/heads/Source_Code', object: { type: 'commit', sha } } };
+  } };
+  const repos = {
+    listBranches() {},
+    async getContent({ path, ref }) {
+      if (backport.error) throw Error('API unavailable');
+      if (path.endsWith('/variant_iter.rs')) return { data: { type: 'file',
+        sha: backport.badBlob ? '0'.repeat(40) : '9b44570e77e5aa4b9fd1efda5aa07a8271cff6be' } };
+      assert.equal(ref, sourceSha);
+      let content;
+      if (path === 'src-tauri/Cargo.toml') content = '[patch.crates-io]\nglib = { git = "' + origin + '", rev = "' + revision + '" }\n';
+      else if (path === 'src-tauri/Cargo.lock') content = '[[package]]\nname = "glib"\nversion = "0.18.5"\nsource = "' +
+        (backport.unpatched ? 'registry+https://github.com/rust-lang/crates.io-index' : 'git+' + origin + '?rev=' + revision + '#' + revision) + '"\n';
+      else throw Error('Unexpected content path');
+      const bytes = Buffer.from(content);
+      return { data: { type: 'file', encoding: 'base64', size: bytes.length, content: bytes.toString('base64') } };
+    },
+    async compareCommitsWithBasehead({ basehead }) {
+      assert.equal(basehead, revision + '...' + sourceSha);
+      return { data: { status: backport.unreachable ? 'diverged' : 'ahead', behind_by: backport.unreachable ? 1 : 0 } };
+    },
+  };
   const issues = {
     listForRepo() {},
     async create(input) { calls.push({ method: 'create', body: input.body }); return { data: { html_url: 'https://example.invalid/issue' } }; },
     async update(input) { calls.push({ method: 'update', body: input.body }); },
   };
-  const github = { rest: { actions, pulls, repos, issues, dependabot }, async paginate(fn) {
+  const github = { rest: { actions, pulls, repos, issues, dependabot, git }, async paginate(fn) {
     if (fn === actions.listWorkflowRunsForRepo) return runs;
     if (fn === dependabot.listAlertsForRepo) return alerts;
     if (fn === pulls.list || fn === repos.listBranches || fn === issues.listForRepo) return [];
     throw Error('Unexpected API call');
   } };
   const core = { summary, warning() {}, info() {}, setFailed(message) { failures.push(message); } };
-  await new AsyncFunction('github', 'core', 'context', script)(github, core, { repo: { owner: 'owner', repo: 'repo' }, eventName: preview ? 'workflow_dispatch' : 'schedule', payload: { inputs: { preview: preview ? 'true' : 'false' } } });
+  await new AsyncFunction('github', 'core', 'context', script)(github, core, { repo: { owner: backport.owner ?? 'owner', repo: backport.repo ?? 'repo' }, eventName: preview ? 'workflow_dispatch' : 'schedule', payload: { inputs: { preview: preview ? 'true' : 'false' } } });
   assert.deepEqual(failures, [], 'unexpected workflow failure');
   assert.equal(JSON.stringify(runs), before, 'input response objects changed');
   return calls;
@@ -136,4 +164,23 @@ test('normalizes security-update root aliases without accepting malformed alert 
     assert.equal(invalid.length, 1);
     assert.match(invalid[0].body, /Could not correlate at least one open Dependabot alert/);
   }
+});
+
+// OpenAI-Codex: an alert is mitigated only while the exact patched source remains reachable.
+test('reports a verified GLib backport and fails closed on drift', async () => {
+  const bases = [...rootDot, ...nonRoot];
+  const alert = { security_advisory: { ghsa_id: 'GHSA-wrw7-89jp-8q8g' }, dependency: {
+    package: { ecosystem: 'rust', name: 'glib' }, manifest_path: 'src-tauri/Cargo.lock', version_requirement: '= 0.18.5',
+  } };
+  const base = { owner: 'KingsleyHK0323', repo: 'Multimedia_Downloader' };
+  const valid = await run(bases, null, [alert], false, base);
+  assert.equal(valid.length, 1);
+  assert.match(valid[0].body, /mitigated by a verified pinned backport/);
+  for (const drift of [{ unpatched: true }, { badBlob: true }, { unreachable: true }, { moved: true }, { error: true }]) {
+    const invalid = await run(bases, null, [alert], false, { ...base, ...drift });
+    assert.equal(invalid.length, 1);
+    assert.match(invalid[0].body, /could not be verified; treat the alert as unmitigated/);
+    assert.doesNotMatch(invalid[0].body, /mitigated by a verified pinned backport/);
+  }
+  assert.deepEqual(await run(bases, null, [alert], true, base), []);
 });
