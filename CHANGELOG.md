@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Prevent automation App PRs from triggering patch releases. (OpenAI-Codex_ruleset_architecture)
 - Keep reporting open Dependabot alerts even when the update attempt itself succeeds. (OpenAI-Codex)
 - Recheck the automation App identity when its verification workflow changes. (OpenAI-Codex)
 - Check the automation App's view of the permanent-branch ruleset without changing repository settings. (OpenAI-Codex)

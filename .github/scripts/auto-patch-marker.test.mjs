@@ -87,3 +87,72 @@ test('rejects missing or noncanonical PR numbers before the Git lookup', () => {
     assert.doesNotMatch(result.stderr, /fatal:/i);
   }
 });
+
+// OpenAI-Codex_ruleset_architecture: reject App-authored PRs before any release operation.
+const authorGuard = extract('PATCH_RELEASE_BOT_GUARD');
+const guardScript = [
+  'set -euo pipefail',
+  'gh() {',
+  '  if [[ "${MOCK_API_FAIL:-false}" == "true" ]]; then return 1; fi',
+  '  [[ "$1" == "api" && "$2" == "repos/example/repo/pulls/${PR_NUMBER}" ]] || return 1',
+  '  printf "%s" "$MOCK_PR_JSON"',
+  '}',
+  authorGuard,
+  'printf "GUARD PASSED\\n"',
+].join('\n');
+
+function checkAuthorGuard(pr, eventName, options = {}) {
+  const env = {
+    PATH: process.env.PATH,
+    PR_NUMBER: options.prNumber ?? '42',
+    GITHUB_REPOSITORY: 'example/repo',
+    GITHUB_EVENT_NAME: eventName,
+    MOCK_API_FAIL: options.apiFailure ? 'true' : 'false',
+    MOCK_PR_JSON: typeof pr === 'string' ? pr : JSON.stringify(pr),
+  };
+  const result = spawnSync('bash', ['-c', guardScript], {
+    env, encoding: 'utf8', timeout: 5000,
+  });
+  if (result.error) throw result.error;
+  return result;
+}
+
+test('excludes the automation App author for both event and dispatch paths', () => {
+  assert.ok(workflow.indexOf('# BEGIN PATCH_RELEASE_BOT_GUARD') < workflow.indexOf('- uses: actions/checkout@v7'));
+  for (const eventName of ['pull_request_target', 'workflow_dispatch']) {
+    const result = checkAuthorGuard({
+      user: { id: 359694872, login: 'kingsley-multimedia-automation[bot]', type: 'Bot' },
+      labels: [{ name: 'release:patch' }],
+    }, eventName);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /Automation App PRs cannot trigger automatic patch releases/);
+    assert.doesNotMatch(result.stdout, /GUARD PASSED/);
+  }
+});
+
+test('allows non-App PR authors for both source paths', () => {
+  for (const eventName of ['pull_request_target', 'workflow_dispatch']) {
+    for (const author of [
+      { id: 157894869, login: 'KingsleyHK0323', type: 'User' },
+      { id: 49699333, login: 'dependabot[bot]', type: 'Bot' },
+    ]) {
+      const result = checkAuthorGuard({ user: author }, eventName);
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, /GUARD PASSED/);
+    }
+  }
+});
+
+test('fails closed on invalid or unavailable source author metadata', () => {
+  for (const fixture of [{}, { user: null }, { user: {} }, { user: { id: '359694872' } },
+    { user: { id: null } }, { user: { id: 0 } }, { user: { id: 1.5 } }, '{invalid']) {
+    const result = checkAuthorGuard(fixture, 'workflow_dispatch');
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stdout, /GUARD PASSED/);
+  }
+  const unavailable = checkAuthorGuard({ user: { id: 157894869 } }, 'workflow_dispatch', { apiFailure: true });
+  assert.notEqual(unavailable.status, 0);
+  const invalidNumber = checkAuthorGuard({ user: { id: 157894869 } }, 'workflow_dispatch', { prNumber: '01' });
+  assert.notEqual(invalidNumber.status, 0);
+});
+

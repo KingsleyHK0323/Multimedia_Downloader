@@ -16,6 +16,7 @@ on:
 permissions:
   contents: write
   actions: write
+  pull-requests: read
 
 concurrency:
   group: automatic-patch-release-Source_Code
@@ -31,6 +32,36 @@ jobs:
     outputs:
       tag: ${{ steps.release.outputs.tag }}
     steps:
+      # OpenAI-Codex_ruleset_architecture: exclude the automation App from every patch-release entry point.
+      - name: Verify the source PR author
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ inputs.pr_number || github.event.pull_request.number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # BEGIN PATCH_RELEASE_BOT_GUARD
+          if [[ ! "${PR_NUMBER:-}" =~ ^[1-9][0-9]*$ ]]; then
+            echo '::error::Invalid source PR number.'
+            exit 1
+          fi
+          if ! source_pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}")"; then
+            echo '::error::Cannot verify the source PR author.'
+            exit 1
+          fi
+          if ! source_author_id="$(jq -er '
+            if (.user.id | type) != "number" then error("invalid source PR author")
+            elif .user.id < 1 or .user.id != (.user.id | floor) then error("invalid source PR author")
+            else .user.id | tostring end
+          ' <<< "$source_pr")"; then
+            echo '::error::Cannot verify the source PR author.'
+            exit 1
+          fi
+          if [[ "$source_author_id" == "359694872" ]]; then
+            echo '::error::Automation App PRs cannot trigger automatic patch releases.'
+            exit 1
+          fi
+          # END PATCH_RELEASE_BOT_GUARD
       - uses: actions/checkout@v7
         with:
           ref: Source_Code
