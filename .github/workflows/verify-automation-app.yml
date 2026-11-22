@@ -29,3 +29,15 @@ jobs:
           gh api /installation/repositories | jq -e --arg repo "$GITHUB_REPOSITORY" \
             '.repositories | (length == 1 and .[0].full_name == $repo)' > /dev/null
           echo 'App authentication and repository scope verified.'
+      # OpenAI-Codex_health_release_architecture: inspect only the App actor's bypass mode.
+      - name: Check ruleset bypass visibility without changes
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mode="$(gh api "repos/$GITHUB_REPOSITORY/rulesets/27644518" --jq '.current_user_can_bypass // "missing"')"
+          case "$mode" in
+            never|always|pull_requests_only|exempt) printf 'App bypass mode: %s\n' "$mode" ;;
+            *) echo '::error::App bypass mode is missing or unknown.'; exit 1 ;;
+          esac
