@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Exercise App compare-and-swap with paired stale and current branch references. (OpenAI-Codex)
 - Verify missing and synthetic passing status behavior on a temporary protected branch. (OpenAI-Codex)
 - Run the cross-platform Python matrix for pushes to the approved temporary automation branch. (OpenAI-Codex)
 - Keep staged health App writes and merges disabled until non-source branch isolation is verified. (OpenAI-Codex)
