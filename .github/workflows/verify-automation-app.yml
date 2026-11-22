@@ -1,0 +1,31 @@
+name: Verify repository automation App
+# OpenAI-Codex: check the installed App without modifying repository data.
+
+on:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  verify:
+    if: github.repository == 'KingsleyHK0323/Multimedia_Downloader' && github.ref == 'refs/heads/Source_Code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Create a narrowly scoped installation token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          app-id: '5868451'
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Check accessible repository without changes
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api /installation/repositories | jq -e --arg repo "$GITHUB_REPOSITORY" \
+            '.repositories | (length == 1 and .[0].full_name == $repo)' > /dev/null
+          echo 'App authentication and repository scope verified.'
