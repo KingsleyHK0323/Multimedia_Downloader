@@ -1,20 +1,48 @@
+# OpenAI-Codex_health_release_architecture: preserve legacy mode until the coordinated PR cutover.
 # OpenAI-Codex: persist the latest scheduled CI health without generating noise.
 name: Update automation health
 on:
+  push:
+    branches: [Source_Code]
+  workflow_run:
+    workflows: [CI, Python matrix tests]
+    types: [completed]
   schedule:
     - cron: "25 13 * * 2"
+    - cron: "37 */6 * * *"
   workflow_dispatch:
 permissions:
   actions: read
   contents: write
-concurrency:
-  group: automation-health-report
-  cancel-in-progress: false
+  pull-requests: read
 jobs:
-  report:
+  invalid-mode:
+    if: vars.AUTOMATION_PR_MODE != '' && vars.AUTOMATION_PR_MODE != 'legacy' && vars.AUTOMATION_PR_MODE != 'enabled'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Reject an unknown automation mode
+        run: |
+          echo '::error::AUTOMATION_PR_MODE must be empty, legacy, or enabled.'
+          exit 1
+  legacy-report:
+    if: >-
+      (vars.AUTOMATION_PR_MODE == '' || vars.AUTOMATION_PR_MODE == 'legacy') &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'schedule' && github.event.schedule == '25 13 * * 2'))
+    concurrency:
+      group: automation-health-report
+      queue: max
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Verify exact source ref
+        env:
+          ACTUAL_REF: ${{ github.ref }}
+        shell: bash
+        run: |
+          [[ "$ACTUAL_REF" == 'refs/heads/Source_Code' ]] ||
+            { echo '::error::Unexpected source ref.'; exit 1; }
       - name: Update report when scheduled CI changes
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -61,3 +89,549 @@ jobs:
               content: Buffer.from(report).toString('base64'),
               ...(existing ? { sha: existing.sha } : {}),
             });
+
+  report:
+    if: >-
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.ref == 'refs/heads/Source_Code' &&
+      vars.AUTOMATION_PR_MODE == 'enabled' &&
+      (github.event_name != 'workflow_run' ||
+       (github.event.workflow_run.repository.full_name == github.repository &&
+        github.event.workflow_run.head_repository.full_name == github.repository &&
+        ((github.event.workflow_run.head_branch == 'Source_Code' &&
+          (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'schedule' || github.event.workflow_run.event == 'workflow_dispatch')) ||
+         (startsWith(github.event.workflow_run.head_branch, 'automation/ci-health-') &&
+          github.event.workflow_run.event == 'pull_request'))))
+    concurrency:
+      group: automation-health-report
+      queue: max
+    permissions:
+      actions: read
+      contents: read
+      pull-requests: read
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify exact source ref
+        env:
+          ACTUAL_REF: ${{ github.ref }}
+        shell: bash
+        run: |
+          [[ "$ACTUAL_REF" == 'refs/heads/Source_Code' ]] ||
+            { echo '::error::Unexpected source ref.'; exit 1; }
+      - name: Create a repository-scoped App token
+        id: app-token
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          app-id: '5868451'
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Propose a scheduled CI health report
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
+        with:
+          script: |
+            // OpenAI-Codex_health_release_architecture: propose one deterministic report without running PR code.
+            const { owner, repo } = context.repo;
+            if (owner !== 'KingsleyHK0323' || repo !== 'Multimedia_Downloader' || context.ref !== 'refs/heads/Source_Code') {
+              throw new Error('Unexpected repository.');
+            }
+            if (typeof process.env.APP_TOKEN !== 'string' || !process.env.APP_TOKEN.trim()) {
+              throw new Error('Missing App installation token.');
+            }
+            const app = getOctokit(process.env.APP_TOKEN);
+            const crypto = require('node:crypto');
+            const base = 'Source_Code';
+            const path = '.github/automation/ci-health.json';
+            const bot = 'kingsley-multimedia-automation[bot]';
+            if (process.env.APP_SLUG !== 'kingsley-multimedia-automation') {
+              throw new Error('The App token was issued for an unexpected App slug.');
+            }
+            const appInfo = (await app.request('GET /apps/{app_slug}', { app_slug: process.env.APP_SLUG })).data;
+            if (!appInfo || appInfo.id !== 5868451 || appInfo.slug !== process.env.APP_SLUG) {
+              throw new Error('The App identity cannot be verified.');
+            }
+            const botInfo = (await app.rest.users.getByUsername({ username: bot })).data;
+            if (!botInfo || botInfo.login !== bot || botInfo.type !== 'Bot' ||
+                botInfo.id !== 359694872) {
+              throw new Error('The App bot identity cannot be verified.');
+            }
+            const isBot = (user) => user?.login === bot && user.type === 'Bot' && user.id === botInfo.id;
+            const commitMessage = 'chore: update scheduled CI health report\n\nOpenAI-Codex_health_release_architecture';
+            const sha = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+            const blobSha = (bytes) => crypto.createHash('sha1')
+              .update('blob ' + bytes.length + '\0').update(bytes).digest('hex');
+            const readFile = async (ref, expectedSha) => {
+              const data = (await github.rest.repos.getContent({ owner, repo, path, ref })).data;
+              if (!data || data.type !== 'file' || data.encoding !== 'base64' ||
+                  typeof data.content !== 'string' || !sha(data.sha) || data.sha !== expectedSha) {
+                throw new Error('Report content is incomplete or has changed.');
+              }
+              const encoded = data.content.replace(/\s/g, '');
+              if (!encoded || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(encoded)) {
+                throw new Error('Report is not valid base64.');
+              }
+              const bytes = Buffer.from(encoded, 'base64');
+              if (bytes.toString('base64') !== encoded || blobSha(bytes) !== expectedSha) {
+                throw new Error('Report blob identity does not match its contents.');
+              }
+              return bytes;
+            };
+            const getRef = async (ref, allowMissing = false) => {
+              try {
+                const data = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + ref })).data;
+                if (!data || data.ref !== 'refs/heads/' + ref || data.object?.type !== 'commit' || !sha(data.object.sha)) {
+                  throw new Error('Branch ref is incomplete.');
+                }
+                return data.object.sha;
+              } catch (error) {
+                if (allowMissing && error.status === 404) return null;
+                throw error;
+              }
+            };
+            const getCommit = async (commitSha) => {
+              const data = (await github.rest.git.getCommit({ owner, repo, commit_sha: commitSha })).data;
+              if (!data || data.sha !== commitSha || !sha(data.tree?.sha) || !Array.isArray(data.parents)) {
+                throw new Error('Commit metadata is incomplete.');
+              }
+              return data;
+            };
+            const treeEntry = async (treeSha, name) => {
+              const data = (await github.rest.git.getTree({ owner, repo, tree_sha: treeSha })).data;
+              if (!data || data.sha !== treeSha || data.truncated !== false || !Array.isArray(data.tree)) {
+                throw new Error('Git tree is incomplete.');
+              }
+              const entries = data.tree.filter((entry) => entry.path === name);
+              if (entries.length !== 1 || !sha(entries[0].sha)) throw new Error('Expected tree entry is missing or ambiguous.');
+              return entries[0];
+            };
+            const reportEntry = async (rootTree) => {
+              const gh = await treeEntry(rootTree, '.github');
+              if (gh.type !== 'tree' || gh.mode !== '040000') throw new Error('Unexpected .github entry.');
+              const automation = await treeEntry(gh.sha, 'automation');
+              if (automation.type !== 'tree' || automation.mode !== '040000') throw new Error('Unexpected automation entry.');
+              const file = await treeEntry(automation.sha, 'ci-health.json');
+              if (file.type !== 'blob' || file.mode !== '100644') throw new Error('Unexpected report entry.');
+              return file;
+            };
+            const runs = (await github.rest.actions.listWorkflowRuns({
+              owner, repo, workflow_id: 'ci.yml', branch: base, event: 'schedule', status: 'completed', per_page: 1,
+            })).data;
+            if (!runs || !Number.isSafeInteger(runs.total_count) || runs.total_count < 0 ||
+                !Array.isArray(runs.workflow_runs) || runs.workflow_runs.length !== Math.min(runs.total_count, 1)) {
+              throw new Error('Scheduled CI run list is incomplete.');
+            }
+            if (runs.total_count === 0) {
+              core.notice('No completed scheduled CI run; report unchanged.');
+              return;
+            }
+            const run = runs.workflow_runs[0];
+            const conclusions = new Set(['success', 'failure', 'neutral', 'cancelled', 'skipped', 'timed_out', 'action_required', 'startup_failure', 'stale']);
+            if (!run || !Number.isSafeInteger(run.id) || run.id < 1 ||
+                !Number.isSafeInteger(run.run_attempt) || run.run_attempt < 1 ||
+                run.path !== '.github/workflows/ci.yml' || run.event !== 'schedule' ||
+                run.head_branch !== base || run.status !== 'completed' || !conclusions.has(run.conclusion) ||
+                typeof run.created_at !== 'string' || !Number.isFinite(Date.parse(run.created_at)) ||
+                run.html_url !== 'https://github.com/' + owner + '/' + repo + '/actions/runs/' + run.id) {
+              throw new Error('Scheduled CI run metadata is incomplete or unexpected.');
+            }
+            const report = JSON.stringify({
+              generated_by: 'OpenAI-Codex',
+              workflow: 'ci.yml',
+              event: 'schedule',
+              branch: base,
+              run_id: run.id,
+              status: run.status,
+              conclusion: run.conclusion,
+              url: run.html_url,
+            }, null, 2) + '\n';
+            const reportBytes = Buffer.from(report, 'utf8');
+            const wantedBlob = blobSha(reportBytes);
+            let branch = 'automation/ci-health-' + run.id + '-' + run.run_attempt;
+            const branchPattern = /^automation\/ci-health-[1-9][0-9]*-[1-9][0-9]*(?:-[0-9a-f]{40})?$/;
+            const refreshMessage = 'chore: refresh scheduled CI health report\n\nOpenAI-Codex_health_release_architecture';
+            const title = 'chore: update scheduled CI health report';
+            const body = 'Updates the scheduled CI health report from ' + run.html_url +
+              ' (attempt ' + run.run_attempt + ').\n\nOpenAI-Codex_health_release_architecture';
+            
+            const baseSha = await getRef(base);
+            branch += '-' + baseSha;
+            const baseCommit = await getCommit(baseSha);
+            const oldEntry = await reportEntry(baseCommit.tree.sha);
+            const oldBytes = await readFile(baseSha, oldEntry.sha);
+            const baseHasReport = oldBytes.equals(reportBytes);
+            const ensureBase = async () => {
+              if (await getRef(base) !== baseSha) throw new Error('Source_Code moved; no further changes made.');
+            };
+            const open = await github.paginate(github.rest.pulls.list, {
+              owner, repo, state: 'open', base, per_page: 100,
+            });
+            if (!Array.isArray(open) || open.length > 1000) throw new Error('Open pull request list is incomplete.');
+            const ours = [];
+            for (const item of open) {
+              if (!item || !Number.isSafeInteger(item.number) || item.number < 1 ||
+                  item.state !== 'open' || typeof item.head?.ref !== 'string') {
+                throw new Error('Open pull request metadata is incomplete.');
+              }
+              if (!branchPattern.test(item.head.ref)) continue;
+              if (!item.head.repo || typeof item.head.repo.full_name !== 'string' ||
+                  !item.user || typeof item.user.login !== 'string' ||
+                  typeof item.user.type !== 'string' || !Number.isSafeInteger(item.user.id)) {
+                throw new Error('Health-like PR identity is incomplete.');
+              }
+              if (item.head.repo.full_name === owner + '/' + repo && isBot(item.user)) ours.push(item);
+            }
+            if (ours.length > 1) throw new Error('Multiple App health PRs are open; reconciliation is ambiguous.');
+            let pr = ours[0];
+            if (pr) {
+              branch = pr.head.ref;
+            } else {
+              if (baseHasReport) {
+                core.info('CI health report unchanged and no App health PR is open.');
+                return;
+              }
+              // Any manually closed PR containing this run must have been updated since the run was created.
+              const runCreated = Date.parse(run.created_at);
+              let previousUpdated = Infinity;
+              let scannedToCutoff = false;
+              for (let page = 1; page <= 10; page++) {
+                const list = (await github.rest.pulls.list({
+                  owner, repo, state: 'closed', base, sort: 'updated', direction: 'desc', per_page: 100, page,
+                })).data;
+                if (!Array.isArray(list) || list.length > 100) throw new Error('Closed PR page is incomplete.');
+                for (const item of list) {
+                  const updated = typeof item?.updated_at === 'string' ? Date.parse(item.updated_at) : NaN;
+                  if (!Number.isFinite(updated) || updated > previousUpdated) {
+                    throw new Error('Closed PR timestamps are incomplete or not ordered.');
+                  }
+                  previousUpdated = updated;
+                  if (updated < runCreated) {
+                    scannedToCutoff = true;
+                    break;
+                  }
+                  if (item.state !== 'closed' || !isBot(item.user) ||
+                      typeof item.head?.ref !== 'string' || !branchPattern.test(item.head.ref)) continue;
+                  if (!Number.isSafeInteger(item.number) || item.number < 1 || !sha(item.head.sha) ||
+                      item.base?.ref !== base || item.base?.repo?.full_name !== owner + '/' + repo ||
+                      (item.head.repo !== null && item.head.repo?.full_name !== owner + '/' + repo) ||
+                      !(item.merged_at === null || typeof item.merged_at === 'string')) {
+                    throw new Error('A closed health PR has incomplete identity.');
+                  }
+                  if (item.merged_at !== null) continue;
+                  const commit = await getCommit(item.head.sha);
+                  const entry = await reportEntry(commit.tree.sha);
+                  if ((await readFile(item.head.sha, entry.sha)).equals(reportBytes)) {
+                    throw new Error('Health report PR #' + item.number + ' was closed; it will not be reopened.');
+                  }
+                }
+                if (scannedToCutoff || list.length < 100) {
+                  scannedToCutoff = true;
+                  break;
+                }
+              }
+              if (!scannedToCutoff) throw new Error('Too many recent closed PRs to verify safely.');
+              const matching = await github.paginate(github.rest.pulls.list, {
+                owner, repo, state: 'all', head: owner + ':' + branch, per_page: 100,
+              });
+              if (!Array.isArray(matching) || matching.length) {
+                throw new Error('The desired health branch already has a PR and cannot be reused.');
+              }
+            }
+            if (pr && (pr.state !== 'open' || !isBot(pr.user) ||
+                pr.head?.repo?.full_name !== owner + '/' + repo || pr.base?.repo?.full_name !== owner + '/' + repo ||
+                pr.base?.ref !== base || pr.base?.sha !== baseSha || !Number.isSafeInteger(pr.number) ||
+                pr.number < 1 || !sha(pr.head?.sha))) {
+              throw new Error('Existing health PR identity is unsafe or stale.');
+            }
+            const compare = async (from, to) => {
+              const diff = (await github.request('GET /repos/{owner}/{repo}/compare/{base}...{head}', {
+                owner, repo, base: from, head: to, per_page: 100,
+              })).data;
+              if (!diff || diff.base_commit?.sha !== from || !sha(diff.merge_base_commit?.sha) ||
+                  !Number.isSafeInteger(diff.ahead_by) || diff.ahead_by < 0 ||
+                  !Number.isSafeInteger(diff.behind_by) || diff.behind_by < 0 ||
+                  !Number.isSafeInteger(diff.total_commits) || diff.total_commits !== diff.ahead_by) {
+                throw new Error('Git comparison is incomplete.');
+              }
+              return diff;
+            };
+            const requireAncestor = async (ancestor, descendant) => {
+              if (ancestor === descendant) return;
+              const diff = await compare(ancestor, descendant);
+              if (diff.status !== 'ahead' || diff.behind_by !== 0 || diff.ahead_by < 1 ||
+                  diff.merge_base_commit.sha !== ancestor) {
+                throw new Error('Health branch history does not descend from Source_Code.');
+              }
+            };
+            const requireSingleFile = (diff, expectedBlob) => {
+              if (!Array.isArray(diff.files) || diff.files.length !== 1 ||
+                  diff.files[0]?.filename !== path || diff.files[0]?.status !== 'modified' ||
+                  diff.files[0]?.sha !== expectedBlob || diff.files[0]?.previous_filename !== undefined) {
+                throw new Error('Health branch changes more than the intended report.');
+              }
+            };
+            const verifyCandidate = async (head, expectedBytes = reportBytes) => {
+              const headCommit = await getCommit(head);
+              const file = await reportEntry(headCommit.tree.sha);
+              const expectedBlob = blobSha(expectedBytes);
+              if (file.sha !== expectedBlob || !(await readFile(head, expectedBlob)).equals(expectedBytes)) {
+                throw new Error('Health branch report does not match the intended content.');
+              }
+            
+              // Only the initial report commit and GitHub base-merge commits are accepted.
+              const seen = new Set();
+              let cursor = head;
+              let originFound = false;
+              for (let i = 0; i < 50; i++) {
+                if (seen.has(cursor)) throw new Error('Health branch history contains a cycle.');
+                seen.add(cursor);
+                const commit = await getCommit(cursor);
+                if (commit.parents.some((parent) => !sha(parent?.sha))) {
+                  throw new Error('Health branch parent metadata is incomplete.');
+                }
+                if (commit.parents.length === 1 && [commitMessage, refreshMessage].includes(commit.message)) {
+                  const parent = commit.parents[0].sha;
+                  const reportAtCommit = (await reportEntry(commit.tree.sha)).sha;
+                  const commitDiff = await compare(parent, cursor);
+                  if (commitDiff.status !== 'ahead' || commitDiff.ahead_by !== 1 ||
+                      commitDiff.behind_by !== 0 || commitDiff.merge_base_commit.sha !== parent) {
+                    throw new Error('Health report commit is unexpected.');
+                  }
+                  requireSingleFile(commitDiff, reportAtCommit);
+                  if (commit.message === commitMessage) {
+                    await requireAncestor(parent, baseSha);
+                    originFound = true;
+                    break;
+                  }
+                  cursor = parent;
+                  continue;
+                }
+                if (commit.parents.length !== 2) throw new Error('Health branch history contains an unexpected commit.');
+                const [previous, mergedBase] = commit.parents.map((parent) => parent.sha);
+                await requireAncestor(mergedBase, baseSha);
+                const mergedDiff = await compare(mergedBase, cursor);
+                if (mergedDiff.status !== 'ahead' || mergedDiff.behind_by !== 0 ||
+                    mergedDiff.ahead_by < 1 || mergedDiff.merge_base_commit.sha !== mergedBase) {
+                  throw new Error('Health base update has unexpected ancestry.');
+                }
+                requireSingleFile(mergedDiff, (await reportEntry(commit.tree.sha)).sha);
+                cursor = previous;
+              }
+              if (!originFound) throw new Error('Health branch history exceeds the verified limit.');
+            
+              const diff = await compare(baseSha, head);
+              if (!['ahead', 'diverged'].includes(diff.status) || diff.ahead_by < 1 ||
+                  (diff.behind_by === 0 && (diff.status !== 'ahead' || diff.merge_base_commit.sha !== baseSha)) ||
+                  (diff.behind_by > 0 && diff.status !== 'diverged')) {
+                throw new Error('Health branch comparison is unsafe.');
+              }
+              requireSingleFile(diff, expectedBlob);
+              return diff.behind_by > 0;
+            };
+            const checkedOpenPr = async (number, expectedHead) => {
+              const item = (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
+              if (!item || item.number !== number || item.state !== 'open' || !isBot(item.user) ||
+                  item.head?.repo?.full_name !== owner + '/' + repo || item.head?.ref !== branch ||
+                  item.head?.sha !== expectedHead || item.base?.repo?.full_name !== owner + '/' + repo ||
+                  item.base?.ref !== base || item.base?.sha !== baseSha || item.auto_merge !== null ||
+                  item.draft !== false || item.html_url !== 'https://github.com/' + owner + '/' + repo + '/pull/' + number) {
+                throw new Error('Open health PR identity, head, base, or auto-merge setting is unsafe.');
+              }
+              return item;
+            };
+            const updateStalePr = async (number, oldHead) => {
+              let before;
+              for (let i = 0; i < 10; i++) {
+                before = await checkedOpenPr(number, oldHead);
+                if (before.mergeable !== null) break;
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                await ensureBase();
+              }
+              if (before?.mergeable !== true) {
+                throw new Error('Health PR #' + number + ' is stale and mergeability is unavailable or conflicted.');
+              }
+              await ensureBase();
+              if (await getRef(branch) !== oldHead) throw new Error('Health branch changed before update.');
+              const response = await app.rest.pulls.updateBranch({
+                owner, repo, pull_number: number, expected_head_sha: oldHead,
+              });
+              if (response?.status !== 202) throw new Error('GitHub did not accept the health PR base update.');
+              for (let i = 0; i < 15; i++) {
+                await new Promise((resolve) => setTimeout(resolve, 2000));
+                await ensureBase();
+                const newHead = await getRef(branch);
+                if (newHead === oldHead) continue;
+                await checkedOpenPr(number, newHead);
+                if (await verifyCandidate(newHead)) throw new Error('Health PR is still stale after the base update.');
+                await ensureBase();
+                if (await getRef(branch) !== newHead) throw new Error('Health branch changed after the base update.');
+                core.notice('Updated health PR #' + number + ' to the current Source_Code; checks must run again.');
+                return;
+              }
+              throw new Error('GitHub accepted the base update for health PR #' + number + ' but completion was not observed.');
+            };
+            const validateHistoricReport = async (bytes) => {
+              let parsed;
+              try { parsed = JSON.parse(bytes.toString('utf8')); }
+              catch { throw new Error('Existing health report is not valid JSON.'); }
+              if (!Number.isSafeInteger(parsed?.run_id) || parsed.run_id < 1) {
+                throw new Error('Existing health report has an invalid run ID.');
+              }
+              const current = (await github.rest.actions.getWorkflowRun({ owner, repo, run_id: parsed.run_id })).data;
+              if (!current || current.id !== parsed.run_id || !Number.isSafeInteger(current.run_attempt) ||
+                  current.run_attempt < 1 || current.run_attempt > 50) {
+                throw new Error('Existing health report run history is unavailable.');
+              }
+              for (let attempt = current.run_attempt; attempt >= 1; attempt--) {
+                const candidate = (await github.rest.actions.getWorkflowRunAttempt({
+                  owner, repo, run_id: parsed.run_id, attempt_number: attempt,
+                })).data;
+                if (!candidate || candidate.id !== parsed.run_id || candidate.run_attempt !== attempt ||
+                    candidate.path !== '.github/workflows/ci.yml' || candidate.event !== 'schedule' ||
+                    candidate.head_branch !== base || candidate.status !== 'completed' ||
+                    !conclusions.has(candidate.conclusion) ||
+                    candidate.html_url !== 'https://github.com/' + owner + '/' + repo + '/actions/runs/' + candidate.id) {
+                  throw new Error('A historical scheduled CI attempt is incomplete.');
+                }
+                const expected = Buffer.from(JSON.stringify({
+                  generated_by: 'OpenAI-Codex', workflow: 'ci.yml', event: 'schedule', branch: base,
+                  run_id: candidate.id, status: candidate.status, conclusion: candidate.conclusion, url: candidate.html_url,
+                }, null, 2) + '\n', 'utf8');
+                if (bytes.equals(expected)) return;
+              }
+              throw new Error('Existing health report cannot be matched to a trusted CI attempt.');
+            };
+            const refreshPr = async (number, expectedHead) => {
+              const detail = await checkedOpenPr(number, expectedHead);
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner, repo, pull_number: number, per_page: 100,
+              });
+              if (!detail || detail.changed_files !== 1 || !Array.isArray(files) || files.length !== 1 ||
+                  files[0]?.filename !== path || files[0]?.status !== 'modified' ||
+                  files[0]?.previous_filename !== undefined) {
+                throw new Error('Health PR must change exactly the report file.');
+              }
+              const oldCommit = await getCommit(expectedHead);
+              const oldEntry = await reportEntry(oldCommit.tree.sha);
+              const oldReport = await readFile(expectedHead, oldEntry.sha);
+              if (files[0]?.sha !== oldEntry.sha) throw new Error('Health PR file identity is inconsistent.');
+              if (!oldReport.equals(reportBytes)) await validateHistoricReport(oldReport);
+              const stale = await verifyCandidate(expectedHead, oldReport);
+              await ensureBase();
+              if (await getRef(branch) !== expectedHead) throw new Error('Health branch changed before refresh.');
+              if (oldReport.equals(reportBytes)) {
+                if (stale) await updateStalePr(number, expectedHead);
+                else core.info('The health report PR is already current.');
+                return;
+              }
+              const response = await app.graphql(
+                'mutation($input: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $input) { commit { oid } ref { target { oid } } } }',
+                { input: {
+                  branch: { repositoryNameWithOwner: owner + '/' + repo, branchName: branch },
+                  expectedHeadOid: expectedHead,
+                  message: { headline: 'chore: refresh scheduled CI health report', body: 'OpenAI-Codex_health_release_architecture' },
+                  fileChanges: { additions: [{ path, contents: reportBytes.toString('base64') }] },
+                } },
+              );
+              const updated = response?.createCommitOnBranch;
+              const newHead = updated?.commit?.oid;
+              if (!sha(newHead) || updated.ref?.target?.oid !== newHead) throw new Error('GraphQL health update response is incomplete.');
+              await ensureBase();
+              if (await getRef(branch) !== newHead) throw new Error('Health branch changed after refresh.');
+              await checkedOpenPr(number, newHead);
+              if (await verifyCandidate(newHead)) await updateStalePr(number, newHead);
+              await ensureBase();
+              core.notice('Refreshed health PR #' + number + ' with the latest scheduled CI report; checks must run again.');
+            };
+            
+            const closeSupersededPr = async (number, head) => {
+              const detail = await checkedOpenPr(number, head);
+              const files = await github.paginate(github.rest.pulls.listFiles, {
+                owner, repo, pull_number: number, per_page: 100,
+              });
+              if (!Number.isSafeInteger(detail.changed_files) || detail.changed_files < 0 || detail.changed_files > 1 ||
+                  !Array.isArray(files) || files.length !== detail.changed_files ||
+                  files.some((file) => file?.filename !== path || file.status !== 'modified' ||
+                    file.previous_filename !== undefined)) {
+                throw new Error('Superseded health PR contains an unexpected change.');
+              }
+              const commit = await getCommit(head);
+              const entry = await reportEntry(commit.tree.sha);
+              const currentReport = await readFile(head, entry.sha);
+              if (files.length && files[0].sha !== entry.sha) throw new Error('Superseded health PR file is inconsistent.');
+              if (!currentReport.equals(reportBytes)) await validateHistoricReport(currentReport);
+              if (files.length) await verifyCandidate(head, currentReport);
+              await ensureBase();
+              if (await getRef(branch) !== head) throw new Error('Superseded health branch changed.');
+              await checkedOpenPr(number, head);
+              const result = (await app.rest.pulls.update({ owner, repo, pull_number: number, state: 'closed' })).data;
+              if (!result || result.number !== number || result.state !== 'closed' || !isBot(result.user) ||
+                  result.head?.sha !== head || result.base?.sha !== baseSha || result.base?.ref !== base) {
+                throw new Error('Superseded health PR closure result is unexpected.');
+              }
+              core.warning('Closed superseded App health PR #' + number + '; its branch was preserved.');
+            };
+            
+            let head = await getRef(branch, true);
+            if (pr && head !== pr.head.sha) throw new Error('Health PR head changed.');
+            if (head) {
+              if (pr) {
+                if (baseHasReport) await closeSupersededPr(pr.number, head);
+                else await refreshPr(pr.number, head);
+                return;
+              }
+              await verifyCandidate(head);
+              await ensureBase();
+              if (await getRef(branch) !== head) throw new Error('Health branch changed.');
+            } else {
+              if (pr) throw new Error('Health PR branch is missing.');
+              const createdBlob = (await app.rest.git.createBlob({
+                owner, repo, content: report, encoding: 'utf-8',
+              })).data;
+              if (!createdBlob || createdBlob.sha !== wantedBlob) throw new Error('Created report blob is unexpected.');
+              const createdTree = (await app.rest.git.createTree({
+                owner, repo, base_tree: baseCommit.tree.sha,
+                tree: [{ path, mode: '100644', type: 'blob', sha: wantedBlob }],
+              })).data;
+              if (!createdTree || !sha(createdTree.sha) || (await reportEntry(createdTree.sha)).sha !== wantedBlob) {
+                throw new Error('Created report tree is unexpected.');
+              }
+              const createdCommit = (await app.rest.git.createCommit({
+                owner, repo, message: commitMessage, tree: createdTree.sha, parents: [baseSha],
+              })).data;
+              if (!createdCommit || !sha(createdCommit.sha) || createdCommit.message !== commitMessage ||
+                  createdCommit.tree?.sha !== createdTree.sha || !Array.isArray(createdCommit.parents) ||
+                  createdCommit.parents.length !== 1 || createdCommit.parents[0]?.sha !== baseSha) {
+                throw new Error('Created health commit is unexpected.');
+              }
+              head = createdCommit.sha;
+              await ensureBase();
+              const createdRef = (await app.rest.git.createRef({
+                owner, repo, ref: 'refs/heads/' + branch, sha: head,
+              })).data;
+              if (!createdRef || createdRef.ref !== 'refs/heads/' + branch || createdRef.object?.sha !== head) {
+                throw new Error('Created health ref is unexpected.');
+              }
+              await ensureBase();
+              if (await getRef(branch) !== head) throw new Error('Health branch changed.');
+              await verifyCandidate(head);
+            }
+            await ensureBase();
+            if (await getRef(branch) !== head) throw new Error('Health branch changed.');
+            const created = (await app.rest.pulls.create({ owner, repo, title, body, head: branch, base })).data;
+            if (!created || !Number.isSafeInteger(created.number) || created.number < 1 || created.state !== 'open' ||
+                !isBot(created.user) || created.head?.ref !== branch || created.head?.sha !== head ||
+                created.head?.repo?.full_name !== owner + '/' + repo || created.base?.ref !== base ||
+                created.base?.sha !== baseSha || created.base?.repo?.full_name !== owner + '/' + repo ||
+                created.html_url !== 'https://github.com/' + owner + '/' + repo + '/pull/' + created.number) {
+              throw new Error('Created health PR response is incomplete or unexpected.');
+            }
+            await ensureBase();
+            if (await getRef(branch) !== head) throw new Error('Health branch changed after PR creation.');
+            if (await verifyCandidate(head)) {
+              await updateStalePr(created.number, head);
+            }
+            core.notice('Created health report PR #' + created.number + '; no automatic merge was requested.');
