@@ -571,6 +571,43 @@ test('never overwrites a conflicting tag or incomplete draft release', async () 
   assert.deepEqual(partial.state.writes, []);
 });
 
+
+test('waits for a trusted active tag run while its release draft is being populated', async () => {
+  const { state, args, prepared } = await prepareRelease();
+  const tag = 'v4.3.23';
+  const repository = { id: 1251103365, full_name: owner + '/' + repo };
+  state.tags.set(tag, prepared.head);
+  state.release = { id: 7, tag_name: tag, draft: true };
+  state.releaseRun = { id: 13, workflow_id: 315481913, path: '.github/workflows/release.yml',
+    event: 'push', head_sha: prepared.head, head_branch: tag,
+    actor: { id: 359694872, login: 'kingsley-multimedia-automation[bot]', type: 'Bot' },
+    repository, head_repository: repository, status: 'in_progress', conclusion: null };
+  assert.equal((await reconcilePatchReleases(args)).status, 'waiting-for-release-run');
+  state.releaseRun.status = 'completed';
+  state.releaseRun.conclusion = 'failure';
+  assert.equal((await reconcilePatchReleases(args)).status, 'draft-requires-review');
+  state.releaseRun.status = 'in_progress';
+  state.releaseRun.conclusion = null;
+  state.releaseRun.actor.id = 1;
+  await assert.rejects(reconcilePatchReleases(args), /run identity/);
+  state.releaseRun.actor.id = 359694872;
+  state.releaseRun.status = 'unexpected';
+  await assert.rejects(reconcilePatchReleases(args), /status is unknown/);
+  state.releaseRun.status = 'in_progress';
+  state.releaseRun.conclusion = 'failure';
+  await assert.rejects(reconcilePatchReleases(args), /conclusion is incomplete/);
+  state.releaseRun.conclusion = null;
+  const runs = args.github.rest.actions.listWorkflowRunsForRepo;
+  args.github.rest.actions.listWorkflowRunsForRepo = async parameters => {
+    const result = await runs(parameters);
+    result.data.workflow_runs.push({ ...state.releaseRun, id: 14 });
+    result.data.total_count = result.data.workflow_runs.length;
+    return result;
+  };
+  await assert.rejects(reconcilePatchReleases(args), /runs are ambiguous/);
+  assert.deepEqual(state.writes, []);
+});
+
 test('waits for a tag-push release run without dispatching a duplicate', async () => {
   const { state, args, prepared } = await prepareRelease();
   state.tags.set('v4.3.23', prepared.head);

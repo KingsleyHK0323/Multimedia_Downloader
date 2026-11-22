@@ -1037,6 +1037,34 @@ jobs:
                 try { return (await github.rest.repos.getReleaseByTag({ owner, repo, tag })).data; }
                 catch (error) { if (error?.status === 404) return null; throw error; }
               };
+              const trustedTagRun = async candidate => {
+                const data = (await github.rest.actions.listWorkflowRunsForRepo({
+                  owner, repo, event: 'push', head_sha: candidate.head, per_page: 100,
+                })).data;
+                if (!data || !Number.isSafeInteger(data.total_count) || data.total_count < 0 || data.total_count > 100 ||
+                    !Array.isArray(data.workflow_runs) || data.workflow_runs.length !== data.total_count) {
+                  throw new Error('Tag-push release runs are incomplete.');
+                }
+                const runs = data.workflow_runs.filter(run => run?.path === '.github/workflows/release.yml' &&
+                  run.head_sha === candidate.head && run.head_branch === candidate.tag);
+                if (runs.length > 1) throw new Error('Tag-push release runs are ambiguous.');
+                if (!runs.length) return null;
+                const run = runs[0];
+                if (!positive(run.id) || run.workflow_id !== 315481913 || run.event !== 'push' ||
+                    run.actor?.id !== 359694872 || run.actor.login !== BOT || run.actor.type !== 'Bot' ||
+                    run.repository?.id !== 1251103365 || run.repository.full_name !== FULL ||
+                    run.head_repository?.id !== 1251103365 || run.head_repository.full_name !== FULL) {
+                  throw new Error('Tag-push release run identity is invalid.');
+                }
+                if (run.status !== 'completed' && !['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(run.status)) {
+                  throw new Error('Tag-push release run status is unknown.');
+                }
+                if ((run.status === 'completed' && typeof run.conclusion !== 'string') ||
+                    (run.status !== 'completed' && run.conclusion !== null)) {
+                  throw new Error('Tag-push release run conclusion is incomplete.');
+                }
+                return run;
+              };
               await sourceRef();
               const prs = await github.paginate(github.rest.pulls.list, {
                 owner, repo, state: 'closed', base: 'Source_Code', head: owner + ':automation/protected-workflows', per_page: 100,
@@ -1104,32 +1132,11 @@ jobs:
                 }
                 const release = await readRelease(candidate.tag);
                 if (release === null) {
-                  const data = (await github.rest.actions.listWorkflowRunsForRepo({
-                    owner, repo, event: 'push', head_sha: candidate.head, per_page: 100,
-                  })).data;
-                  if (!data || !Number.isSafeInteger(data.total_count) || data.total_count < 0 || data.total_count > 100 ||
-                      !Array.isArray(data.workflow_runs) || data.workflow_runs.length !== data.total_count) {
-                    throw new Error('Tag-push release runs are incomplete.');
-                  }
-                  const runs = data.workflow_runs.filter(run => run?.path === '.github/workflows/release.yml' &&
-                    run.head_sha === candidate.head && run.head_branch === candidate.tag);
-                  if (runs.length > 1) throw new Error('Tag-push release runs are ambiguous.');
-                  if (runs.length === 1) {
-                    const run = runs[0];
-                    if (!positive(run.id) || run.workflow_id !== 315481913 || run.event !== 'push' ||
-                        run.actor?.id !== 359694872 || run.actor.login !== BOT || run.actor.type !== 'Bot' ||
-                        run.repository?.id !== 1251103365 || run.repository.full_name !== FULL ||
-                        run.head_repository?.id !== 1251103365 || run.head_repository.full_name !== FULL) {
-                      throw new Error('Tag-push release run identity is invalid.');
-                    }
-                    if (run.status === 'completed') {
-                      throw new Error(run.conclusion === 'success'
-                        ? 'Release workflow succeeded but no release exists.'
-                        : 'Release workflow failed; preserve its state for review.');
-                    }
-                    if (!['queued', 'in_progress', 'waiting', 'requested', 'pending'].includes(run.status)) {
-                      throw new Error('Tag-push release run status is unknown.');
-                    }
+                  const run = await trustedTagRun(candidate);
+                  if (run?.status === 'completed') {
+                    throw new Error(run.conclusion === 'success'
+                      ? 'Release workflow succeeded but no release exists.'
+                      : 'Release workflow failed; preserve its state for review.');
                   }
                   return { status: 'waiting-for-release-run', tag: candidate.tag, pr: pr.number, completed };
                 }
@@ -1137,6 +1144,10 @@ jobs:
                   throw new Error('Release metadata is incomplete.');
                 }
                 if (release.draft) {
+                  const run = await trustedTagRun(candidate);
+                  if (run && run.status !== 'completed') {
+                    return { status: 'waiting-for-release-run', tag: candidate.tag, pr: pr.number, completed };
+                  }
                   return { status: 'draft-requires-review', tag: candidate.tag, pr: pr.number, completed };
                 }
                 const proof = await verifyPublishedPatch({ github, owner, repo, tag: candidate.tag, commit: candidate.head, release });
