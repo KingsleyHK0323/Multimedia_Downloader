@@ -119,7 +119,7 @@ jobs:
             .github/workflows/clean-merged-branches.yml .github/workflows/cleanup-associated-pr-probe.yml \
             .github/workflows/first-interaction.yml .github/workflows/issue-pr-triage.yml \
             .github/workflows/auto-format.yml .github/workflows/formatter-plan.yml .github/workflows/formatter-app-cas.yml \
-            .github/workflows/automation-health-cas.yml \
+            .github/workflows/automation-health-cas.yml .github/workflows/website-cas.yml \
             .github/workflows/automation-health.yml .github/workflows/automation-health-merge.yml \
             .github/workflows/patch-release-observer.yml
       - uses: actions/setup-node@v7
@@ -254,6 +254,10 @@ jobs:
         run: |
           printf 'Health CAS opt-in enabled: %s\n' "$HEALTH_CAS_ENABLED"
           node --test .github/scripts/automation-health-cas.test.mjs
+
+      # OpenAI-Codex_ruleset_architecture: verify website updates with fake GitHub APIs.
+      - name: Test checked website update safeguards
+        run: node --test .github/scripts/website-cas.test.mjs
 
       # OpenAI-Codex: verify read-only merged-event observation.
       - name: Test patch release observer

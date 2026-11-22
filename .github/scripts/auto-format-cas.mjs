@@ -46,8 +46,33 @@ export function readPlan(root) {
     if (!stat.isDirectory() || stat.isSymbolicLink()) fail('Artifact directory is unsafe.');
   }
   const manifest = file(first, 'manifest.json');
-  if (!manifest.equals(file(second, 'manifest.json'))) fail('Independent formatting plans disagree.');
-  const plan = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(manifest));
+  const otherManifest = file(second, 'manifest.json');
+  const decode = bytes => new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  const firstText = decode(manifest), secondText = decode(otherManifest);
+  const plan = JSON.parse(firstText);
+  let mergedCleanupRace = false;
+  if (!manifest.equals(otherManifest)) {
+    // OpenAI-Codex_format_architecture: allow only a no-work snapshot of an already merged service.
+    const other = JSON.parse(secondText);
+    const empty = value => value && Array.isArray(value.files) && value.files.length === 0 &&
+      value.limited === false && Array.isArray(value.prior) && value.prior.length === 0 &&
+      value.warning_count === 0 && Array.isArray(value.warnings) && value.warnings.length === 0;
+    if (!isOid(plan?.base) || !empty(plan) || !empty(other) ||
+        !((plan.service === null && other.service === plan.base) ||
+          (plan.service === plan.base && other.service === null))) {
+      fail('Independent formatting plans disagree.');
+    }
+    const withService = plan.service === null ? secondText : firstText;
+    const withoutService = plan.service === null ? firstText : secondText;
+    const needle = ',"service":"' + plan.base + '","warning_count":';
+    const position = withService.indexOf(needle);
+    if (position < 0 || withService.indexOf(needle, position + 1) !== -1 ||
+        withService.slice(0, position) + ',"service":null,"warning_count":' +
+          withService.slice(position + needle.length) !== withoutService) {
+      fail('Independent formatting plans disagree.');
+    }
+    mergedCleanupRace = true;
+  }
   if (!plan || Object.keys(plan).sort().join(',') !== 'anchor,base,black,configs,files,limited,prior,service,warning_count,warnings' ||
       plan.anchor !== ANCHOR || !isOid(plan.base) || plan.black !== '25.1.0' ||
       !Array.isArray(plan.configs) || !Array.isArray(plan.files) || plan.files.length > 50 ||
@@ -90,7 +115,7 @@ export function readPlan(root) {
         (prior && pathOrder(prior, config.path) >= 0) || !isOid(config.sha)) fail('Invalid formatter configuration identity.');
     prior = config.path;
   }
-  return { plan, outputs };
+  return { plan, outputs, mergedCleanupRace };
 }
 
 export async function reconcileFormatter({ github, app, context, appSlug, workflowSha, artifactRoot, log = console }) {
@@ -107,7 +132,7 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
       repository.fork !== false || typeof repository.node_id !== 'string' || !repository.node_id) {
     fail('The repository or automation App identity is unexpected.');
   }
-  const { plan, outputs } = readPlan(artifactRoot);
+  const { plan, outputs, mergedCleanupRace } = readPlan(artifactRoot);
   const getRef = async (branch, missing = false) => {
     try {
       const value = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + branch })).data;
@@ -215,7 +240,6 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
     }
     return JSON.stringify({ rules: [...rules].sort((a, b) => a.ruleset_id - b.ruleset_id || a.type.localeCompare(b.type)), details });
   };
-  const firstRules = await rulesSnapshot();
   const messageDigest = HASH(Buffer.from(JSON.stringify({ configs: plan.configs, files: plan.files })));
   const message = 'style: format changed Python files\n\nOpenAI-Codex_format_architecture\nFormat-Plan-SHA256: ' + messageDigest;
   const commitsBot = async sha => {
@@ -259,10 +283,34 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
     fail('The service branch is occupied by another PR.');
   }
   const previous = allPrs.find(pr => isBot(pr.user) && typeof pr.body === 'string' && pr.body.includes(MARKER));
+  let serviceHead = await getRef(SERVICE, true);
+  if (mergedCleanupRace) {
+    const verifyMergedCleanup = async values => {
+      const latest = values[0];
+      if (values.some(pr => pr.state === 'open') || !latest || latest.state !== 'closed' ||
+          typeof latest.merged_at !== 'string' || !Number.isFinite(Date.parse(latest.merged_at)) ||
+          latest.merge_commit_sha !== base || latest.head?.sha !== base ||
+          latest.head?.repo?.full_name !== FULL || latest.base?.ref !== SOURCE ||
+          latest.base?.repo?.full_name !== FULL) {
+        fail('The cleanup snapshot does not match the latest merged service PR.');
+      }
+      const currentService = await getRef(SERVICE, true);
+      if (currentService !== null && currentService !== base) {
+        fail('The service branch moved during merged cleanup.');
+      }
+      await requireBase();
+      return latest.number;
+    };
+    const mergedPr = await verifyMergedCleanup(allPrs);
+    if (await verifyMergedCleanup(await listPrs()) !== mergedPr) {
+      fail('The latest service PR changed during merged cleanup.');
+    }
+    return { status: 'idle-after-merged-cleanup', pr: mergedPr, head: base };
+  }
   if (!open.length && previous?.state === 'closed' && !previous.merged_at) {
     fail('The latest formatter PR was closed without merging; it will not be reopened.');
   }
-  let serviceHead = await getRef(SERVICE, true);
+  const firstRules = await rulesSnapshot();
   if (serviceHead !== plan.service) fail('The service branch moved since independent planning; retry.');
   let pr = null;
   if (open.length) {

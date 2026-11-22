@@ -221,6 +221,139 @@ function fixture(options = {}) {
   return { state, args, writePlan, dispose: () => rmSync(root, { recursive: true, force: true }) };
 }
 
+// OpenAI-Codex_format_architecture: exercise only the merged-service cleanup race.
+function cleanupTransition(options = {}) {
+  const f = fixture(options);
+  for (const name of ['one', 'two']) {
+    const path = join(f.state.root, name, 'manifest.json');
+    const plan = JSON.parse(readFileSync(path, 'utf8'));
+    plan.files = [];
+    plan.service = name === 'one' ? null : oid('a');
+    writeFileSync(path, JSON.stringify(plan));
+  }
+  f.state.commits.get(oid('a')).message =
+    'style: format changed Python files\n\nOpenAI-Codex_format_architecture\nFormat-Plan-SHA256: ' + '0'.repeat(64);
+  f.state.prs.push({
+    number: 88, state: 'closed', merged_at: '2026-11-22T06:05:25Z',
+    merge_commit_sha: oid('a'), user: bot, body: '<!-- automation-format-cas-v1 -->',
+    head: { ref: service, sha: oid('a'), repo: { full_name: full } },
+    base: { ref: 'Source_Code', sha: oid('9'), repo: { full_name: full } },
+  });
+  return f;
+}
+
+test('merged cleanup race is a no-op without relying on branch rules', async () => {
+  for (const author of [bot, { id: 157894869, login: 'KingsleyHK0323', type: 'User' },
+    { id: 321, login: 'another-bot', type: 'Bot' }]) {
+    for (const present of [false, true]) {
+      const f = cleanupTransition({ requirePr: true, bypass: true, badBot: true });
+      try {
+        f.state.prs[0].user = author;
+        f.state.prs[0].body = 'A merged same-repository service PR.';
+        f.state.commits.get(oid('a')).message = 'Unsigned owner commit';
+        if (present) f.state.refs.set(service, oid('a'));
+        const result = await reconcileFormatter(f.args);
+        assert.deepEqual(result, { status: 'idle-after-merged-cleanup', pr: 88, head: oid('a') });
+        assert.deepEqual(f.state.writes, []);
+      } finally { f.dispose(); }
+    }
+  }
+});
+
+test('merged cleanup race is rejected without exact merged PR identity', async () => {
+  const mutations = [
+    f => { f.state.prs[0].merged_at = null; },
+    f => { f.state.prs[0].merge_commit_sha = oid('b'); },
+    f => { f.state.prs[0].head.sha = oid('b'); },
+    f => { f.state.prs[0].base.ref = 'other'; },
+    f => { f.state.prs[0].head.repo.full_name = 'other/repo'; },
+    f => { f.state.prs[0].base.repo.full_name = 'other/repo'; },
+    f => { f.state.prs.push({ ...f.state.prs[0], number: 89, merged_at: null }); },
+    f => { f.state.refs.set(service, oid('b')); },
+    f => { f.state.prs.push({ ...f.state.prs[0], number: 89, state: 'open' }); },
+  ];
+  for (const mutate of mutations) {
+    const f = cleanupTransition();
+    try {
+      mutate(f);
+      await assert.rejects(reconcileFormatter(f.args));
+      assert.deepEqual(f.state.writes, []);
+    } finally { f.dispose(); }
+  }
+});
+
+test('cleanup no-op rechecks source, service, and merged PR before returning', async () => {
+  for (const changed of ['source', 'service', 'pr']) {
+    const f = cleanupTransition();
+    try {
+      const getRef = f.args.github.rest.git.getRef;
+      let sourceReads = 0, serviceReads = 0;
+      f.args.github.rest.git.getRef = async args => {
+        if (args.ref === 'heads/Source_Code' && ++sourceReads === 3 && changed === 'source') {
+          f.state.refs.set('Source_Code', oid('b'));
+        }
+        if (args.ref === 'heads/' + service && ++serviceReads === 3 && changed === 'service') {
+          f.state.refs.set(service, oid('b'));
+        }
+        return getRef(args);
+      };
+      const paginate = f.args.github.paginate;
+      let inventories = 0;
+      f.args.github.paginate = async (method, args) => {
+        if (method === 'pulls.list' && ++inventories === 2 && changed === 'pr') {
+          f.state.prs[0].merge_commit_sha = oid('b');
+        }
+        return paginate(method, args);
+      };
+      await assert.rejects(reconcileFormatter(f.args));
+      assert.deepEqual(f.state.writes, []);
+    } finally { f.dispose(); }
+  }
+});
+
+test('cleanup snapshot cannot suppress work, warnings, limited batches, or history', async () => {
+  const mutations = [
+    plan => { plan.files = [{ path: 'test.py', mode: '100644', source: blob(source),
+      last_change: oid('a'), output: blob(formatted), sha256: hash(formatted), size: formatted.length }]; },
+    plan => { plan.warning_count = 1; plan.warnings = [{ path: 'test.py', reason: 'unsafe-path' }]; },
+    plan => { plan.limited = true; },
+    plan => { plan.prior = [{ base: oid('a'), head: oid('b'), tree: oid('c'), digest: '0'.repeat(64) }]; },
+  ];
+  for (const mutate of mutations) {
+    const f = cleanupTransition();
+    try {
+      for (const name of ['one', 'two']) {
+        const path = join(f.state.root, name, 'manifest.json');
+        const plan = JSON.parse(readFileSync(path, 'utf8'));
+        mutate(plan);
+        writeFileSync(path, JSON.stringify(plan));
+      }
+      await assert.rejects(reconcileFormatter(f.args), /Independent formatting plans disagree/);
+      assert.deepEqual(f.state.writes, []);
+    } finally { f.dispose(); }
+  }
+});
+
+test('other independent plan differences remain blocked', async () => {
+  const mutations = [
+    plan => { plan.service = oid('b'); },
+    plan => { plan.anchor = oid('b'); },
+    plan => { plan.files = [{ path: 'unexpected.py' }]; },
+    plan => { plan.warning_count = 1; },
+  ];
+  for (const mutate of mutations) {
+    const f = cleanupTransition();
+    try {
+      const path = join(f.state.root, 'two', 'manifest.json');
+      const plan = JSON.parse(readFileSync(path, 'utf8'));
+      mutate(plan);
+      writeFileSync(path, JSON.stringify(plan));
+      await assert.rejects(reconcileFormatter(f.args), /Independent formatting plans disagree/);
+      assert.deepEqual(f.state.writes, []);
+    } finally { f.dispose(); }
+  }
+});
+
 test('creates a verified formatter PR without changing Source_Code', async () => {
   const f = fixture();
   try {
