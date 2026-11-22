@@ -249,10 +249,52 @@ test('requires explicit opt-in before obtaining a token and uses the exact inlin
   assert.equal(embedded, module.replace(/^export /gm, '').trimEnd());
   const revision = workflow.indexOf('name: Verify exact coordinator revision');
   const token = workflow.indexOf('name: Create repository-scoped App token');
-  assert.ok(revision > 0 && token > revision);
+  const preflight = workflow.indexOf('name: Find owner website candidate');
+  const update = workflow.indexOf('name: Verify and update the exact website ref');
+  assert.ok(revision > 0 && preflight > revision && token > preflight && update > token);
+  assert.match(workflow.slice(token, update), /if: steps\.preflight\.outputs\.candidate == 'true'/);
+  assert.match(workflow.slice(update), /if: steps\.preflight\.outputs\.candidate == 'true'/);
   assert.match(workflow.slice(0, revision), /github\.repository == 'KingsleyHK0323\/Multimedia_Downloader' &&[\s\S]*github\.ref == 'refs\/heads\/Source_Code' &&[\s\S]*vars\.AUTOMATION_WEBSITE_CAS == 'enabled'/);
   assert.match(workflow.slice(revision, token), /\[\[ "\$tip" == "\$WORKFLOW_SHA" \]\]/);
   assert.doesNotMatch(workflow, /name: Keep website App writing disabled/);
   assert.match(workflow, /group: automation-service-reconcile/);
   assert.doesNotMatch(workflow, /actions\/checkout|import\(/);
+});
+
+test('website owner preflight skips idle runs and rejects incomplete metadata before App credentials', async () => {
+  const workflow = readFileSync(new URL('../workflows/website-cas.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const start = '            // BEGIN WEBSITE OWNER PREFLIGHT\n';
+  const end = '\n            // END WEBSITE OWNER PREFLIGHT';
+  assert.equal(workflow.split(start).length, 2);
+  const script = workflow.split(start)[1].split(end)[0].split('\n').map(line => {
+    assert.equal(line.slice(0, 12), '            ');
+    return line.slice(12);
+  }).join('\n');
+  const run = new (Object.getPrototypeOf(async function () {}).constructor)('github', 'context', 'core', script);
+  const owner = 'KingsleyHK0323', repo = 'Multimedia_Downloader';
+  const repoInfo = { id: 1251103365, full_name: owner + '/' + repo };
+  const valid = { number: 91, state: 'open', user: { id: 157894869, login: owner, type: 'User' },
+    head: { ref: 'automation/protected-workflows', repo: repoInfo },
+    base: { ref: 'Multimedia_Downloader_Web_Preview', repo: repoInfo } };
+  async function execute(prs, error = null) {
+    const result = [];
+    const github = { rest: { pulls: { list: 'list-open-pulls' } },
+      paginate: async (method, params) => {
+        assert.equal(method, 'list-open-pulls');
+        assert.deepEqual(params, { owner, repo, state: 'open', base: 'Multimedia_Downloader_Web_Preview',
+          head: owner + ':automation/protected-workflows', per_page: 100 });
+        if (error) throw error;
+        return prs;
+      } };
+    await run(github, { repo: { owner, repo } }, { setOutput: (name, value) => result.push([name, value]) });
+    return result;
+  }
+  assert.deepEqual(await execute([]), [['candidate', 'false']]);
+  assert.deepEqual(await execute([valid]), [['candidate', 'true']]);
+  assert.deepEqual(await execute([{ ...valid, user: { id: 123, login: 'other', type: 'User' } }]),
+    [['candidate', 'false']]);
+  await assert.rejects(execute([{ ...valid, head: { ...valid.head, repo: null } }]), /metadata is incomplete/);
+  await assert.rejects(execute([valid, valid]), /metadata is incomplete/);
+  await assert.rejects(execute(null), /inventory is incomplete/);
+  await assert.rejects(execute([], new Error('GitHub unavailable')), /GitHub unavailable/);
 });

@@ -13,6 +13,7 @@
 ### Unreleased
 
 #### Repository automation
+- Skip website automation App token creation when no owner website PR exists. (OpenAI-Codex_ruleset_architecture)
 - Permit explicit opt-in for the owner-verified website update coordinator. (OpenAI-Codex_ruleset_architecture)
 - Handle an already merged service branch disappearing during or after read-only formatting plans. (OpenAI-Codex_format_architecture)
 - Stage a disabled website coordinator that verifies owner push checks and PR history before an App non-force update. (OpenAI-Codex_ruleset_architecture)
