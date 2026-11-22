@@ -455,23 +455,73 @@ jobs:
               }
               await ensureBase();
               if (await getRef(branch) !== oldHead) throw new Error('Health branch changed before update.');
-              const response = await app.rest.pulls.updateBranch({
-                owner, repo, pull_number: number, expected_head_sha: oldHead,
-              });
-              if (response?.status !== 202) throw new Error('GitHub did not accept the health PR base update.');
-              for (let i = 0; i < 15; i++) {
-                await new Promise((resolve) => setTimeout(resolve, 2000));
-                await ensureBase();
-                const newHead = await getRef(branch);
-                if (newHead === oldHead) continue;
-                await checkedOpenPr(number, newHead);
-                if (await verifyCandidate(newHead)) throw new Error('Health PR is still stale after the base update.');
-                await ensureBase();
-                if (await getRef(branch) !== newHead) throw new Error('Health branch changed after the base update.');
-                core.notice('Updated health PR #' + number + ' to the current Source_Code; checks must run again.');
-                return;
+              const repository = (await github.rest.repos.get({ owner, repo })).data;
+              if (!repository || repository.full_name !== owner + '/' + repo ||
+                  typeof repository.node_id !== 'string' || !repository.node_id) {
+                throw new Error('Repository node identity is incomplete.');
               }
-              throw new Error('GitHub accepted the base update for health PR #' + number + ' but completion was not observed.');
+              const createdTree = (await app.rest.git.createTree({
+                owner, repo, base_tree: baseCommit.tree.sha,
+                tree: [{ path, mode: '100644', type: 'blob', sha: wantedBlob }],
+              })).data;
+              if (!createdTree || !sha(createdTree.sha)) throw new Error('Updated health tree is invalid.');
+              const completeTree = async (treeSha) => {
+                const value = (await github.rest.git.getTree({ owner, repo, tree_sha: treeSha, recursive: 'true' })).data;
+                if (!value || value.sha !== treeSha || value.truncated !== false || !Array.isArray(value.tree)) {
+                  throw new Error('Full health tree is incomplete.');
+                }
+                const entries = new Map(value.tree.map((entry) => [entry.path, entry]));
+                if (entries.size !== value.tree.length) throw new Error('Full health tree contains duplicate entries.');
+                return entries;
+              };
+              const original = await completeTree(baseCommit.tree.sha);
+              const updated = await completeTree(createdTree.sha);
+              if (original.size !== updated.size) throw new Error('Health base update changed the path inventory.');
+              for (const [name, entry] of original) {
+                const next = updated.get(name);
+                if (!next || next.type !== entry.type || next.mode !== entry.mode) {
+                  throw new Error('Health base update changed a path or mode.');
+                }
+                if (name === path) {
+                  if (next.type !== 'blob' || next.mode !== '100644' || next.sha !== wantedBlob) {
+                    throw new Error('Health base update has the wrong report blob.');
+                  }
+                } else if (entry.type !== 'tree' && next.sha !== entry.sha) {
+                  throw new Error('Health base update changed an unrelated object.');
+                } else if (entry.type === 'tree' && !['.github', '.github/automation'].includes(name) &&
+                           next.sha !== entry.sha) {
+                  throw new Error('Health base update changed an unrelated tree.');
+                }
+              }
+              const message = 'chore: update health PR base\n\nOpenAI-Codex_health_release_architecture';
+              const created = (await app.rest.git.createCommit({
+                owner, repo, message, tree: createdTree.sha, parents: [oldHead, baseSha],
+              })).data;
+              if (!created || !sha(created.sha) || created.tree?.sha !== createdTree.sha ||
+                  !Array.isArray(created.parents) || created.parents.length !== 2 ||
+                  created.parents[0]?.sha !== oldHead || created.parents[1]?.sha !== baseSha) {
+                throw new Error('Updated health commit has unexpected parents or tree.');
+              }
+              const newHead = created.sha;
+              if (await verifyCandidate(newHead)) throw new Error('The new health commit is unexpectedly stale.');
+              await ensureBase();
+              await checkedOpenPr(number, oldHead);
+              if (await getRef(branch) !== oldHead) throw new Error('Health branch changed before atomic update.');
+              const mutationId = 'health-base-' + oldHead + '-' + baseSha;
+              const result = await app.graphql(
+                'mutation($input: UpdateRefsInput!) { updateRefs(input: $input) { clientMutationId } }',
+                { input: {
+                  repositoryId: repository.node_id,
+                  clientMutationId: mutationId,
+                  refUpdates: [{ name: 'refs/heads/' + branch, beforeOid: oldHead, afterOid: newHead, force: false }],
+                } },
+              );
+              if (result?.updateRefs?.clientMutationId !== mutationId) throw new Error('Atomic health ref update response is incomplete.');
+              await ensureBase();
+              if (await getRef(branch) !== newHead) throw new Error('Health branch changed after atomic update.');
+              await checkedOpenPr(number, newHead);
+              if (await verifyCandidate(newHead)) throw new Error('Health PR is stale after its atomic update.');
+              core.notice('Updated health PR #' + number + ' to the verified Source_Code base; checks must run again.');
             };
             const validateHistoricReport = async (bytes) => {
               let parsed;
