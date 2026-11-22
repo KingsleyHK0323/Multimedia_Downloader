@@ -18,9 +18,8 @@ TAURI = ROOT / "src-tauri"
 
 def main():
     cargo = shutil.which("cargo")
-    if cargo is None:
+    if cargo is None or not Path(cargo).is_absolute() or not Path(cargo).is_file():
         raise RuntimeError("The trusted Rust toolchain is unavailable.")
-    cargo = str(Path(cargo).resolve(strict=True))
     metadata = json.loads(
         subprocess.check_output(  # noqa: S603
             [cargo, "metadata", "--locked", "--format-version", "1"],
