@@ -1,0 +1,110 @@
+# OpenAI-Codex_health_release_architecture: temporary probe for statuses on an unattached commit.
+# OpenAI-Codex: verify the status creator is the GitHub Actions bot.
+name: Probe unattached commit status
+on:
+  pull_request:
+    branches: [Source_Code]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: write
+  statuses: write
+  pull-requests: read
+jobs:
+  probe:
+    if: >-
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.event.pull_request.user.id == 157894869 &&
+      github.event.sender.id == 157894869 &&
+      github.event.pull_request.head.repo.id == 1251103365 &&
+      github.event.pull_request.base.repo.id == 1251103365 &&
+      github.event.pull_request.head.ref == 'automation/protected-workflows' &&
+      github.event.pull_request.base.ref == 'Source_Code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify a status on an unattached commit
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // OpenAI-Codex_health_release_architecture: do not checkout code, read secrets, or create refs.
+            const { owner, repo } = context.repo;
+            const full = 'KingsleyHK0323/Multimedia_Downloader';
+            const repositoryId = 1251103365;
+            const ownerId = 157894869;
+            const branch = 'automation/protected-workflows';
+            const base = 'Source_Code';
+            const eventPr = context.payload.pull_request;
+            const oid = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+            if (context.eventName !== 'pull_request' ||
+                !['opened', 'synchronize', 'reopened'].includes(context.payload.action) ||
+                owner + '/' + repo !== full ||
+                context.payload.repository?.id !== repositoryId || context.payload.repository.full_name !== full ||
+                context.payload.sender?.id !== ownerId ||
+                !eventPr || eventPr.state !== 'open' || !Number.isSafeInteger(eventPr.number) || eventPr.number < 1 ||
+                eventPr.user?.id !== ownerId ||
+                eventPr.head?.repo?.id !== repositoryId || eventPr.head.repo.full_name !== full ||
+                eventPr.head.ref !== branch || !oid(eventPr.head.sha) ||
+                eventPr.base?.repo?.id !== repositoryId || eventPr.base.repo.full_name !== full ||
+                eventPr.base.ref !== base || !oid(eventPr.base.sha)) {
+              throw new Error('Probe event identity is invalid.');
+            }
+            const ensureCurrent = async () => {
+              const pr = (await github.rest.pulls.get({ owner, repo, pull_number: eventPr.number })).data;
+              if (!pr || pr.number !== eventPr.number || pr.state !== 'open' || pr.user?.id !== ownerId ||
+                  pr.head?.repo?.id !== repositoryId || pr.head.repo.full_name !== full ||
+                  pr.head.ref !== branch || pr.head.sha !== eventPr.head.sha ||
+                  pr.base?.repo?.id !== repositoryId || pr.base.repo.full_name !== full ||
+                  pr.base.ref !== base || pr.base.sha !== eventPr.base.sha) {
+                throw new Error('Probe PR no longer matches the event.');
+              }
+              for (const [refName, sha] of [[branch, eventPr.head.sha], [base, eventPr.base.sha]]) {
+                const ref = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + refName })).data;
+                if (!ref || ref.ref !== 'refs/heads/' + refName ||
+                    ref.object?.type !== 'commit' || ref.object.sha !== sha) {
+                  throw new Error('Probe branch no longer matches the event.');
+                }
+              }
+            };
+            const runId = process.env.GITHUB_RUN_ID;
+            const attempt = process.env.GITHUB_RUN_ATTEMPT;
+            if (!/^[1-9][0-9]*$/.test(runId || '') || !/^[1-9][0-9]*$/.test(attempt || '')) {
+              throw new Error('Probe run identity is invalid.');
+            }
+            await ensureCurrent();
+            const parent = (await github.rest.git.getCommit({ owner, repo, commit_sha: eventPr.head.sha })).data;
+            if (!parent || parent.sha !== eventPr.head.sha || !oid(parent.tree?.sha)) {
+              throw new Error('Probe parent commit or tree is invalid.');
+            }
+            await ensureCurrent();
+            const commit = (await github.rest.git.createCommit({
+              owner, repo,
+              message: 'chore: probe unattached commit status\n\nOpenAI-Codex_health_release_architecture\nRun ' + runId + ' attempt ' + attempt,
+              tree: parent.tree.sha,
+              parents: [eventPr.head.sha],
+            })).data;
+            if (!commit || !oid(commit.sha) || commit.sha === eventPr.head.sha ||
+                commit.tree?.sha !== parent.tree.sha || !Array.isArray(commit.parents) ||
+                commit.parents.length !== 1 || commit.parents[0].sha !== eventPr.head.sha) {
+              throw new Error('Created commit does not have the exact requested tree and parent.');
+            }
+            await ensureCurrent();
+            const statusContext = 'probe/unattached-commit-' + runId + '-' + attempt;
+            const created = (await github.request('POST /repos/{owner}/{repo}/statuses/{sha}', {
+              owner, repo, sha: commit.sha, state: 'success',
+              context: statusContext, description: 'Temporary unattached commit status probe',
+            })).data;
+            if (!created || !Number.isSafeInteger(created.id) || created.id < 1 ||
+                created.context !== statusContext || created.state !== 'success' ||
+                created.creator?.id !== 41898282 || created.creator.login !== 'github-actions[bot]') {
+              throw new Error('Status creation could not be confirmed.');
+            }
+            const statuses = (await github.request('GET /repos/{owner}/{repo}/commits/{ref}/statuses', {
+              owner, repo, ref: commit.sha, per_page: 100,
+            })).data;
+            if (!Array.isArray(statuses) ||
+                statuses.filter((item) => item?.id === created.id &&
+                  item.context === statusContext && item.state === 'success').length !== 1) {
+              throw new Error('Created status could not be read back on the unattached commit.');
+            }
+            await ensureCurrent();
+            core.notice('PASS: an unattached, tree-identical commit accepted and returned the dedicated status.');
