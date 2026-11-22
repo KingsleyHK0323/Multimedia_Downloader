@@ -14,27 +14,68 @@ ROOT = Path(__file__).resolve().parent.parent
 VERSION_RE = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
 
+# OpenAI-Codex_format_architecture: locate values by their JSON object path.
+def _json_object_fields(content: str, start: int) -> dict[str, tuple[int, int]]:
+    decoder = json.JSONDecoder()
+
+    def skip_whitespace(index: int) -> int:
+        while index < len(content) and content[index] in " \t\r\n":
+            index += 1
+        return index
+
+    index = skip_whitespace(start)
+    if index >= len(content) or content[index] != "{":
+        raise ValueError("Expected a JSON object")
+
+    fields: dict[str, tuple[int, int]] = {}
+    index = skip_whitespace(index + 1)
+    while index < len(content) and content[index] != "}":
+        key, index = decoder.raw_decode(content, index)
+        if not isinstance(key, str) or key in fields:
+            raise ValueError("Invalid or duplicate JSON object key")
+        index = skip_whitespace(index)
+        if index >= len(content) or content[index] != ":":
+            raise ValueError("Expected a JSON object colon")
+        value_start = skip_whitespace(index + 1)
+        _, value_end = decoder.raw_decode(content, value_start)
+        fields[key] = (value_start, value_end)
+        index = skip_whitespace(value_end)
+        if index < len(content) and content[index] == ",":
+            index = skip_whitespace(index + 1)
+        elif index >= len(content) or content[index] != "}":
+            raise ValueError("Expected a JSON object separator")
+    if index >= len(content):
+        raise ValueError("Unterminated JSON object")
+    return fields
+
+
 def _replace_json_version(path: Path, old: str, new: str, *, lockfile: bool) -> str:
-    content = path.read_text(encoding="utf-8")
+    content = path.read_bytes().decode("utf-8")
     data = json.loads(content)
-    if data.get("version") != old:
+    if not isinstance(data, dict) or data.get("version") != old:
         raise ValueError(f"{path.relative_to(ROOT)} root version is not {old}")
 
-    replacements = 1
+    root_fields = _json_object_fields(content, 0)
+    locations = [root_fields["version"]]
     if lockfile:
-        root_package = data.get("packages", {}).get("")
-        if not root_package or root_package.get("version") != old:
+        packages = data.get("packages")
+        root_package = packages.get("") if isinstance(packages, dict) else None
+        if not isinstance(root_package, dict) or root_package.get("version") != old:
             raise ValueError(f"{path.relative_to(ROOT)} root package version is not {old}")
-        replacements = 2
+        package_fields = _json_object_fields(content, root_fields["packages"][0])
+        root_package_fields = _json_object_fields(content, package_fields[""][0])
+        locations.append(root_package_fields["version"])
 
-    pattern = re.compile(r'("version"\s*:\s*")' + re.escape(old) + r'(")')
-    updated, count = pattern.subn(rf"\g<1>{new}\g<2>", content, count=replacements)
-    if count != replacements:
-        raise ValueError(
-            f"Expected {replacements} version fields in {path.relative_to(ROOT)}, found {count}"
-        )
+    updated = content
+    for value_start, value_end in sorted(locations, reverse=True):
+        updated = updated[:value_start] + json.dumps(new) + updated[value_end:]
+
+    data["version"] = new
+    if lockfile:
+        data["packages"][""]["version"] = new
+    if json.loads(updated) != data:
+        raise ValueError(f"Unexpected JSON changes in {path.relative_to(ROOT)}")
     return updated
-
 
 def _replace_once(path: Path, content: str, pattern: str, replacement: str) -> str:
     updated, count = re.subn(pattern, replacement, content, count=1, flags=re.MULTILINE)
