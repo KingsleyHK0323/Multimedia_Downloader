@@ -30,7 +30,7 @@ const missing = () => Object.assign(new Error('not found'), { status: 404 });
 
 function harness(options = {}) {
   const state = { base, ref: null, pr: null, closed: [], basePrs: [], externalPrs: [], writes: [],
-    notices: [], commits: {}, report: null, reportBlob: null, badSignature: false, badTree: false,
+    notices: [], commits: {}, report: null, reportBlob: null, baseReport: oldReport, badSignature: false, badTree: false,
     failCreatePr: false, moveAfterRef: false, ...options };
   state.run = state.run ?? { id: 123, run_attempt: 1, path: '.github/workflows/ci.yml', event: 'schedule',
     head_branch: 'Source_Code', status: 'completed', conclusion: 'success', created_at: '2026-11-22T00:00:00Z',
@@ -39,7 +39,7 @@ function harness(options = {}) {
   const tree = (changed) => [
     { path: '.github', type: 'tree', mode: '040000', sha: (changed ? '1' : '2').repeat(40) },
     { path: '.github/automation', type: 'tree', mode: '040000', sha: (changed ? '3' : '4').repeat(40) },
-    { path, type: 'blob', mode: '100644', sha: changed ? (state.historicReport ? blob(state.historicReport) : state.reportBlob) : blob(oldReport) },
+    { path, type: 'blob', mode: '100644', sha: changed ? (state.historicReport ? blob(state.historicReport) : state.reportBlob) : blob(state.baseReport) },
     { path: 'README.md', type: 'blob', mode: '100644', sha: (changed && state.badTree ? '5' : '6').repeat(40) },
   ];
   const makePr = () => ({
@@ -75,7 +75,7 @@ function harness(options = {}) {
     },
     repos: {
       getContent: async ({ ref }) => {
-        const bytes = ref === state.base ? oldReport : ref === candidate ? (state.historicReport ?? state.report) : null;
+        const bytes = ref === state.base ? state.baseReport : ref === candidate ? (state.historicReport ?? state.report) : null;
         if (!bytes) throw missing();
         return { data: { type: 'file', encoding: 'base64', sha: blob(bytes), content: bytes.toString('base64') } };
       },
@@ -199,6 +199,27 @@ test('recovers only a verified orphan after PR creation fails', async () => {
   h.state.failCreatePr = false;
   await h.invoke();
   assert.deepEqual(h.state.writes, ['blob', 'tree', 'commit', 'ref', 'pr']);
+});
+
+// OpenAI-Codex: preserve occupied refs when the scheduled report is already current.
+test('leaves an occupied temporary branch alone when its health report is current', async () => {
+  for (const humanPr of [false, true]) {
+    const h = harness({ ref: '9'.repeat(40) });
+    const run = h.state.run;
+    h.state.baseReport = Buffer.from(JSON.stringify({
+      generated_by: 'OpenAI-Codex', workflow: 'ci.yml', event: 'schedule', branch: 'Source_Code',
+      run_id: run.id, run_attempt: run.run_attempt, status: run.status, conclusion: run.conclusion, url: run.html_url,
+    }, null, 2) + '\n', 'utf8');
+    if (humanPr) {
+      h.state.pr = h.makePr();
+      h.state.pr.user = { id: 1, login: 'human', type: 'User' };
+    }
+    await h.invoke();
+    assert.deepEqual(h.state.writes, []);
+    assert.equal(h.state.ref, '9'.repeat(40));
+    assert.match(h.state.notices.join(' '), /unchanged.*preserving/);
+    if (humanPr) assert.equal(h.state.pr.user.login, 'human');
+  }
 });
 
 test('preserves an unknown occupied temporary ref and a branch used as PR base', async () => {

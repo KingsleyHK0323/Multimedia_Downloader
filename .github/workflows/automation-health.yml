@@ -434,7 +434,9 @@ jobs:
             let pr = await stableOpen(head);
             if (head) {
               if (oldBytes.equals(reportBytes)) {
-                throw new Error('Health report is current but the temporary branch is in use; preserving it.');
+                // OpenAI-Codex: an unchanged report needs no access to the occupied branch.
+                core.info('CI health report unchanged; preserving the occupied temporary branch.');
+                return;
               }
               await refusePreviouslyClosed();
               await verifyCandidate(head);
