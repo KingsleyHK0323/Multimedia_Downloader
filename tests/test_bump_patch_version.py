@@ -30,75 +30,77 @@ class ReplaceJsonVersionTests(unittest.TestCase):
 
     def test_lockfile_reordered_dependency_and_root_versions(self):
         source = (
-            '{\n'
+            "{\n"
             '  "packages": {\n'
             '    "node_modules/a": {"version": "4.3.22"},\n'
             '    "": {"name": "app", "version": "4.3.22"}\n'
-            '  },\n'
+            "  },\n"
             '  "version": "4.3.22"\n'
-            '}\n'
+            "}\n"
         )
         expected = (
-            '{\n'
+            "{\n"
             '  "packages": {\n'
             '    "node_modules/a": {"version": "4.3.22"},\n'
             '    "": {"name": "app", "version": "4.3.23"}\n'
-            '  },\n'
+            "  },\n"
             '  "version": "4.3.23"\n'
-            '}\n'
+            "}\n"
         )
         self.assertEqual(self.replace(source, lockfile=True), expected)
 
     def test_crlf_lockfile_preserves_all_other_bytes(self):
         source = (
-            '{\r\n'
+            "{\r\n"
             '  "packages": {\r\n'
             '    "node_modules/a": {"version": "4.3.22"},\r\n'
             '    "": {"version": "4.3.22"}\r\n'
-            '  },\r\n'
+            "  },\r\n"
             '  "version": "4.3.22"\r\n'
-            '}\r\n'
+            "}\r\n"
         )
         expected = (
-            '{\r\n'
+            "{\r\n"
             '  "packages": {\r\n'
             '    "node_modules/a": {"version": "4.3.22"},\r\n'
             '    "": {"version": "4.3.23"}\r\n'
-            '  },\r\n'
+            "  },\r\n"
             '  "version": "4.3.23"\r\n'
-            '}\r\n'
+            "}\r\n"
         )
         self.assertEqual(self.replace(source, lockfile=True), expected)
 
     def test_manifest_nested_version_before_root_stays_unchanged(self):
         source = (
-            '{\n'
+            "{\n"
             '  "metadata": {"version": "4.3.22"},\n'
             '  "version" : "4.3.22"\n'
-            '}\n'
+            "}\n"
         )
         expected = (
-            '{\n'
+            "{\n"
             '  "metadata": {"version": "4.3.22"},\n'
             '  "version" : "4.3.23"\n'
-            '}\n'
+            "}\n"
         )
         self.assertEqual(self.replace(source, lockfile=False), expected)
 
     def test_escaped_json_keys_and_values_keep_other_text(self):
         source = (
-            '{\n'
+            "{\n"
             r'  "pack\u0061ges": {"": {"version": "4.3.\u0032\u0032"}, '
-            r'"node_modules/a": {"version": "4.3.22"}},' '\n'
+            r'"node_modules/a": {"version": "4.3.22"}},'
+            "\n"
             '  "version": "4.3.22"\n'
-            '}\n'
+            "}\n"
         )
         expected = (
-            '{\n'
+            "{\n"
             r'  "pack\u0061ges": {"": {"version": "4.3.23"}, '
-            r'"node_modules/a": {"version": "4.3.22"}},' '\n'
+            r'"node_modules/a": {"version": "4.3.22"}},'
+            "\n"
             '  "version": "4.3.23"\n'
-            '}\n'
+            "}\n"
         )
         self.assertEqual(self.replace(source, lockfile=True), expected)
 

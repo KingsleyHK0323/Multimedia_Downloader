@@ -61,7 +61,9 @@ def _replace_json_version(path: Path, old: str, new: str, *, lockfile: bool) -> 
         packages = data.get("packages")
         root_package = packages.get("") if isinstance(packages, dict) else None
         if not isinstance(root_package, dict) or root_package.get("version") != old:
-            raise ValueError(f"{path.relative_to(ROOT)} root package version is not {old}")
+            raise ValueError(
+                f"{path.relative_to(ROOT)} root package version is not {old}"
+            )
         package_fields = _json_object_fields(content, root_fields["packages"][0])
         root_package_fields = _json_object_fields(content, package_fields[""][0])
         locations.append(root_package_fields["version"])
@@ -76,6 +78,7 @@ def _replace_json_version(path: Path, old: str, new: str, *, lockfile: bool) -> 
     if json.loads(updated) != data:
         raise ValueError(f"Unexpected JSON changes in {path.relative_to(ROOT)}")
     return updated
+
 
 def _replace_once(path: Path, content: str, pattern: str, replacement: str) -> str:
     updated, count = re.subn(pattern, replacement, content, count=1, flags=re.MULTILINE)
@@ -94,11 +97,14 @@ def _promote_changelog(content: str, version: str, date: str, pr_number: int) ->
         raise ValueError("CHANGELOG.md has no '### Unreleased' section")
 
     next_heading = next(
-        (i for i in range(unreleased_index + 1, len(lines))
-         if re.match(r"^### ", lines[i])),
+        (
+            i
+            for i in range(unreleased_index + 1, len(lines))
+            if re.match(r"^### ", lines[i])
+        ),
         len(lines),
     )
-    notes = "".join(lines[unreleased_index + 1:next_heading]).strip()
+    notes = "".join(lines[unreleased_index + 1 : next_heading]).strip()
     if not notes:
         notes = (
             "#### Maintenance\n"
@@ -106,7 +112,11 @@ def _promote_changelog(content: str, version: str, date: str, pr_number: int) ->
         )
 
     release_block = f"\n### [{version}] — {date}\n\n{notes}\n\n"
-    return "".join(lines[:unreleased_index + 1]) + release_block + "".join(lines[next_heading:])
+    return (
+        "".join(lines[: unreleased_index + 1])
+        + release_block
+        + "".join(lines[next_heading:])
+    )
 
 
 def build_changes(pr_number: int, date: str) -> tuple[str, dict[str, str]]:
@@ -115,7 +125,9 @@ def build_changes(pr_number: int, date: str) -> tuple[str, dict[str, str]]:
     current = package.get("version", "")
     match = VERSION_RE.fullmatch(current)
     if not match:
-        raise ValueError(f"Expected a stable semantic version in package.json, found {current!r}")
+        raise ValueError(
+            f"Expected a stable semantic version in package.json, found {current!r}"
+        )
 
     major, minor, patch = map(int, match.groups())
     version = f"{major}.{minor}.{patch + 1}"
@@ -131,7 +143,9 @@ def build_changes(pr_number: int, date: str) -> tuple[str, dict[str, str]]:
     }
     for relative, lockfile in json_sources.items():
         path = ROOT / relative
-        changes[relative] = _replace_json_version(path, current, version, lockfile=lockfile)
+        changes[relative] = _replace_json_version(
+            path, current, version, lockfile=lockfile
+        )
 
     cargo_toml = "src-tauri/Cargo.toml"
     changes[cargo_toml] = _replace_once(
@@ -145,7 +159,9 @@ def build_changes(pr_number: int, date: str) -> tuple[str, dict[str, str]]:
     changes[cargo_lock] = _replace_once(
         ROOT / cargo_lock,
         (ROOT / cargo_lock).read_text(encoding="utf-8"),
-        r'(^name = "multimedia-downloader"\nversion = ")' + re.escape(current) + r'("$)',
+        r'(^name = "multimedia-downloader"\nversion = ")'
+        + re.escape(current)
+        + r'("$)',
         rf"\g<1>{version}\g<2>",
     )
 
@@ -153,7 +169,7 @@ def build_changes(pr_number: int, date: str) -> tuple[str, dict[str, str]]:
     changes[readme] = _replace_once(
         ROOT / readme,
         (ROOT / readme).read_text(encoding="utf-8"),
-        r'^(# Multimedia Downloader — V)' + re.escape(current) + r"$",
+        r"^(# Multimedia Downloader — V)" + re.escape(current) + r"$",
         rf"\g<1>{version}",
     )
 
@@ -174,8 +190,14 @@ def build_changes(pr_number: int, date: str) -> tuple[str, dict[str, str]]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pr-number", type=int, required=True)
-    parser.add_argument("--date", help="Release date in YYYY-MM-DD form; defaults to Hong Kong time")
-    parser.add_argument("--dry-run", action="store_true", help="Validate and list changes without writing")
+    parser.add_argument(
+        "--date", help="Release date in YYYY-MM-DD form; defaults to Hong Kong time"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate and list changes without writing",
+    )
     args = parser.parse_args()
 
     date = args.date or datetime.now(ZoneInfo("Asia/Hong_Kong")).date().isoformat()
@@ -193,7 +215,9 @@ def main() -> int:
                 (ROOT / relative).write_text(content, encoding="utf-8", newline="\n")
         print(tag)
         if args.dry_run:
-            print(f"Validated {len(changes)} file updates for PR #{args.pr_number}; no files changed.")
+            print(
+                f"Validated {len(changes)} file updates for PR #{args.pr_number}; no files changed."
+            )
     except (OSError, ValueError, json.JSONDecodeError) as error:
         parser.exit(1, f"Version bump failed: {error}\n")
     return 0
