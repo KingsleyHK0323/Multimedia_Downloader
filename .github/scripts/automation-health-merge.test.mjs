@@ -341,3 +341,12 @@ test('refuses a case-mismatched source ref before merging', async () => {
 test('checks the exact source ref before minting an App token', () => {
   assert.ok(workflow.indexOf('Verify exact source ref') < workflow.indexOf('Create a repository-scoped App token'));
 });
+
+
+test('hard stops health merging before creating an App token regardless of repository variables', () => {
+  const block = workflow.split('      - name: Block health merge pending branch isolation\n')[1];
+  assert.ok(block, 'required hard stop is missing');
+  assert.match(block.split('      - name: Create a repository-scoped App token\n')[0], /exit 1/);
+  assert.ok(workflow.indexOf('Block health merge pending branch isolation') <
+    workflow.indexOf('Create a repository-scoped App token'));
+});

@@ -633,3 +633,21 @@ test('a concurrent retarget cannot alter the fixed Source_Code parent', async ()
   assert.deepEqual(h.state.mergeCandidate.parents.map((item) => item.sha), [newCommit, moved]);
   assert.equal(h.state.branchHead, mergedCommit);
 });
+
+// OpenAI-Codex_health_release_architecture: prevent an opt-in variable from enabling App writes before isolation.
+test('health PR mode stops unconditionally before creating an App token', () => {
+  const report = workflow.split('\n  report:\n')[1];
+  assert.ok(report, 'health PR job must be present');
+  const guard = "      # OpenAI-Codex_health_release_architecture: keep App PR writes disabled until branch isolation is verified.\n" +
+    "      - name: Block health PR writes pending branch isolation\n" +
+    "        shell: bash\n" +
+    "        run: |\n" +
+    "          echo '::error::Health App PR mode is disabled until branch isolation is verified.'\n" +
+    "          exit 1\n";
+  const tokenStep = "      - name: Create a repository-scoped App token\n";
+  assert.equal(report.split(guard).length, 2, 'the unconditional fail-closed step must be unique');
+  assert.ok(report.indexOf(guard) < report.indexOf(tokenStep), 'the guard must precede the App token');
+  assert.ok(report.includes(guard + tokenStep), 'no step may be inserted between the guard and token');
+  assert.match(report, /vars\.AUTOMATION_PR_MODE == 'enabled'/);
+  assert.doesNotMatch(guard, /^\s*(?:if|continue-on-error):/m);
+});
