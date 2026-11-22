@@ -1,0 +1,81 @@
+# OpenAI-Codex_health_release_architecture: read-only probe of PR ref associations.
+name: Verify cleanup PR association
+on:
+  pull_request:
+    branches: [Source_Code]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  probe:
+    if: >-
+      github.repository == 'KingsleyHK0323/Multimedia_Downloader' &&
+      github.event.pull_request.user.id == 157894869 &&
+      github.event.sender.id == 157894869 &&
+      github.event.pull_request.head.repo.id == 1251103365 &&
+      github.event.pull_request.base.repo.id == 1251103365 &&
+      github.event.pull_request.head.ref == 'automation/protected-workflows' &&
+      github.event.pull_request.base.ref == 'Source_Code'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify an exact open PR association with the source ref
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            // OpenAI-Codex_health_release_architecture: verify GraphQL PR visibility without a checkout or a write token.
+            const { owner, repo } = context.repo;
+            const full = 'KingsleyHK0323/Multimedia_Downloader';
+            const branch = 'automation/protected-workflows';
+            const eventPr = context.payload.pull_request;
+            const oid = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+            if (context.eventName !== 'pull_request' || owner + '/' + repo !== full ||
+                context.payload.repository?.id !== 1251103365 || context.payload.repository.full_name !== full ||
+                context.payload.sender?.id !== 157894869 ||
+                !eventPr || !Number.isSafeInteger(eventPr.number) || eventPr.number < 1 ||
+                eventPr.user?.id !== 157894869 || eventPr.head?.repo?.id !== 1251103365 ||
+                eventPr.head.repo.full_name !== full || eventPr.head.ref !== branch || !oid(eventPr.head.sha) ||
+                eventPr.base?.repo?.id !== 1251103365 || eventPr.base.repo.full_name !== full ||
+                eventPr.base.ref !== 'Source_Code') {
+              throw new Error('Probe repository, pull request, or ref identity is invalid.');
+            }
+            const getCurrent = async () => {
+              const pr = (await github.rest.pulls.get({ owner, repo, pull_number: eventPr.number })).data;
+              if (!pr || pr.number !== eventPr.number || pr.state !== 'open' || pr.user?.id !== 157894869 ||
+                  pr.head?.repo?.id !== 1251103365 || pr.head.repo.full_name !== full ||
+                  pr.head.ref !== branch || pr.head.sha !== eventPr.head.sha ||
+                  pr.base?.repo?.id !== 1251103365 || pr.base.repo.full_name !== full ||
+                  pr.base.ref !== 'Source_Code') throw new Error('Probe pull request changed.');
+              return pr;
+            };
+            const getRef = async () => {
+              const ref = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + branch })).data;
+              if (!ref || ref.ref !== 'refs/heads/' + branch || ref.object?.type !== 'commit' ||
+                  ref.object.sha !== eventPr.head.sha) throw new Error('Probe branch head changed.');
+            };
+            await getCurrent();
+            await getRef();
+            const result = await github.graphql(
+              'query($owner:String!, $repo:String!, $qualifiedName:String!) {' +
+              ' repository(owner:$owner, name:$repo) { nameWithOwner ref(qualifiedName:$qualifiedName) {' +
+              ' name prefix target { oid } associatedPullRequests(first:100, states:[OPEN]) {' +
+              ' totalCount nodes { number state headRefName baseRefName' +
+              ' headRepository { nameWithOwner } baseRepository { nameWithOwner } } pageInfo { hasNextPage } } } } }',
+              { owner, repo, qualifiedName: 'refs/heads/' + branch },
+            );
+            const ref = result?.repository?.ref;
+            const connection = ref?.associatedPullRequests;
+            if (result?.repository?.nameWithOwner !== full || ref?.name !== branch || ref.prefix !== 'refs/heads/' ||
+                ref.target?.oid !== eventPr.head.sha || !connection ||
+                !Number.isSafeInteger(connection.totalCount) || connection.totalCount < 1 || connection.totalCount > 100 ||
+                !Array.isArray(connection.nodes) || connection.nodes.length !== connection.totalCount ||
+                connection.pageInfo?.hasNextPage !== false ||
+                connection.nodes.filter((pr) => pr?.number === eventPr.number && pr.state === 'OPEN' &&
+                  pr.headRefName === branch && pr.baseRefName === 'Source_Code' &&
+                  pr.headRepository?.nameWithOwner === full && pr.baseRepository?.nameWithOwner === full).length !== 1) {
+              throw new Error('GraphQL cannot confirm the exact open PR for this branch.');
+            }
+            await getCurrent();
+            await getRef();
+            core.notice('Read-only GraphQL ref association contains the exact same-repo PR and head.');

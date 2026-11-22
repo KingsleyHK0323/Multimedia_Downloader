@@ -1,9 +1,14 @@
-# OpenAI-Codex: preserve both permanent branches when cleaning merged heads.
+# OpenAI-Codex_health_release_architecture: recover merged-branch cleanup from trusted events and schedule.
 name: Clean merged branches
 
 on:
   pull_request_target:
     types: [closed]
+  workflow_run:
+    workflows: [CI, Website build check]
+    types: [completed]
+  schedule:
+    - cron: '43 */6 * * *'
   workflow_dispatch:
     inputs:
       pr_number:
@@ -17,81 +22,239 @@ on:
         default: true
 
 permissions:
+  actions: read
   contents: write
   pull-requests: read
 
+concurrency:
+  group: cleanup-merged-branches
+  queue: max
+
 jobs:
   cleanup:
-    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.merged == true
+    if: github.event_name != 'pull_request_target' || github.event.pull_request.merged == true
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 12
     steps:
-      - name: Delete unchanged merged branch
-        uses: actions/github-script@v8
+      - name: Delete unchanged merged branches
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
           MANUAL_PR: ${{ inputs.pr_number }}
           DRY_RUN: ${{ inputs.dry_run }}
           CLEANUP_TOKEN: ${{ github.token }}
         with:
           script: |
+            // OpenAI-Codex_health_release_architecture: wakeups are hints; ref deletion requires a fresh merged PR and lease.
             const { owner, repo } = context.repo;
-            let pr = context.payload.pull_request;
-            if (context.eventName === 'workflow_dispatch') {
-              if (!/^[1-9][0-9]{0,9}$/.test(process.env.MANUAL_PR)) throw new Error('Invalid PR number');
-              pr = (await github.rest.pulls.get({ owner, repo, pull_number: Number(process.env.MANUAL_PR) })).data;
+            const full = 'KingsleyHK0323/Multimedia_Downloader';
+            const permanent = new Set(['Source_Code', 'Multimedia_Downloader_Web_Preview']);
+            const oid = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
+            const positive = (value) => Number.isSafeInteger(value) && value > 0;
+            const refName = (value) => typeof value === 'string' && value.length > 0 && value.length <= 250 &&
+              !value.startsWith('-') && !value.includes('\n') && !value.includes('\r') && !value.includes('\0');
+            if (owner + '/' + repo !== full || context.payload.repository?.id !== 1251103365 ||
+                context.payload.repository.full_name !== full || !process.env.CLEANUP_TOKEN) {
+              throw new Error('Cleanup repository or token identity is invalid.');
             }
-            if (!pr || !pr.merged) throw new Error('PR is not merged');
-            const branch = pr.head.ref;
-            if (!pr.head.repo || pr.head.repo.full_name !== context.payload.repository.full_name) {
-              core.info('External fork; no branch will be deleted.');
-              return;
+            const number = (value) => {
+              if (!/^[1-9][0-9]{0,9}$/.test(String(value))) throw new Error('Invalid PR number.');
+              const parsed = Number(value);
+              if (!positive(parsed)) throw new Error('Invalid PR number.');
+              return parsed;
+            };
+            const event = context.eventName;
+            if (!['pull_request_target', 'workflow_dispatch', 'workflow_run', 'schedule'].includes(event)) {
+              throw new Error('Unsupported cleanup event.');
             }
-            if (['Source_Code', 'Multimedia_Downloader_Web_Preview'].includes(branch)) {
-              core.info('Permanent project branch; no deletion.');
-              return;
+            if (event !== 'pull_request_target' && context.ref !== 'refs/heads/Source_Code') {
+              throw new Error('Cleanup must run from the exact Source_Code ref.');
             }
-            let ref;
-            try {
-              ref = await github.rest.git.getRef({ owner, repo, ref: `heads/${branch}` });
-            } catch (error) {
-              if (error.status === 404) {
-                core.info('Branch already absent.');
+            const getPr = async (id) => (await github.rest.pulls.get({ owner, repo, pull_number: id })).data;
+            const getRef = async (branch) => {
+              try {
+                const value = (await github.rest.git.getRef({ owner, repo, ref: 'heads/' + branch })).data;
+                if (!value || value.ref !== 'refs/heads/' + branch || value.object?.type !== 'commit' || !oid(value.object.sha)) {
+                  throw new Error('Cleanup branch identity is incomplete.');
+                }
+                return value.object.sha;
+              } catch (error) {
+                if (error.status === 404) return null;
+                throw error;
+              }
+            };
+            const hasOpenPr = async (branch, expectedHead) => {
+              const [head, base, associated] = await Promise.all([
+                github.rest.pulls.list({ owner, repo, state: 'open', head: owner + ':' + branch, per_page: 1, page: 1 }),
+                github.rest.pulls.list({ owner, repo, state: 'open', base: branch, per_page: 1, page: 1 }),
+                github.graphql(
+                  'query($owner:String!, $repo:String!, $qualifiedName:String!) {' +
+                  ' repository(owner:$owner, name:$repo) { nameWithOwner ref(qualifiedName:$qualifiedName) {' +
+                  ' name prefix target { oid } associatedPullRequests(first:1, states:[OPEN]) {' +
+                  ' totalCount nodes { number } pageInfo { hasNextPage } } } } }',
+                  { owner, repo, qualifiedName: 'refs/heads/' + branch },
+                ),
+              ]);
+              for (const response of [head, base]) {
+                if (!response || !Array.isArray(response.data) || response.data.length > 1) {
+                  throw new Error('Targeted open PR search is incomplete.');
+                }
+              }
+              const ref = associated?.repository?.ref;
+              const connection = ref?.associatedPullRequests;
+              if (associated?.repository?.nameWithOwner !== full || ref?.name !== branch ||
+                  ref.prefix !== 'refs/heads/' || ref.target?.oid !== expectedHead ||
+                  !connection || !Number.isSafeInteger(connection.totalCount) || connection.totalCount < 0 ||
+                  !Array.isArray(connection.nodes) || connection.nodes.length > 1 ||
+                  typeof connection.pageInfo?.hasNextPage !== 'boolean' ||
+                  (connection.totalCount === 0 && (connection.nodes.length !== 0 || connection.pageInfo.hasNextPage))) {
+                throw new Error('Associated open PR inventory is incomplete or the branch changed.');
+              }
+              // Any visible result blocks deletion, including a same-owner fork with the same head name.
+              return head.data.length !== 0 || base.data.length !== 0 || connection.totalCount !== 0;
+            };
+            const safePr = (pr, id) => !!pr && pr.number === id && pr.state === 'closed' && pr.merged === true &&
+              typeof pr.merged_at === 'string' && pr.head?.repo?.id === 1251103365 && pr.head.repo.full_name === full &&
+              pr.base?.repo?.id === 1251103365 && pr.base.repo.full_name === full &&
+              refName(pr.head.ref) && oid(pr.head.sha);
+            const requireRepoIds = (pr) => {
+              if (pr?.merged === true &&
+                  ((pr.head?.repo !== null && !positive(pr.head?.repo?.id)) || !positive(pr.base?.repo?.id))) {
+                throw new Error('Merged PR repository identifiers are incomplete.');
+              }
+            };
+            const dryRun = event === 'workflow_dispatch' && process.env.DRY_RUN !== 'false';
+            const clean = async (id) => {
+              const initial = await getPr(id);
+              requireRepoIds(initial);
+              if (!safePr(initial, id)) {
+                if (event === 'workflow_dispatch' && initial?.merged !== true) throw new Error('PR is not merged.');
+                core.info('PR #' + id + ' is not an eligible same-repository merged PR.');
                 return;
               }
-              throw error;
-            }
-            if (ref.data.object.sha !== pr.head.sha) {
-              core.warning('Branch advanced after merge; preserving it.');
+              const branch = initial.head.ref;
+              if (permanent.has(branch)) {
+                core.info('Permanent branch retained.');
+                return;
+              }
+              const first = await getRef(branch);
+              if (first === null || first !== initial.head.sha) {
+                core.info('Merged head is missing or has advanced; retaining branch.');
+                return;
+              }
+              if (await hasOpenPr(branch, first)) {
+                core.info('An open PR uses this branch; retaining it.');
+                return;
+              }
+              const current = await getPr(id);
+              requireRepoIds(current);
+              if (!safePr(current, id) || current.head.ref !== branch || current.head.sha !== first ||
+                  current.merged_at !== initial.merged_at || await getRef(branch) !== first) {
+                core.warning('PR or ref changed before cleanup; retaining branch.');
+                return;
+              }
+              if (dryRun) {
+                core.info('Dry run: eligible branch retained.');
+                return;
+              }
+              const { execFileSync } = require('node:child_process');
+              const fs = require('node:fs');
+              const os = require('node:os');
+              const path = require('node:path');
+              const ref = 'refs/heads/' + branch;
+              execFileSync('git', ['check-ref-format', ref], { stdio: 'ignore' });
+              const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'branch-cleanup-'));
+              execFileSync('git', ['init', '--bare', dir], { stdio: 'ignore' });
+              const auth = Buffer.from('x-access-token:' + process.env.CLEANUP_TOKEN).toString('base64');
+              const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
+                GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
+                GIT_CONFIG_VALUE_0: 'AUTHORIZATION: basic ' + auth };
+              try {
+                // GitHub has no atomic "no open PR uses ref" condition; the lease protects only the ref SHA.
+                execFileSync('git', ['-C', dir, 'push', '--force-with-lease=' + ref + ':' + first,
+                  'https://github.com/' + owner + '/' + repo + '.git', ':' + ref], { env, stdio: 'pipe' });
+              } catch {
+                throw new Error('Conditional branch deletion failed; branch may have changed.');
+              }
+              core.info('Removed unchanged merged branch for PR #' + id + '.');
+            };
+            if (event === 'workflow_dispatch' || event === 'pull_request_target') {
+              const id = event === 'workflow_dispatch' ? number(process.env.MANUAL_PR) : number(context.payload.pull_request?.number);
+              await clean(id);
               return;
             }
-            // OpenAI-Codex: manual verification defaults to preserving the branch.
-            if (context.eventName === 'workflow_dispatch' && process.env.DRY_RUN !== 'false') {
-              core.info('Dry run: eligible branch will be preserved.');
-              return;
+            if (event === 'workflow_run') {
+              const wakeId = context.payload.workflow_run?.id;
+              if (!positive(wakeId)) throw new Error('Workflow wakeup identity is missing.');
+              const run = (await github.rest.actions.getWorkflowRun({ owner, repo, run_id: wakeId })).data;
+              if (!run || run.id !== wakeId || run.status !== 'completed' || run.event !== 'push' ||
+                  run.repository?.id !== 1251103365 || run.head_repository?.id !== 1251103365 ||
+                  !oid(run.head_sha) ||
+                  !((run.name === 'CI' && run.head_branch === 'Source_Code' && run.path === '.github/workflows/ci.yml') ||
+                    (run.name === 'Website build check' && run.head_branch === 'Multimedia_Downloader_Web_Preview' &&
+                     typeof run.path === 'string' && /^\.github\/workflows\/[^/]+\.ya?ml$/.test(run.path)))) {
+                core.info('Ignoring an unrelated or untrusted workflow wakeup.');
+                return;
+              }
             }
-            // OpenAI-Codex: Git's lease makes the deletion conditional at the server.
-            if (!/^[0-9a-f]{40}$/.test(pr.head.sha) ||
-                !/^[A-Za-z0-9_.-]+$/.test(owner) || !/^[A-Za-z0-9_.-]+$/.test(repo) ||
-                typeof branch !== 'string' || !process.env.CLEANUP_TOKEN) {
-              throw new Error('Invalid cleanup identity or missing token');
+            // A read-only ref snapshot skips historic PRs whose branches no longer exist.
+            const liveBranches = new Map();
+            let branchInventoryComplete = false;
+            for (let page = 1; page <= 100; page++) {
+              const entries = (await github.rest.repos.listBranches({ owner, repo, per_page: 100, page })).data;
+              if (!Array.isArray(entries) || entries.length > 100) throw new Error('Branch inventory is incomplete.');
+              for (const branch of entries) {
+                if (!refName(branch.name) || !oid(branch.commit?.sha) || liveBranches.has(branch.name)) {
+                  throw new Error('Branch inventory is invalid or changed during pagination.');
+                }
+                liveBranches.set(branch.name, branch.commit.sha);
+              }
+              if (entries.length < 100) { branchInventoryComplete = true; break; }
             }
-            const { execFileSync } = require('node:child_process');
-            const fs = require('node:fs');
-            const os = require('node:os');
-            const path = require('node:path');
-            const refName = `refs/heads/${branch}`;
-            execFileSync('git', ['check-ref-format', refName], { stdio: 'ignore' });
-            const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'branch-cleanup-'));
-            execFileSync('git', ['init', '--bare', dir], { stdio: 'ignore' });
-            const auth = Buffer.from(`x-access-token:${process.env.CLEANUP_TOKEN}`).toString('base64');
-            const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1',
-              GIT_CONFIG_KEY_0: 'http.https://github.com/.extraheader',
-              GIT_CONFIG_VALUE_0: `AUTHORIZATION: basic ${auth}` };
-            try {
-              execFileSync('git', ['-C', dir, 'push',
-                `--force-with-lease=${refName}:${pr.head.sha}`,
-                `https://github.com/${owner}/${repo}.git`, `:${refName}`],
-                { env, stdio: 'pipe' });
-            } catch {
-              throw new Error('Conditional branch deletion failed; branch may have changed');
+            if (!branchInventoryComplete) throw new Error('Branch inventory exceeds the safe pagination limit.');
+            let failures = 0;
+            const deadline = Date.now() + 9 * 60 * 1000;
+            const candidates = [...liveBranches.entries()].filter(([branch]) => !permanent.has(branch))
+              .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0);
+            const start = candidates.length ? Math.floor(Date.now() / (6 * 60 * 60 * 1000)) % candidates.length : 0;
+            const rotated = [...candidates.slice(start), ...candidates.slice(0, start)];
+            for (const [branch, branchSha] of rotated) {
+              if (Date.now() >= deadline) {
+                throw new Error('Branch cleanup sweep timed out; a later wakeup will continue with a rotated start.');
+              }
+              let exhausted = false;
+              let handled = false;
+              const seen = new Set();
+              for (let page = 1; page <= 5; page++) {
+                const entries = (await github.rest.pulls.list({
+                  owner, repo, state: 'closed', head: owner + ':' + branch,
+                  sort: 'updated', direction: 'desc', per_page: 100, page,
+                })).data;
+                if (!Array.isArray(entries) || entries.length > 100) {
+                  throw new Error('Closed PR search for a branch is incomplete.');
+                }
+                for (const item of entries) {
+                  if (!positive(item.number) || seen.has(item.number) || item.state !== 'closed' ||
+                      !(item.merged_at === null || typeof item.merged_at === 'string') ||
+                      !item.head || !refName(item.head.ref) || !oid(item.head.sha) ||
+                      !(item.head.repo === null ||
+                        (typeof item.head.repo?.full_name === 'string' && positive(item.head.repo.id)))) {
+                    throw new Error('Closed PR search for a branch is invalid or changed during pagination.');
+                  }
+                  seen.add(item.number);
+                  if (item.merged_at !== null && item.head.repo?.id === 1251103365 && item.head.repo.full_name === full &&
+                      item.head.ref === branch && item.head.sha === branchSha) {
+                    try { await clean(item.number); }
+                    catch { failures++; core.warning('Cleanup failed for PR #' + item.number + '; other candidates will continue.'); }
+                    handled = true;
+                    break;
+                  }
+                }
+                if (handled) break;
+                if (entries.length < 100) { exhausted = true; break; }
+              }
+              if (!handled && !exhausted) {
+                failures++;
+                core.warning('Closed PR history for one branch exceeds the safe limit; retaining it.');
+              }
             }
+            if (failures) throw new Error('Some merged-branch cleanups failed or exceeded safe limits; a later wakeup will retry.');
