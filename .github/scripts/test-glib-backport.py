@@ -55,20 +55,22 @@ def main():
         or "let mut p: *mut libc::c_char = std::ptr::null_mut();" not in source
         or "                &mut p," not in source
     ):
-        raise RuntimeError("The resolved GLib iterator does not contain the expected backport.")
+        raise RuntimeError(
+            "The resolved GLib iterator does not contain the expected backport."
+        )
 
     temp_root = Path(os.environ["RUNNER_TEMP"])
     probe = Path(tempfile.mkdtemp(prefix="glib-backport-probe-", dir=temp_root))
     (probe / "src").mkdir()
     (probe / "Cargo.toml").write_text(
         '[package]\nname = "glib-backport-probe"\nversion = "0.0.0"\nedition = "2021"\n'
-        '[workspace]\n[dependencies]\nglib = { path = '
+        "[workspace]\n[dependencies]\nglib = { path = "
         + json.dumps(str(glib_dir))
-        + ' }\n',
+        + " }\n",
         encoding="utf-8",
     )
     (probe / "src" / "lib.rs").write_text(
-        r'''
+        r"""
 // OpenAI-Codex: cover both directions and optimized string iteration.
 #[cfg(test)]
 mod tests {
@@ -91,13 +93,20 @@ mod tests {
         assert_eq!(value.array_iter_str().unwrap().last(), Some("gamma"));
     }
 }
-''',
+""",
         encoding="utf-8",
     )
     env = dict(os.environ, CARGO_TARGET_DIR=str(probe / "target"))
     # OpenAI-Codex: cargo comes from the configured CI toolchain; arguments are fixed.
     subprocess.run(  # noqa: S603
-        [cargo, "test", "--release", "--offline", "--manifest-path", str(probe / "Cargo.toml")],
+        [
+            cargo,
+            "test",
+            "--release",
+            "--offline",
+            "--manifest-path",
+            str(probe / "Cargo.toml"),
+        ],
         cwd=probe,
         env=env,
         check=True,
