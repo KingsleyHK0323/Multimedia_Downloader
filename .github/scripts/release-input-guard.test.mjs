@@ -348,16 +348,14 @@ test('approved Public Beta tags create and validate prerelease drafts', async ()
   async function run(tag, existing) {
     let created;
     const repos = {
-      getReleaseByTag: async () => {
-        if (existing) return { data: existing };
-        const error = new Error('not found');
-        error.status = 404;
-        throw error;
-      },
+      listReleases: async () => { throw new Error('pagination wrapper required'); },
       generateReleaseNotes: async () => ({ data: { body: 'Generated notes' } }),
       createRelease: async (options) => { created = options; return { data: options }; },
     };
-    const github = { rest: { git: { getRef: async () => ({ data: { object: { type: 'commit', sha: target } } }) }, repos } };
+    const github = { paginate: async (method) => {
+      assert.equal(method, repos.listReleases);
+      return existing ? (Array.isArray(existing) ? existing : [existing]) : [];
+    }, rest: { git: { getRef: async () => ({ data: { object: { type: 'commit', sha: target } } }) }, repos } };
     const context = { repo: { owner: 'KingsleyHK0323', repo: 'Multimedia_Downloader' } };
     const process = { env: { RELEASE_TAG: tag, TARGET_SHA: target, RELEASE_ONLY: 'all', RUNNER_TEMP: '/tmp', PREVIOUS_TAG: '' } };
     const require = (name) => {
@@ -375,7 +373,9 @@ test('approved Public Beta tags create and validate prerelease drafts', async ()
     assert.equal(created.prerelease, true);
     assert.equal(created.name, tag + ' Public Beta');
     if (tag === 'v4.3.23') assert.match(created.body, /Windows progress and BiliBili download scenarios have not been verified/);
+    assert.equal(await run(tag, { tag_name: tag, draft: true, prerelease: true }), undefined);
     await assert.rejects(run(tag, { tag_name: tag, draft: true, prerelease: false }), /expected draft/);
+    await assert.rejects(run(tag, [{ tag_name: tag }, { tag_name: tag }]), /Ambiguous releases/);
   }
   const stable = await run('v4.3.24');
   assert.equal(stable.prerelease, false);

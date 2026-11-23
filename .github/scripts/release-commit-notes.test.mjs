@@ -93,16 +93,19 @@ function scenario(options = {}) {
   const calls = [];
   let reads = 0;
   const api = {
+    // OpenAI-Codex: model draft-inclusive paginated release listings.
+    paginate: async method => {
+      assert.equal(method, api.rest.repos.listReleases);
+      reads++;
+      if (!options.exists && !(options.race && reads > 1)) return [];
+      return [{ tag_name: 'v4.3.24', draft: options.published ? false : true, prerelease: false }];
+    },
     rest: {
       git: {
         getRef: async () => ({ data: { object: { type: 'commit', sha: options.badTarget ? 'b'.repeat(40) : target } } }),
       },
       repos: {
-        getReleaseByTag: async () => {
-          reads++;
-          if (!options.exists && !(options.race && reads > 1)) throw Object.assign(new Error('missing'), { status: 404 });
-          return { data: { tag_name: 'v4.3.24', draft: options.published ? false : true, prerelease: false } };
-        },
+        listReleases: async () => { throw new Error('pagination wrapper required'); },
         generateReleaseNotes: async args => { calls.push(['notes', args]); return { data: { body: 'Generated PR notes' } }; },
         createRelease: async args => {
           calls.push(['create', args]);

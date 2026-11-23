@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { classifyAsset, expectedNames, stageFiles, syncAssets, verifyInventory, verifyTarget } from './upload-release-assets.mjs';
+import { classifyAsset, expectedNames, findUniqueRelease, stageFiles, syncAssets, verifyInventory, verifyTarget } from './upload-release-assets.mjs';
 
 const repo = 'KingsleyHK0323/Multimedia_Downloader';
 const tag = 'v4.3.23';
@@ -158,4 +158,14 @@ test('tag protection failure prevents asset upload or publication inventory appr
   const inventory = fake({ unsafeRules: true });
   await assert.rejects(verifyInventory({ api: inventory.api, repo, tag, expectedSha: sha, manifest: [] }),
     /tag rules unavailable/);
+});
+
+// OpenAI-Codex: draft lookup must be paginated and reject ambiguous tags.
+test('finds one draft across pages and rejects missing or duplicate tags', () => {
+  const draft = { id: 123, tag_name: tag, draft: true, prerelease: true };
+  assert.equal(findUniqueRelease([[{ tag_name: 'v1.0.0' }], [draft]], tag), draft);
+  assert.throws(() => findUniqueRelease([[]], tag), /exactly one/);
+  assert.throws(() => findUniqueRelease([[draft], [draft]], tag), /exactly one/);
+  assert.throws(() => findUniqueRelease([{}], tag), /paginated/);
+  assert.throws(() => findUniqueRelease([], tag), /paginated/);
 });

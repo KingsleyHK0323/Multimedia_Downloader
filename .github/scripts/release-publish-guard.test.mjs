@@ -1,6 +1,9 @@
 // OpenAI-Codex: exercise the actual release gate without publishing anything.
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
@@ -97,4 +100,46 @@ test('beta publication requires passing CI and matrix for its exact commit', () 
   assert.notEqual(verifyBeta([run(ci), run(matrix, { conclusion: 'failure' })]), 0);
   assert.notEqual(verifyBeta([run(ci), run(matrix), run(matrix, { id: 2, conclusion: 'failure' })]), 0);
   assert.notEqual(verifyBeta([run(ci), run(matrix)], 3), 0);
+});
+
+// OpenAI-Codex: fully paginated histories may contain more than one hundred runs.
+test('complete long histories retain exact-commit release checks', () => {
+  const history = Array.from({ length: 120 }, (_, index) => run(ci, { id: index + 1 }));
+  const checks = [...history, run(matrix, { id: 121 })];
+  assert.equal(verify(checks), 0);
+  assert.equal(verifyBeta(checks), 0);
+  assert.notEqual(verifyBeta([...checks, run(matrix, { id: 122, conclusion: 'failure' })]), 0);
+  assert.match(workflow, /actions\/workflows\/ci\.yml\/runs\?head_sha=\$sha&branch=Source_Code&per_page=100/);
+  assert.match(workflow, /actions\/workflows\/python-matrix\.yml\/runs\?head_sha=\$sha&branch=Source_Code&per_page=100/);
+  assert.match(workflow, /gh api --paginate --slurp/);
+});
+
+// OpenAI-Codex: exercise the actual paginated query and reject truncated or duplicate pages.
+test('workflow history query combines complete pages and fails closed on partial data', () => {
+  const directory = mkdtempSync(join(process.env.RUNNER_TEMP || tmpdir(), 'release-page-test-'));
+  const gh = join(directory, 'gh');
+  writeFileSync(gh, '#!/bin/sh\ncase "$*" in *ci.yml*) printf "%s" "$CI_PAGES";; *python-matrix.yml*) printf "%s" "$MATRIX_PAGES";; *) exit 2;; esac\n');
+  chmodSync(gh, 0o755);
+  const query = betaJob.split('for attempt in $(seq 1 60); do\n')[1]
+    ?.split('\n            if BETA_SHA=')[0];
+  assert.ok(query);
+  function collect(ciPages, matrixPages) {
+    const result = spawnSync('bash', ['--noprofile', '--norc', '-e', '-o', 'pipefail', '-c',
+      query + '\nprintf "%s" "$runs"'], {
+      encoding: 'utf8', timeout: 5000,
+      env: { ...process.env, PATH: directory + ':' + process.env.PATH,
+        GITHUB_REPOSITORY: 'KingsleyHK0323/Multimedia_Downloader', sha,
+        CI_PAGES: JSON.stringify(ciPages), MATRIX_PAGES: JSON.stringify(matrixPages) },
+    });
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 0, result.stderr);
+    return JSON.parse(result.stdout);
+  }
+  const twoPages = [{ total_count: 2, workflow_runs: [run(ci, { id: 1 })] },
+    { total_count: 2, workflow_runs: [run(ci, { id: 2 })] }];
+  const matrixPage = [{ total_count: 1, workflow_runs: [run(matrix, { id: 3 })] }];
+  assert.equal(collect(twoPages, matrixPage).total_count, 3);
+  assert.deepEqual(collect([twoPages[0]], matrixPage), {});
+  assert.deepEqual(collect([twoPages[0], { ...twoPages[1], total_count: 3 }], matrixPage), {});
+  assert.deepEqual(collect([twoPages[0], { ...twoPages[1], workflow_runs: [run(ci, { id: 1 })] }], matrixPage), {});
 });

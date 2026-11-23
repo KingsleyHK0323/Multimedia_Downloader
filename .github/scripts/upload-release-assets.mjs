@@ -203,6 +203,15 @@ function gh(...args) {
   return execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 20_000_000 });
 }
 function parse(value) { return JSON.parse(value); }
+// OpenAI-Codex: GitHub's tag endpoint does not return unpublished drafts.
+export function findUniqueRelease(pages, tag) {
+  if (!Array.isArray(pages) || pages.length === 0 || pages.some(page => !Array.isArray(page))) {
+    throw new Error('Invalid paginated releases.');
+  }
+  const matches = pages.flat().filter(release => release?.tag_name === tag);
+  if (matches.length !== 1) throw new Error('Expected exactly one release for the tag.');
+  return matches[0];
+}
 function uploadByReleaseId(repo, id, name, path, size) {
   const token = process.env.GH_TOKEN || '';
   if (!token || !REPO.test(repo) || !Number.isSafeInteger(id) || id <= 0 ||
@@ -237,7 +246,8 @@ function githubApi() {
     },
     ref: async (repo, tag) => parse(gh('api', 'repos/' + repo + '/git/ref/tags/' + tag)),
     tag: async (repo, sha) => parse(gh('api', 'repos/' + repo + '/git/tags/' + sha)),
-    release: async (repo, tag) => parse(gh('api', 'repos/' + repo + '/releases/tags/' + tag)),
+    release: async (repo, tag) => findUniqueRelease(parse(gh('api', '--paginate', '--slurp',
+      'repos/' + repo + '/releases?per_page=100')), tag),
     assets: async (repo, id) => {
       const pages = parse(gh('api', '--paginate', '--slurp',
         'repos/' + repo + '/releases/' + id + '/assets?per_page=100'));
