@@ -326,3 +326,75 @@ test('version-tag protections are checked with each job token before release wri
     assert.ok(body.indexOf('verify-tag-protection.mjs') < body.indexOf('gh release edit '));
   }
 });
+
+
+// OpenAI-Codex: exercise the actual draft-release script with isolated GitHub mocks.
+test('approved Public Beta tags create and validate prerelease drafts', async () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const section = source.split('      - name: Create or verify the draft release\n')[1]
+    ?.split('\n      # OpenAI-Codex_format_architecture: verify tag rules')[0];
+  assert.ok(section);
+  const block = section.split('          script: |\n')[1];
+  assert.ok(block);
+  const script = block.split('\n').map((line) => {
+    if (!line.trim()) return '';
+    assert.ok(line.startsWith('            '));
+    return line.slice(12);
+  }).join('\n');
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+  const execute = new AsyncFunction('github', 'context', 'process', 'require', script);
+  const target = 'a'.repeat(40);
+
+  async function run(tag, existing) {
+    let created;
+    const repos = {
+      getReleaseByTag: async () => {
+        if (existing) return { data: existing };
+        const error = new Error('not found');
+        error.status = 404;
+        throw error;
+      },
+      generateReleaseNotes: async () => ({ data: { body: 'Generated notes' } }),
+      createRelease: async (options) => { created = options; return { data: options }; },
+    };
+    const github = { rest: { git: { getRef: async () => ({ data: { object: { type: 'commit', sha: target } } }) }, repos } };
+    const context = { repo: { owner: 'KingsleyHK0323', repo: 'Multimedia_Downloader' } };
+    const process = { env: { RELEASE_TAG: tag, TARGET_SHA: target, RELEASE_ONLY: 'all', RUNNER_TEMP: '/tmp', PREVIOUS_TAG: '' } };
+    const require = (name) => {
+      if (name === 'node:fs') return { readFileSync: () => 'Release notes' };
+      if (name === 'node:path') return { join: (...parts) => parts.join('/') };
+      throw new Error('Unexpected module');
+    };
+    await execute(github, context, process, require);
+    return created;
+  }
+
+  for (const tag of ['v4.3.22', 'v4.3.23']) {
+    const created = await run(tag);
+    assert.equal(created.draft, true);
+    assert.equal(created.prerelease, true);
+    assert.equal(created.name, tag + ' Public Beta');
+    await assert.rejects(run(tag, { tag_name: tag, draft: true, prerelease: false }), /expected draft/);
+  }
+  const stable = await run('v4.3.24');
+  assert.equal(stable.prerelease, false);
+  assert.equal(stable.name, 'v4.3.24');
+  await assert.rejects(run('v4.3.3'), /Invalid release target/);
+});
+
+test('v4.3.23 routes only through verified beta publication', () => {
+  const source = readFileSync(new URL('../workflows/release.yml', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+  const beta = source.split('  publish-beta:\n')[1]?.split('  # OpenAI-Codex: publish only complete builds')[0];
+  const stable = source.split('  publish-stable:\n')[1]?.split('  # OpenAI-Codex: dispatch package publication')[0];
+  assert.ok(beta && stable);
+  for (const tag of ['v4.3.22', 'v4.3.23']) {
+    assert.ok(beta.includes("needs.metadata.outputs.tag == '" + tag + "'"));
+    assert.ok(stable.includes("needs.metadata.outputs.tag != '" + tag + "'"));
+  }
+  assert.ok(stable.includes("needs.metadata.outputs.tag != 'v4.3.3'"));
+  assert.match(beta, /RELEASE_TAG: \$\{\{ needs\.metadata\.outputs\.tag \}\}/);
+  assert.match(beta, /verify-tag-protection\.mjs/);
+  assert.match(beta, /gh release edit "\$TAG" --repo "\$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false/);
+  assert.match(beta, /upload-release-assets\.mjs "\$TAG" --verify-inventory/);
+  assert.match(beta, /verify-release-assets\.mjs "\$TAG"/);
+});

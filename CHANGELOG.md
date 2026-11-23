@@ -19,6 +19,7 @@
   when the total size or formatted percentage is unavailable. (OpenAI-Codex)
 
 #### Repository automation
+- Route v4.3.23 through the verified Public Beta publication path. (OpenAI-Codex)
 - Verify and report the pinned GLib backport whenever its dependency configuration changes. (OpenAI-Codex)
 - Backport the upstream GLib iterator soundness fix and test optimized iteration. (OpenAI-Codex)
 - Match Dependabot security update attempts to each alert's manifest directory. (OpenAI-Codex)

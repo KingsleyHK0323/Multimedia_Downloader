@@ -483,18 +483,20 @@ jobs:
               object = (await github.rest.git.getTag({ ...params, tag_sha: object.sha })).data.object;
             }
             if (object?.type !== 'commit' || object.sha !== target) throw new Error('Tag target changed.');
+            // OpenAI-Codex: only explicitly approved tags use the Public Beta path.
+            const beta = tag === 'v4.3.22' || tag === 'v4.3.23';
             let release;
             try {
               release = (await github.rest.repos.getReleaseByTag({ ...params, tag })).data;
             } catch (error) {
               if (error.status !== 404) throw error;
               if (process.env.RELEASE_ONLY !== 'all') throw new Error('Partial recovery requires an existing draft release.');
-              const beta = tag === 'v4.3.22';
-              const notes = beta
+              const legacyBeta = tag === 'v4.3.22';
+              const notes = legacyBeta
                 ? 'Public Beta: download cancellation and error guidance improvements. The application identifier changed; existing installations may require manual data migration. Network stalls can delay cancellation.'
                 : fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'release-commit-notes.md'), 'utf8');
               let body = notes;
-              if (!beta) {
+              if (!legacyBeta) {
                 const previous = process.env.PREVIOUS_TAG || '';
                 if (previous && !/^v[0-9A-Za-z._-]+$/.test(previous)) throw new Error('Invalid previous tag.');
                 const parameters = { ...params, tag_name: tag, target_commitish: target };
@@ -513,7 +515,7 @@ jobs:
               }
             }
             if (release.tag_name !== tag || release.draft !== true ||
-                (tag === 'v4.3.22' ? release.prerelease !== true : release.prerelease !== false)) {
+                release.prerelease !== beta) {
               throw new Error('Release is not the expected draft.');
             }
       # OpenAI-Codex_format_architecture: verify tag rules using this job's own token.
@@ -537,7 +539,7 @@ jobs:
     permissions:
       contents: write
       actions: read
-    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && needs.metadata.outputs.tag == 'v4.3.22'
+    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && (needs.metadata.outputs.tag == 'v4.3.22' || needs.metadata.outputs.tag == 'v4.3.23')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -550,14 +552,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TARGET_SHA: ${{ needs.metadata.outputs.source_sha }}
+          RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
           RELEASE_MANIFEST: ${{ needs.publisher.outputs.asset_manifest }}
         shell: bash
         run: |
           set -euo pipefail
-          node automation/.github/scripts/upload-release-assets.mjs v4.3.22 --verify-inventory
-          gh release view v4.3.22 --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease > "$RUNNER_TEMP/beta-release.json"
+          TAG="$RELEASE_TAG"
+          [[ "$TAG" == v4.3.22 || "$TAG" == v4.3.23 ]] || exit 1
+          node automation/.github/scripts/upload-release-assets.mjs "$TAG" --verify-inventory
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease > "$RUNNER_TEMP/beta-release.json"
           jq -e '.isDraft == true and .isPrerelease == true' "$RUNNER_TEMP/beta-release.json" >/dev/null
-          node automation/.github/scripts/verify-release-assets.mjs v4.3.22 "$RUNNER_TEMP/beta-release.json"
+          node automation/.github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/beta-release.json"
           sha="$RELEASE_TARGET_SHA"
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           verified=false
@@ -586,9 +591,9 @@ jobs:
             sleep 10
           done
           [[ "$verified" == true ]] || { echo "::error::Beta CI and matrix must pass for the tagged Source_Code commit."; exit 1; }
-          node automation/.github/scripts/upload-release-assets.mjs v4.3.22 --verify-inventory
+          node automation/.github/scripts/upload-release-assets.mjs "$TAG" --verify-inventory
           node automation/.github/scripts/verify-tag-protection.mjs
-          gh release edit v4.3.22 --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --draft=false --prerelease --latest=false
 
   # OpenAI-Codex: publish only complete builds of a commit with passing CI.
   publish-stable:
@@ -596,7 +601,7 @@ jobs:
     permissions:
       contents: write
       actions: read
-    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && needs.metadata.outputs.tag != 'v4.3.22' && needs.metadata.outputs.tag != 'v4.3.3'
+    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && needs.metadata.outputs.tag != 'v4.3.22' && needs.metadata.outputs.tag != 'v4.3.23' && needs.metadata.outputs.tag != 'v4.3.3'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
