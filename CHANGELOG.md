@@ -12,6 +12,8 @@
 
 ### Unreleased
 
+### [4.3.23] — 2026-11-23 (Public Beta)
+
 #### Application improvements
 - Retry BiliBili HTTP 567 responses with a range header limited to matching
   media hosts; this workaround may not resolve every site failure. (OpenAI-Codex)
