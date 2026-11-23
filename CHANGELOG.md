@@ -13,6 +13,8 @@
 ### Unreleased
 
 #### Application improvements
+- Retry BiliBili HTTP 567 responses with a range header limited to matching
+  media hosts; this workaround may not resolve every site failure. (OpenAI-Codex)
 - Update download progress from yt-dlp's numeric fields and retain speed updates
   when the total size or formatted percentage is unavailable. (OpenAI-Codex)
 

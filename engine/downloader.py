@@ -14,6 +14,7 @@ import os
 import re
 import time
 from typing import Iterable, Optional
+from urllib.parse import urlsplit
 
 import yt_dlp
 
@@ -97,6 +98,56 @@ def _download_progress(data: dict) -> tuple[float, str, str]:
     return min(100.0, percent) if percent is not None else 0.0, speed, eta
 
 
+# OpenAI-Codex: limit the HTTP 567 workaround to BiliBili media requests.
+def _bilibili_url(url: str) -> bool:
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").casefold().rstrip(".")
+    except (TypeError, ValueError):
+        return False
+    return parsed.scheme in {"http", "https"} and (
+        host == "bilibili.com" or host.endswith(".bilibili.com")
+        or host == "b23.tv" or host.endswith(".b23.tv")
+    )
+
+
+def _add_bilibili_media_range(info: dict) -> None:
+    if str(info.get("extractor_key", "")).casefold() != "bilibili":
+        return
+    formats = info.get("formats") or [info]
+    for fmt in formats:
+        if not isinstance(fmt, dict) or not isinstance(fmt.get("url"), str):
+            continue
+        try:
+            parsed = urlsplit(fmt["url"])
+            host = (parsed.hostname or "").casefold().rstrip(".")
+        except ValueError:
+            continue
+        if parsed.scheme not in {"http", "https"} or not (
+            host == "bilivideo.com" or host.endswith(".bilivideo.com")
+        ):
+            continue
+        headers = fmt.get("http_headers")
+        if headers is None:
+            headers = {}
+        if not isinstance(headers, dict) or any(
+            isinstance(key, str) and key.casefold() == "range" for key in headers
+        ):
+            continue
+        fmt["http_headers"] = {**headers, "Range": "bytes=0-"}
+
+
+def _install_bilibili_range_retry(ydl: object) -> None:
+    from yt_dlp.postprocessor import PostProcessor
+
+    class BilibiliRangeRetryPP(PostProcessor):
+        def run(self, info):
+            _add_bilibili_media_range(info)
+            return [], info
+
+    ydl.add_post_processor(BilibiliRangeRetryPP(), when="pre_process")
+
+
 class _DownloadStopped(Exception):
     """A cooperative stop interrupted the current download."""
 
@@ -125,6 +176,7 @@ class Downloader:
         self.progress_cb   = progress_cb
         self.item_start_cb = item_start_cb
         self._stop         = False
+        self._bilibili_range_retry = False
         # yt-dlp expands a playlist URL into all its entries on its own (no
         # option here restricts it) -- this only tracks that expansion so we
         # can log "item i/n" as it moves between entries; it does not change
@@ -146,6 +198,8 @@ class Downloader:
         self._playlist_index_logged = None
         opts = self._build_ydl_opts(url)
         with yt_dlp.YoutubeDL(opts) as ydl:
+            if self._bilibili_range_retry:
+                _install_bilibili_range_retry(ydl)
             ydl.download([url])
 
     def download_batch(self, urls: Iterable[str]) -> list[tuple[str, bool, str]]:
@@ -224,6 +278,13 @@ class Downloader:
 
     def _download_one_with_retry(self, url: str, i: int, total: int) -> None:
         """Retry ``download_one`` on transient errors (e.g. YouTube 403s)."""
+        self._bilibili_range_retry = False
+        try:
+            self._download_one_with_retry_impl(url, i, total)
+        finally:
+            self._bilibili_range_retry = False
+
+    def _download_one_with_retry_impl(self, url: str, i: int, total: int) -> None:
         for attempt in range(_MAX_RETRIES + 1):
             try:
                 self.download_one(url)
@@ -241,6 +302,8 @@ class Downloader:
                     if is_stale_tool(e):
                         self._log("warn", "log_hint_outdated", i=i, t=total)
                     raise
+                if _bilibili_url(url) and "http error 567" in str(e).casefold():
+                    self._bilibili_range_retry = True
                 # Log before sleeping: otherwise the UI sits silent for the
                 # whole delay and looks frozen.
                 self._log("info", "log_item_retry", i=i, t=total,
