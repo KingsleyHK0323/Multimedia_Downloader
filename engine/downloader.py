@@ -19,6 +19,7 @@ from urllib.parse import urlsplit
 import yt_dlp
 
 from .errors import ErrorKind, classify, is_stale_tool
+
 # OpenAI-Codex_engine_cli: sanitize URL components in log text.
 from .log_safety import redact_sensitive_urls
 from .formats import (
@@ -70,7 +71,9 @@ def _download_progress(data: dict) -> tuple[float, str, str]:
         percent = min(100.0, downloaded / total * 100.0)
     if percent is None:
         try:
-            percent = _progress_number(float(_progress_text(data.get("_percent_str")).rstrip("%")))
+            percent = _progress_number(
+                float(_progress_text(data.get("_percent_str")).rstrip("%"))
+            )
         except ValueError:
             pass
 
@@ -93,7 +96,11 @@ def _download_progress(data: dict) -> tuple[float, str, str]:
         if raw_eta is not None:
             hours, remainder = divmod(int(raw_eta), 3600)
             minutes, seconds = divmod(remainder, 60)
-            eta = f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+            eta = (
+                f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                if hours
+                else f"{minutes:02d}:{seconds:02d}"
+            )
 
     return min(100.0, percent) if percent is not None else 0.0, speed, eta
 
@@ -106,8 +113,10 @@ def _bilibili_url(url: str) -> bool:
     except (TypeError, ValueError):
         return False
     return parsed.scheme in {"http", "https"} and (
-        host == "bilibili.com" or host.endswith(".bilibili.com")
-        or host == "b23.tv" or host.endswith(".b23.tv")
+        host == "bilibili.com"
+        or host.endswith(".bilibili.com")
+        or host == "b23.tv"
+        or host.endswith(".b23.tv")
     )
 
 
@@ -166,16 +175,16 @@ class Downloader:
 
     def __init__(
         self,
-        options:       DownloadOptions,
-        log_cb:        Optional[LogCallback]       = None,
-        progress_cb:   Optional[ProgressCallback]  = None,
+        options: DownloadOptions,
+        log_cb: Optional[LogCallback] = None,
+        progress_cb: Optional[ProgressCallback] = None,
         item_start_cb: Optional[ItemStartCallback] = None,
     ) -> None:
-        self.opts          = options
-        self.log_cb        = log_cb
-        self.progress_cb   = progress_cb
+        self.opts = options
+        self.log_cb = log_cb
+        self.progress_cb = progress_cb
         self.item_start_cb = item_start_cb
-        self._stop         = False
+        self._stop = False
         self._bilibili_range_retry = False
         # yt-dlp expands a playlist URL into all its entries on its own (no
         # option here restricts it) -- this only tracks that expansion so we
@@ -306,8 +315,14 @@ class Downloader:
                     self._bilibili_range_retry = True
                 # Log before sleeping: otherwise the UI sits silent for the
                 # whole delay and looks frozen.
-                self._log("info", "log_item_retry", i=i, t=total,
-                          n=attempt + 1, max=_MAX_RETRIES)
+                self._log(
+                    "info",
+                    "log_item_retry",
+                    i=i,
+                    t=total,
+                    n=attempt + 1,
+                    max=_MAX_RETRIES,
+                )
                 time.sleep(_RETRY_DELAY_S)
 
     # ── Private ─────────────────────────────────────────────────────────────
@@ -316,9 +331,9 @@ class Downloader:
         headers = platform_headers(url)
 
         base: dict = {
-            "outtmpl":        os.path.join(o.save_path, "%(title)s.%(ext)s"),
-            "quiet":          True,
-            "no_warnings":    True,
+            "outtmpl": os.path.join(o.save_path, "%(title)s.%(ext)s"),
+            "quiet": True,
+            "no_warnings": True,
             "progress_hooks": [self._ydl_hook],
         }
 
@@ -346,25 +361,32 @@ class Downloader:
             quality = ensure_known(o.quality, QUALITY_PRESETS, "quality preset")
             return {
                 **base,
-                "format":              build_ydl_format_string(quality, fmt),
+                "format": build_ydl_format_string(quality, fmt),
                 "merge_output_format": fmt,
             }
 
         # audio mode
         bitrate = o.bitrate.strip() if isinstance(o.bitrate, str) else ""
         digits = bitrate.lstrip("0") or "0"
-        if (not bitrate.isascii() or not bitrate.isdecimal() or len(digits) > 4
-                or not 1 <= int(digits) <= 9999):
+        if (
+            not bitrate.isascii()
+            or not bitrate.isdecimal()
+            or len(digits) > 4
+            or not 1 <= int(digits) <= 9999
+        ):
             raise ValueError("bitrate must be a decimal string between 1 and 9999 kbps")
         return {
             **base,
             "format": "bestaudio/best",
-            "postprocessors": [{
-                "key":              "FFmpegExtractAudio",
-                "preferredcodec":   ensure_known(o.audio_fmt, AUDIO_FORMATS,
-                                                 "audio format"),
-                "preferredquality": str(int(digits)),
-            }],
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": ensure_known(
+                        o.audio_fmt, AUDIO_FORMATS, "audio format"
+                    ),
+                    "preferredquality": str(int(digits)),
+                }
+            ],
         }
 
     def _ydl_hook(self, d: dict) -> None:
@@ -376,8 +398,13 @@ class Downloader:
         n_entries, idx = info.get("n_entries"), info.get("playlist_index")
         if n_entries and idx and idx != self._playlist_index_logged:
             self._playlist_index_logged = idx
-            self._log("info", "log_playlist_item", i=idx, t=n_entries,
-                      title=info.get("title") or info.get("id") or "")
+            self._log(
+                "info",
+                "log_playlist_item",
+                i=idx,
+                t=n_entries,
+                title=info.get("title") or info.get("id") or "",
+            )
 
         if d["status"] == "downloading" and self.progress_cb:
             try:
@@ -390,6 +417,8 @@ class Downloader:
     # ── Log dispatch ────────────────────────────────────────────────────────
     def _log(self, level: str, key: str, **fmt) -> None:
         if self.log_cb:
-            safe = {name: redact_sensitive_urls(value) if isinstance(value, str) else value
-                    for name, value in fmt.items()}
+            safe = {
+                name: redact_sensitive_urls(value) if isinstance(value, str) else value
+                for name, value in fmt.items()
+            }
             self.log_cb(level, key, **safe)
