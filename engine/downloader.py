@@ -9,7 +9,9 @@ both :meth:`download_batch` and the AI-driven :class:`engine.queue.TaskQueue`).
 
 from __future__ import annotations
 
+import math
 import os
+import re
 import time
 from typing import Iterable, Optional
 
@@ -37,6 +39,62 @@ from .options import (
 #: between them. Kept short: the delay is user-visible in the Run Log.
 _MAX_RETRIES = 2
 _RETRY_DELAY_S = 2
+
+
+# OpenAI-Codex: consume documented progress fields even without a formatted percentage.
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _progress_number(value: object) -> Optional[float]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def _progress_text(value: object) -> str:
+    return _ANSI_ESCAPE.sub("", value).strip() if isinstance(value, str) else ""
+
+
+def _download_progress(data: dict) -> tuple[float, str, str]:
+    percent = _progress_number(data.get("_percent"))
+    downloaded = _progress_number(data.get("downloaded_bytes"))
+    total = _progress_number(data.get("total_bytes"))
+    if total is None or total == 0:
+        total = _progress_number(data.get("total_bytes_estimate"))
+    if percent is None and downloaded is not None and total:
+        percent = min(100.0, downloaded / total * 100.0)
+    if percent is None:
+        try:
+            percent = _progress_number(float(_progress_text(data.get("_percent_str")).rstrip("%")))
+        except ValueError:
+            pass
+
+    speed = _progress_text(data.get("_speed_str"))
+    raw_speed = _progress_number(data.get("speed"))
+    if not speed or speed.casefold() in {"n/a", "unknown", "--"}:
+        speed = "--"
+        if raw_speed is not None:
+            amount = raw_speed
+            for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+                if amount < 1024 or unit == "TiB":
+                    speed = f"{amount:.2f}{unit}/s"
+                    break
+                amount /= 1024
+
+    eta = _progress_text(data.get("_eta_str"))
+    raw_eta = _progress_number(data.get("eta"))
+    if not eta or eta.casefold() in {"n/a", "unknown", "--"}:
+        eta = "--"
+        if raw_eta is not None:
+            hours, remainder = divmod(int(raw_eta), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            eta = f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+
+    return min(100.0, percent) if percent is not None else 0.0, speed, eta
 
 
 class _DownloadStopped(Exception):
@@ -260,13 +318,9 @@ class Downloader:
 
         if d["status"] == "downloading" and self.progress_cb:
             try:
-                pct_str = d.get("_percent_str", "0%").strip().replace("%", "")
-                pct     = float(pct_str)
-                speed   = d.get("_speed_str", "--").strip()
-                eta     = d.get("_eta_str",   "--").strip()
-                self.progress_cb(pct, speed, eta)
+                self.progress_cb(*_download_progress(d))
             except (ValueError, TypeError):
-                pass  # silently skip unparseable progress strings
+                pass
         elif d["status"] == "finished" and self.progress_cb:
             self.progress_cb(100.0, "--", "--")
 

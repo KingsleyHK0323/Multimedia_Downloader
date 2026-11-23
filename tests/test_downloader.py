@@ -63,6 +63,54 @@ class PlaylistLogTests(unittest.TestCase):
         self.assertIsNone(dl._playlist_index_logged)
 
 
+class ProgressHookTests(unittest.TestCase):
+    # OpenAI-Codex: cover documented and styled yt-dlp progress payloads.
+    def test_raw_download_fields_update_progress(self):
+        callback = MagicMock()
+        dl = _make_downloader(progress_cb=callback)
+
+        dl._ydl_hook({
+            "status": "downloading", "downloaded_bytes": 512,
+            "total_bytes": 1024, "speed": 1536, "eta": 65,
+        })
+
+        callback.assert_called_once_with(50.0, "1.50KiB/s", "01:05")
+
+    def test_styled_formatted_progress_is_usable(self):
+        callback = MagicMock()
+        dl = _make_downloader(progress_cb=callback)
+
+        dl._ydl_hook({
+            "status": "downloading", "_percent_str": "\x1b[0;32m 12.5%\x1b[0m",
+            "_speed_str": "\x1b[0;32m2MiB/s\x1b[0m", "_eta_str": "00:03",
+        })
+
+        callback.assert_called_once_with(12.5, "2MiB/s", "00:03")
+
+    def test_unknown_size_does_not_drop_speed_updates(self):
+        callback = MagicMock()
+        dl = _make_downloader(progress_cb=callback)
+
+        dl._ydl_hook({
+            "status": "downloading", "_percent_str": "N/A%",
+            "downloaded_bytes": 512, "speed": 1024, "eta": None,
+        })
+
+        callback.assert_called_once_with(0.0, "1.00KiB/s", "--")
+
+    def test_estimated_size_and_invalid_numeric_values(self):
+        callback = MagicMock()
+        dl = _make_downloader(progress_cb=callback)
+
+        dl._ydl_hook({
+            "status": "downloading", "_percent": float("nan"),
+            "downloaded_bytes": 200, "total_bytes": 0,
+            "total_bytes_estimate": 100, "speed": float("inf"),
+            "eta": -1,
+        })
+
+        callback.assert_called_once_with(100.0, "--", "--")
+
 class BatchSummaryTests(unittest.TestCase):
     """The batch-summary line must reflect what actually happened. Before this
     was fixed, a batch where every item 403'd still logged `log_all_done` at
