@@ -21,7 +21,8 @@ The names below form the stable public API; import from ``engine`` directly:
 
 from __future__ import annotations
 
-__version__ = "4.3.22"
+# OpenAI-Codex: align the engine version with this beta candidate.
+__version__ = "4.3.23"
 
 from .formats import (
     AUDIO_FORMATS,

@@ -73,6 +73,7 @@ test('rejects invalid input and missing tags without producing notes', () => {
 });
 
 
+// OpenAI-Codex: keep stable release fixtures distinct from the approved beta tags.
 // OpenAI-Codex_format_architecture: execute the actual draft-creation script with GitHub mocks.
 const creationBlock = workflow.split('      - name: Create or verify the draft release\n')[1];
 const scriptBlock = creationBlock?.split('          script: |\n')[1];
@@ -100,7 +101,7 @@ function scenario(options = {}) {
         getReleaseByTag: async () => {
           reads++;
           if (!options.exists && !(options.race && reads > 1)) throw Object.assign(new Error('missing'), { status: 404 });
-          return { data: { tag_name: 'v4.3.23', draft: options.published ? false : true, prerelease: false } };
+          return { data: { tag_name: 'v4.3.24', draft: options.published ? false : true, prerelease: false } };
         },
         generateReleaseNotes: async args => { calls.push(['notes', args]); return { data: { body: 'Generated PR notes' } }; },
         createRelease: async args => {
@@ -111,7 +112,7 @@ function scenario(options = {}) {
       },
     },
   };
-  const env = { RELEASE_TAG: options.tag || 'v4.3.23', TARGET_SHA: target,
+  const env = { RELEASE_TAG: options.tag || 'v4.3.24', TARGET_SHA: target,
     PREVIOUS_TAG: 'v4.3.22', RELEASE_ONLY: options.only || 'all', RUNNER_TEMP: '/tmp' };
   return { calls, api, env };
 }
@@ -149,7 +150,7 @@ test('creates a draft from the exact tag with both commit and generated notes', 
   const state = await executeCreation();
   assert.deepEqual(state.calls.map(item => item[0]), ['notes', 'create']);
   const options = state.calls[1][1];
-  assert.equal(options.tag_name, 'v4.3.23');
+  assert.equal(options.tag_name, 'v4.3.24');
   assert.equal(options.target_commitish, target);
   assert.equal(options.draft, true);
   assert.equal(options.prerelease, false);

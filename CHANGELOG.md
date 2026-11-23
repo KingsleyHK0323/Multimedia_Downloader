@@ -12,6 +12,10 @@
 
 ### Unreleased
 
+### [4.3.23] — 2026-11-23 (Public Beta)
+
+> The reported Windows progress and BiliBili download scenarios have not yet been verified in real use. Some build dependencies are not fully pinned. (OpenAI-Codex)
+
 #### Application improvements
 - Retry BiliBili HTTP 567 responses with a range header limited to matching
   media hosts; this workaround may not resolve every site failure. (OpenAI-Codex)
@@ -19,6 +23,7 @@
   when the total size or formatted percentage is unavailable. (OpenAI-Codex)
 
 #### Repository automation
+- Route v4.3.23 through the verified Public Beta publication path. (OpenAI-Codex)
 - Verify and report the pinned GLib backport whenever its dependency configuration changes. (OpenAI-Codex)
 - Backport the upstream GLib iterator soundness fix and test optimized iteration. (OpenAI-Codex)
 - Match Dependabot security update attempts to each alert's manifest directory. (OpenAI-Codex)

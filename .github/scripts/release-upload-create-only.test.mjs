@@ -141,8 +141,12 @@ test('publication inventory must match all six staged bytes', async () => {
   const names = expectedNames(tag, 'all');
   const manifest = names.map((name, index) => ({ name, size: index + 1, digest }));
   const state = fake({ assets: manifest.map(item => ({ ...item, state: 'uploaded' })) });
-  state.api.release = async () => ({ id: 123, tag_name: tag, draft: true, prerelease: false });
+  // OpenAI-Codex: v4.3.23 inventory must belong to a prerelease draft.
+  state.api.release = async () => ({ id: 123, tag_name: tag, draft: true, prerelease: true });
   await verifyInventory({ api: state.api, repo, tag, expectedSha: sha, manifest });
+  state.api.release = async () => ({ id: 123, tag_name: tag, draft: true, prerelease: false });
+  await assert.rejects(verifyInventory({ api: state.api, repo, tag, expectedSha: sha, manifest }), /expected draft/);
+  state.api.release = async () => ({ id: 123, tag_name: tag, draft: true, prerelease: true });
   state.assets[0].digest = 'sha256:' + 'c'.repeat(64);
   await assert.rejects(verifyInventory({ api: state.api, repo, tag, expectedSha: sha, manifest }), /differs/);
 });
