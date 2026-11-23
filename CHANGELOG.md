@@ -14,6 +14,8 @@
 
 ### [4.3.23] — 2026-11-23 (Public Beta)
 
+> The reported Windows progress and BiliBili download scenarios have not yet been verified in real use. Some build dependencies are not fully pinned. (OpenAI-Codex)
+
 #### Application improvements
 - Retry BiliBili HTTP 567 responses with a range header limited to matching
   media hosts; this workaround may not resolve every site failure. (OpenAI-Codex)

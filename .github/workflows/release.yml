@@ -496,6 +496,9 @@ jobs:
                 ? 'Public Beta: download cancellation and error guidance improvements. The application identifier changed; existing installations may require manual data migration. Network stalls can delay cancellation.'
                 : fs.readFileSync(path.join(process.env.RUNNER_TEMP, 'release-commit-notes.md'), 'utf8');
               let body = notes;
+              if (tag === 'v4.3.23') {
+                body = 'Public Beta: automated checks pass, but the reported Windows progress and BiliBili download scenarios have not been verified in real use. Some build dependencies are not fully pinned.\n\n' + body;
+              }
               if (!legacyBeta) {
                 const previous = process.env.PREVIOUS_TAG || '';
                 if (previous && !/^v[0-9A-Za-z._-]+$/.test(previous)) throw new Error('Invalid previous tag.');

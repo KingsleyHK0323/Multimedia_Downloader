@@ -374,6 +374,7 @@ test('approved Public Beta tags create and validate prerelease drafts', async ()
     assert.equal(created.draft, true);
     assert.equal(created.prerelease, true);
     assert.equal(created.name, tag + ' Public Beta');
+    if (tag === 'v4.3.23') assert.match(created.body, /Windows progress and BiliBili download scenarios have not been verified/);
     await assert.rejects(run(tag, { tag_name: tag, draft: true, prerelease: false }), /expected draft/);
   }
   const stable = await run('v4.3.24');
