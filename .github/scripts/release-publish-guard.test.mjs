@@ -75,7 +75,8 @@ test('package publication rejects newer failures or incomplete API results', () 
 
 // OpenAI-Codex: beta releases must meet the same exact-commit requirements.
 const betaJob = workflow.split('  publish-beta:\n')[1].split('  # OpenAI-Codex: publish only complete builds')[0];
-assert.ok(betaJob.includes('verify-release-assets.mjs v4.3.22'));
+// OpenAI-Codex: the verified beta job uses its validated tag.
+assert.ok(betaJob.includes('verify-release-assets.mjs "$TAG"'));
 const betaStart = 'if BETA_SHA="$sha" node -e \x27\n';
 const betaEnd = '\n            \x27 <<< "$runs"; then';
 assert.equal(betaJob.split(betaStart).length, 2);

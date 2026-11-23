@@ -120,9 +120,11 @@ export async function verifyInventory({ api, repo, tag, expectedSha, manifest })
   await api.assertTagProtection();
   await verifyTarget(api, repo, tag, expectedSha);
   const release = await api.release(repo, tag);
+  // OpenAI-Codex: validate the same explicit Public Beta tags as the workflow.
+  const beta = tag === 'v4.3.22' || tag === 'v4.3.23';
   if (!release || release.tag_name !== tag || release.draft !== true ||
       !Number.isSafeInteger(release.id) || release.id < 1 ||
-      (tag === 'v4.3.22' ? release.prerelease !== true : release.prerelease !== false)) {
+      release.prerelease !== beta) {
     throw new Error('Release is not the expected draft.');
   }
   const expected = new Set(expectedNames(tag, 'all'));
