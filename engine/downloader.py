@@ -9,9 +9,12 @@ both :meth:`download_batch` and the AI-driven :class:`engine.queue.TaskQueue`).
 
 from __future__ import annotations
 
+import math
 import os
+import re
 import time
 from typing import Iterable, Optional
+from urllib.parse import urlsplit
 
 import yt_dlp
 
@@ -37,6 +40,112 @@ from .options import (
 #: between them. Kept short: the delay is user-visible in the Run Log.
 _MAX_RETRIES = 2
 _RETRY_DELAY_S = 2
+
+
+# OpenAI-Codex: consume documented progress fields even without a formatted percentage.
+_ANSI_ESCAPE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
+
+
+def _progress_number(value: object) -> Optional[float]:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        return None
+    return number if math.isfinite(number) and number >= 0 else None
+
+
+def _progress_text(value: object) -> str:
+    return _ANSI_ESCAPE.sub("", value).strip() if isinstance(value, str) else ""
+
+
+def _download_progress(data: dict) -> tuple[float, str, str]:
+    percent = _progress_number(data.get("_percent"))
+    downloaded = _progress_number(data.get("downloaded_bytes"))
+    total = _progress_number(data.get("total_bytes"))
+    if total is None or total == 0:
+        total = _progress_number(data.get("total_bytes_estimate"))
+    if percent is None and downloaded is not None and total:
+        percent = min(100.0, downloaded / total * 100.0)
+    if percent is None:
+        try:
+            percent = _progress_number(float(_progress_text(data.get("_percent_str")).rstrip("%")))
+        except ValueError:
+            pass
+
+    speed = _progress_text(data.get("_speed_str"))
+    raw_speed = _progress_number(data.get("speed"))
+    if not speed or speed.casefold() in {"n/a", "unknown", "--"}:
+        speed = "--"
+        if raw_speed is not None:
+            amount = raw_speed
+            for unit in ("B", "KiB", "MiB", "GiB", "TiB"):
+                if amount < 1024 or unit == "TiB":
+                    speed = f"{amount:.2f}{unit}/s"
+                    break
+                amount /= 1024
+
+    eta = _progress_text(data.get("_eta_str"))
+    raw_eta = _progress_number(data.get("eta"))
+    if not eta or eta.casefold() in {"n/a", "unknown", "--"}:
+        eta = "--"
+        if raw_eta is not None:
+            hours, remainder = divmod(int(raw_eta), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            eta = f"{hours:02d}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes:02d}:{seconds:02d}"
+
+    return min(100.0, percent) if percent is not None else 0.0, speed, eta
+
+
+# OpenAI-Codex: limit the HTTP 567 workaround to BiliBili media requests.
+def _bilibili_url(url: str) -> bool:
+    try:
+        parsed = urlsplit(url)
+        host = (parsed.hostname or "").casefold().rstrip(".")
+    except (TypeError, ValueError):
+        return False
+    return parsed.scheme in {"http", "https"} and (
+        host == "bilibili.com" or host.endswith(".bilibili.com")
+        or host == "b23.tv" or host.endswith(".b23.tv")
+    )
+
+
+def _add_bilibili_media_range(info: dict) -> None:
+    if str(info.get("extractor_key", "")).casefold() != "bilibili":
+        return
+    formats = info.get("formats") or [info]
+    for fmt in formats:
+        if not isinstance(fmt, dict) or not isinstance(fmt.get("url"), str):
+            continue
+        try:
+            parsed = urlsplit(fmt["url"])
+            host = (parsed.hostname or "").casefold().rstrip(".")
+        except ValueError:
+            continue
+        if parsed.scheme not in {"http", "https"} or not (
+            host == "bilivideo.com" or host.endswith(".bilivideo.com")
+        ):
+            continue
+        headers = fmt.get("http_headers")
+        if headers is None:
+            headers = {}
+        if not isinstance(headers, dict) or any(
+            isinstance(key, str) and key.casefold() == "range" for key in headers
+        ):
+            continue
+        fmt["http_headers"] = {**headers, "Range": "bytes=0-"}
+
+
+def _install_bilibili_range_retry(ydl: object) -> None:
+    from yt_dlp.postprocessor import PostProcessor
+
+    class BilibiliRangeRetryPP(PostProcessor):
+        def run(self, info):
+            _add_bilibili_media_range(info)
+            return [], info
+
+    ydl.add_post_processor(BilibiliRangeRetryPP(), when="pre_process")
 
 
 class _DownloadStopped(Exception):
@@ -67,6 +176,7 @@ class Downloader:
         self.progress_cb   = progress_cb
         self.item_start_cb = item_start_cb
         self._stop         = False
+        self._bilibili_range_retry = False
         # yt-dlp expands a playlist URL into all its entries on its own (no
         # option here restricts it) -- this only tracks that expansion so we
         # can log "item i/n" as it moves between entries; it does not change
@@ -88,6 +198,8 @@ class Downloader:
         self._playlist_index_logged = None
         opts = self._build_ydl_opts(url)
         with yt_dlp.YoutubeDL(opts) as ydl:
+            if self._bilibili_range_retry:
+                _install_bilibili_range_retry(ydl)
             ydl.download([url])
 
     def download_batch(self, urls: Iterable[str]) -> list[tuple[str, bool, str]]:
@@ -166,6 +278,13 @@ class Downloader:
 
     def _download_one_with_retry(self, url: str, i: int, total: int) -> None:
         """Retry ``download_one`` on transient errors (e.g. YouTube 403s)."""
+        self._bilibili_range_retry = False
+        try:
+            self._download_one_with_retry_impl(url, i, total)
+        finally:
+            self._bilibili_range_retry = False
+
+    def _download_one_with_retry_impl(self, url: str, i: int, total: int) -> None:
         for attempt in range(_MAX_RETRIES + 1):
             try:
                 self.download_one(url)
@@ -183,6 +302,8 @@ class Downloader:
                     if is_stale_tool(e):
                         self._log("warn", "log_hint_outdated", i=i, t=total)
                     raise
+                if _bilibili_url(url) and "http error 567" in str(e).casefold():
+                    self._bilibili_range_retry = True
                 # Log before sleeping: otherwise the UI sits silent for the
                 # whole delay and looks frozen.
                 self._log("info", "log_item_retry", i=i, t=total,
@@ -260,13 +381,9 @@ class Downloader:
 
         if d["status"] == "downloading" and self.progress_cb:
             try:
-                pct_str = d.get("_percent_str", "0%").strip().replace("%", "")
-                pct     = float(pct_str)
-                speed   = d.get("_speed_str", "--").strip()
-                eta     = d.get("_eta_str",   "--").strip()
-                self.progress_cb(pct, speed, eta)
+                self.progress_cb(*_download_progress(d))
             except (ValueError, TypeError):
-                pass  # silently skip unparseable progress strings
+                pass
         elif d["status"] == "finished" and self.progress_cb:
             self.progress_cb(100.0, "--", "--")
 

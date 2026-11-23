@@ -6,6 +6,11 @@ from unittest.mock import MagicMock, patch
 
 import _path  # noqa: F401
 from engine.log_safety import redact_sensitive_urls
+from engine.downloader import (
+    _add_bilibili_media_range,
+    _bilibili_url,
+    _install_bilibili_range_retry,
+)
 from engine import (
     AUDIO_FORMATS,
     QUALITY_PRESETS,
@@ -61,6 +66,140 @@ class PlaylistLogTests(unittest.TestCase):
             mock_ydl.return_value.__enter__.return_value.download.return_value = None
             dl.download_one("https://example.com/not-a-playlist")
         self.assertIsNone(dl._playlist_index_logged)
+
+
+class ProgressHookTests(unittest.TestCase):
+    # OpenAI-Codex: cover documented and styled yt-dlp progress payloads.
+    def test_raw_download_fields_update_progress(self):
+        callback = MagicMock()
+        dl = _make_downloader(progress_cb=callback)
+
+        dl._ydl_hook({
+            "status": "downloading", "downloaded_bytes": 512,
+            "total_bytes": 1024, "speed": 1536, "eta": 65,
+        })
+
+        callback.assert_called_once_with(50.0, "1.50KiB/s", "01:05")
+
+    def test_styled_formatted_progress_is_usable(self):
+        callback = MagicMock()
+        dl = _make_downloader(progress_cb=callback)
+
+        dl._ydl_hook({
+            "status": "downloading", "_percent_str": "\x1b[0;32m 12.5%\x1b[0m",
+            "_speed_str": "\x1b[0;32m2MiB/s\x1b[0m", "_eta_str": "00:03",
+        })
+
+        callback.assert_called_once_with(12.5, "2MiB/s", "00:03")
+
+    def test_unknown_size_does_not_drop_speed_updates(self):
+        callback = MagicMock()
+        dl = _make_downloader(progress_cb=callback)
+
+        dl._ydl_hook({
+            "status": "downloading", "_percent_str": "N/A%",
+            "downloaded_bytes": 512, "speed": 1024, "eta": None,
+        })
+
+        callback.assert_called_once_with(0.0, "1.00KiB/s", "--")
+
+    def test_estimated_size_and_invalid_numeric_values(self):
+        callback = MagicMock()
+        dl = _make_downloader(progress_cb=callback)
+
+        dl._ydl_hook({
+            "status": "downloading", "_percent": float("nan"),
+            "downloaded_bytes": 200, "total_bytes": 0,
+            "total_bytes_estimate": 100, "speed": float("inf"),
+            "eta": -1,
+        })
+
+        callback.assert_called_once_with(100.0, "--", "--")
+
+class BilibiliRangeRetryTests(unittest.TestCase):
+    # OpenAI-Codex: verify the 567 workaround never changes unrelated requests.
+    def test_only_bilibili_media_without_existing_range_is_modified(self):
+        formats = [
+            {"url": "https://cdn.bilivideo.com/video", "http_headers": {"Referer": "https://www.bilibili.com/"}},
+            {"url": "https://cdn.bilivideo.com/audio", "http_headers": {"range": "bytes=10-"}},
+            {"url": "https://cdn.bilivideo.com.example/video", "http_headers": {}},
+            {"url": "https://example.com/video", "http_headers": {}},
+        ]
+
+        _add_bilibili_media_range({"extractor_key": "BiliBili", "formats": formats})
+
+        self.assertEqual(formats[0]["http_headers"]["Range"], "bytes=0-")
+        self.assertEqual(formats[0]["http_headers"]["Referer"], "https://www.bilibili.com/")
+        self.assertEqual(formats[1]["http_headers"], {"range": "bytes=10-"})
+        self.assertEqual(formats[2]["http_headers"], {})
+        self.assertEqual(formats[3]["http_headers"], {})
+
+    def test_other_extractor_and_lookalike_domain_are_ignored(self):
+        media = {"url": "https://cdn.bilivideo.com/video", "http_headers": {}}
+        _add_bilibili_media_range({"extractor_key": "Other", "formats": [media]})
+        self.assertEqual(media["http_headers"], {})
+        self.assertTrue(_bilibili_url("https://www.bilibili.com/video/BV1"))
+        self.assertFalse(_bilibili_url("https://bilibili.com.example/video/BV1"))
+
+    def test_retry_registers_media_preprocessor_with_ytdlp(self):
+        dl = _make_downloader()
+        dl._bilibili_range_retry = True
+        with patch("engine.downloader.yt_dlp.YoutubeDL") as factory:
+            dl.download_one("https://www.bilibili.com/video/BV1")
+
+        ydl = factory.return_value.__enter__.return_value
+        args, kwargs = ydl.add_post_processor.call_args
+        self.assertEqual(kwargs, {"when": "pre_process"})
+        media = {"url": "https://cdn.bilivideo.com/video", "http_headers": {}}
+        args[0].run({"extractor_key": "BiliBili", "formats": [media]})
+        self.assertEqual(media["http_headers"]["Range"], "bytes=0-")
+
+    def test_preprocessor_updates_ytdlp_selected_format_without_network(self):
+        import yt_dlp
+
+        info = {
+            "id": "example", "title": "Synthetic", "extractor": "BiliBili",
+            "extractor_key": "BiliBili", "formats": [{
+                "format_id": "example", "url": "https://cdn.bilivideo.com/video.mp4",
+                "ext": "mp4", "vcodec": "avc1", "acodec": "aac",
+            }],
+        }
+        with yt_dlp.YoutubeDL({"quiet": True, "simulate": True}) as ydl:
+            _install_bilibili_range_retry(ydl)
+            with patch.object(ydl, "urlopen", side_effect=AssertionError("unexpected network call")):
+                result = ydl.process_ie_result(info, download=False)
+
+        self.assertEqual(result["http_headers"]["Range"], "bytes=0-")
+
+    def test_567_enables_fallback_only_for_following_bilibili_attempt(self):
+        dl = _make_downloader()
+        seen = []
+
+        def download(_url):
+            seen.append(dl._bilibili_range_retry)
+            if len(seen) == 1:
+                raise RuntimeError("HTTP Error 567: Unknown Status")
+
+        with patch.object(dl, "download_one", side_effect=download), patch("engine.downloader.time.sleep"):
+            dl._download_one_with_retry("https://www.bilibili.com/video/BV1", 1, 1)
+
+        self.assertEqual(seen, [False, True])
+        self.assertFalse(dl._bilibili_range_retry)
+
+    def test_non_bilibili_567_never_enables_fallback(self):
+        dl = _make_downloader()
+        seen = []
+
+        def download(_url):
+            seen.append(dl._bilibili_range_retry)
+            raise RuntimeError("HTTP Error 567: Unknown Status")
+
+        with patch.object(dl, "download_one", side_effect=download), patch("engine.downloader.time.sleep"):
+            with self.assertRaisesRegex(RuntimeError, "HTTP Error 567"):
+                dl._download_one_with_retry("https://example.com/video", 1, 1)
+
+        self.assertEqual(seen, [False, False, False])
+        self.assertFalse(dl._bilibili_range_retry)
 
 
 class BatchSummaryTests(unittest.TestCase):
