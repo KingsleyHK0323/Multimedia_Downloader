@@ -6,7 +6,11 @@ from unittest.mock import MagicMock, patch
 
 import _path  # noqa: F401
 from engine.log_safety import redact_sensitive_urls
-from engine.downloader import _add_bilibili_media_range, _bilibili_url
+from engine.downloader import (
+    _add_bilibili_media_range,
+    _bilibili_url,
+    _install_bilibili_range_retry,
+)
 from engine import (
     AUDIO_FORMATS,
     QUALITY_PRESETS,
@@ -149,6 +153,23 @@ class BilibiliRangeRetryTests(unittest.TestCase):
         media = {"url": "https://cdn.bilivideo.com/video", "http_headers": {}}
         args[0].run({"extractor_key": "BiliBili", "formats": [media]})
         self.assertEqual(media["http_headers"]["Range"], "bytes=0-")
+
+    def test_preprocessor_updates_ytdlp_selected_format_without_network(self):
+        import yt_dlp
+
+        info = {
+            "id": "example", "title": "Synthetic", "extractor": "BiliBili",
+            "extractor_key": "BiliBili", "formats": [{
+                "format_id": "example", "url": "https://cdn.bilivideo.com/video.mp4",
+                "ext": "mp4", "vcodec": "avc1", "acodec": "aac",
+            }],
+        }
+        with yt_dlp.YoutubeDL({"quiet": True, "simulate": True}) as ydl:
+            _install_bilibili_range_retry(ydl)
+            with patch.object(ydl, "urlopen", side_effect=AssertionError("unexpected network call")):
+                result = ydl.process_ie_result(info, download=False)
+
+        self.assertEqual(result["http_headers"]["Range"], "bytes=0-")
 
     def test_567_enables_fallback_only_for_following_bilibili_attempt(self):
         dl = _make_downloader()
