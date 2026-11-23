@@ -485,11 +485,16 @@ jobs:
             if (object?.type !== 'commit' || object.sha !== target) throw new Error('Tag target changed.');
             // OpenAI-Codex: only explicitly approved tags use the Public Beta path.
             const beta = tag === 'v4.3.22' || tag === 'v4.3.23';
-            let release;
-            try {
-              release = (await github.rest.repos.getReleaseByTag({ ...params, tag })).data;
-            } catch (error) {
-              if (error.status !== 404) throw error;
+            // OpenAI-Codex: list releases because getReleaseByTag excludes drafts.
+            const findRelease = async () => {
+              const releases = await github.paginate(github.rest.repos.listReleases, { ...params, per_page: 100 });
+              if (!Array.isArray(releases)) throw new Error('Invalid release listing.');
+              const matches = releases.filter(item => item?.tag_name === tag);
+              if (matches.length > 1) throw new Error('Ambiguous releases for tag.');
+              return matches[0] || null;
+            };
+            let release = await findRelease();
+            if (!release) {
               if (process.env.RELEASE_ONLY !== 'all') throw new Error('Partial recovery requires an existing draft release.');
               const legacyBeta = tag === 'v4.3.22';
               const notes = legacyBeta
@@ -514,7 +519,8 @@ jobs:
                 release = (await github.rest.repos.createRelease(options)).data;
               } catch (createError) {
                 if (createError.status !== 422) throw createError;
-                release = (await github.rest.repos.getReleaseByTag({ ...params, tag })).data;
+                release = await findRelease();
+                if (!release) throw createError;
               }
             }
             if (release.tag_name !== tag || release.draft !== true ||
@@ -570,14 +576,30 @@ jobs:
           [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
           verified=false
           for attempt in $(seq 1 60); do
-            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100")"
+            # OpenAI-Codex: paginate only the two required workflows for this exact source branch.
+            ci_pages="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&branch=Source_Code&per_page=100")"
+            matrix_pages="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/workflows/python-matrix.yml/runs?head_sha=$sha&branch=Source_Code&per_page=100")"
+            runs="$(jq -cn --argjson ci "$ci_pages" --argjson matrix "$matrix_pages" '
+              def collect:
+                if type != "array" or length == 0 then error("Missing workflow pages") else . end
+                | . as $pages
+                | $pages[0].total_count as $total
+                | if ($total | type) != "number" or ($total | floor) != $total or $total < 0
+                    or any($pages[]; .total_count != $total or (.workflow_runs | type) != "array")
+                  then error("Invalid workflow pages") else . end
+                | [$pages[].workflow_runs[]] as $items
+                | if ($items | length) == $total and ([$items[].id] | unique | length) == $total
+                  then $items else error("Incomplete or duplicate workflow pages") end;
+              ($ci | collect) as $a | ($matrix | collect) as $b |
+              {total_count: (($a | length) + ($b | length)), workflow_runs: ($a + $b)}
+            ')" || runs='{}'
             if BETA_SHA="$sha" node -e '
             const fs = require("fs");
             try {
               const data = JSON.parse(fs.readFileSync(0, "utf8"));
               if (!/^[0-9a-f]{40}$/.test(process.env.BETA_SHA || "") ||
                   !Array.isArray(data.workflow_runs) || !Number.isSafeInteger(data.total_count) ||
-                  data.total_count > 100 || data.total_count !== data.workflow_runs.length) process.exit(1);
+                  data.total_count < 0 || data.total_count !== data.workflow_runs.length) process.exit(1);
               for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
                 const matching = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.BETA_SHA &&
                   r.head_branch === "Source_Code" && ["push", "workflow_dispatch"].includes(r.event));
@@ -630,12 +652,29 @@ jobs:
           node automation/.github/scripts/verify-release-assets.mjs "$TAG" "$RUNNER_TEMP/release-assets.json"
           verified=false
           for attempt in $(seq 1 60); do
-            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$sha&per_page=100")"
+            # OpenAI-Codex: paginate only the two required workflows for this exact source branch.
+            ci_pages="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$sha&branch=Source_Code&per_page=100")"
+            matrix_pages="$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/workflows/python-matrix.yml/runs?head_sha=$sha&branch=Source_Code&per_page=100")"
+            runs="$(jq -cn --argjson ci "$ci_pages" --argjson matrix "$matrix_pages" '
+              def collect:
+                if type != "array" or length == 0 then error("Missing workflow pages") else . end
+                | . as $pages
+                | $pages[0].total_count as $total
+                | if ($total | type) != "number" or ($total | floor) != $total or $total < 0
+                    or any($pages[]; .total_count != $total or (.workflow_runs | type) != "array")
+                  then error("Invalid workflow pages") else . end
+                | [$pages[].workflow_runs[]] as $items
+                | if ($items | length) == $total and ([$items[].id] | unique | length) == $total
+                  then $items else error("Incomplete or duplicate workflow pages") end;
+              ($ci | collect) as $a | ($matrix | collect) as $b |
+              {total_count: (($a | length) + ($b | length)), workflow_runs: ($a + $b)}
+            ')" || runs='{}'
             if SHA="$sha" node -e '
             const fs = require("fs");
             try {
               const data = JSON.parse(fs.readFileSync(0, "utf8"));
-              if (!Array.isArray(data.workflow_runs) || data.total_count > 100) process.exit(1);
+              if (!Array.isArray(data.workflow_runs) || !Number.isSafeInteger(data.total_count) ||
+                  data.total_count < 0 || data.total_count !== data.workflow_runs.length) process.exit(1);
               for (const path of [".github/workflows/ci.yml", ".github/workflows/python-matrix.yml"]) {
                 const run = data.workflow_runs.filter(r => r.path === path && r.head_sha === process.env.SHA &&
                   r.head_branch === "Source_Code" && ["push", "workflow_dispatch"].includes(r.event))
