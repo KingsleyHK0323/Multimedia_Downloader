@@ -333,6 +333,8 @@ class Downloader:
         base: dict = {
             "outtmpl": os.path.join(o.save_path, "%(title)s.%(ext)s"),
             "quiet": True,
+            # OpenAI-Codex: keep terminal output out of the sidecar JSON stream.
+            "noprogress": True,
             "no_warnings": True,
             "progress_hooks": [self._ydl_hook],
         }
