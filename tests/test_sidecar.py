@@ -1,5 +1,11 @@
+import io
+import json
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
+
+import yt_dlp
+from yt_dlp.downloader.common import FileDownloader
 
 import _path  # noqa: F401
 import engine_sidecar as sc
@@ -185,6 +191,62 @@ class AiRoutingTests(unittest.TestCase):
         })
         self.assertTrue(r["ok"])
         self.assertEqual(r["result"]["text"], "summary of 2 result(s)")
+
+
+class SidecarProgressProtocolTests(unittest.TestCase):
+    # OpenAI-Codex: use yt-dlp's real progress reporter on the sidecar's stdout.
+    def test_downloading_and_finished_events_remain_valid_json_lines(self):
+        output = io.StringIO()
+        request = {
+            "id": "download-1",
+            "cmd": "download",
+            "args": {
+                "urls": ["https://example.invalid/video"],
+                "options": {"save_path": "."},
+            },
+        }
+
+        def report_progress(ydl, _urls):
+            downloader = FileDownloader(ydl, ydl.params)
+            for hook in ydl._progress_hooks:
+                downloader.add_progress_hook(hook)
+            info = {"id": "fixture", "title": "Fixture"}
+            downloader._hook_progress(
+                {
+                    "status": "downloading",
+                    "downloaded_bytes": 512,
+                    "total_bytes": 1024,
+                    "elapsed": 1,
+                    "speed": 1024,
+                    "eta": 5,
+                },
+                info,
+            )
+            downloader._hook_progress(
+                {
+                    "status": "finished",
+                    "downloaded_bytes": 1024,
+                    "total_bytes": 1024,
+                    "elapsed": 2,
+                },
+                info,
+            )
+            downloader._finish_multiline_status()
+            return 0
+
+        with redirect_stdout(output), patch.object(
+            yt_dlp.YoutubeDL, "download", report_progress
+        ):
+            sc.main(inp=io.StringIO(json.dumps(request) + "\n"), out=output)
+
+        # The desktop parser accepts one JSON object per newline.
+        lines = [line for line in output.getvalue().split("\n") if line]
+        events = [json.loads(line) for line in lines]
+        progress = [event for event in events if event.get("type") == "progress"]
+        self.assertEqual([event["pct"] for event in progress], [50.0, 100.0])
+        self.assertEqual(progress[0]["speed"], "1.00KiB/s")
+        self.assertEqual(progress[0]["eta"], "00:05")
+        self.assertTrue(events[-1]["ok"])
 
 
 if __name__ == "__main__":
