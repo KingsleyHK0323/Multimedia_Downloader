@@ -12,6 +12,9 @@
 
 ### Unreleased
 
+#### Application improvements
+- Keep yt-dlp terminal output out of the desktop event stream so download progress and speed update correctly. (OpenAI-Codex)
+
 #### Repository automation
 - Refresh the trusted release workflow and uploader pins, and detect stale pins in CI. (OpenAI-Codex)
 
