@@ -14,6 +14,7 @@
 
 #### Application improvements
 - Keep yt-dlp terminal output out of the desktop event stream so download progress and speed update correctly. (OpenAI-Codex)
+- Prevent conversion from replacing existing files, use native file paths, and report conversion outcomes accurately. Keep downloads busy until the operation finishes. (OpenAI-Codex)
 
 #### Repository automation
 - Refresh the trusted release workflow and uploader pins, and detect stale pins in CI. (OpenAI-Codex)
@@ -660,3 +661,5 @@ tkinter/Flask 世代的完整變更歷程見 V3.0 changelog：
 
 tkinter/Flask 世代的完整变更历程见 V3.0 changelog：
 `Version/Version3.0/CHANGELOG.md`。
+
+

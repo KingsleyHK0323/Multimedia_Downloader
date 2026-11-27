@@ -309,6 +309,10 @@ jobs:
       - name: Check download outcome behavior
         run: node --experimental-strip-types frontend/src/lib/downloadOutcome.behavior.mjs
 
+      # OpenAI-Codex: conversion success requires confirmed terminal results.
+      - name: Check conversion outcome behavior
+        run: node --experimental-strip-types frontend/src/lib/convertOutcome.behavior.mjs
+
   rust-check:
     runs-on: ubuntu-latest
     steps:
@@ -422,3 +426,5 @@ jobs:
               process.exit(1);
             }
           '
+
+

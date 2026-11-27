@@ -1,5 +1,6 @@
 import os
 import unittest
+from unittest.mock import patch
 
 import _path  # noqa: F401
 from engine import Converter, ConvertJob
@@ -15,6 +16,30 @@ class MakeJobTests(unittest.TestCase):
 
 
 class ConvertOneTests(unittest.TestCase):
+    # OpenAI-Codex: existing output must never be passed to FFmpeg.
+    def test_existing_destination_is_preserved(self):
+        conv = Converter(save_path="out", dst_fmt="mp4")
+        job = ConvertJob(src_path="a.mkv", dst_path=os.path.join("out", "a.mp4"))
+        with patch("engine.converter.os.path.lexists", return_value=True), patch(
+            "engine.converter.subprocess.run"
+        ) as run:
+            conv.convert_one(job)
+        run.assert_not_called()
+        self.assertEqual(job.status, "error")
+        self.assertIn("output already exists", job.error)
+
+    def test_ffmpeg_is_told_not_to_overwrite(self):
+        conv = Converter(save_path="out", dst_fmt="mp4")
+        job = ConvertJob(src_path="a.mkv", dst_path=os.path.join("out", "a.mp4"))
+        with patch("engine.converter.os.path.lexists", return_value=False), patch(
+            "engine.converter.subprocess.run"
+        ) as run:
+            run.return_value.returncode = 0
+            conv.convert_one(job)
+        self.assertEqual(job.status, "done")
+        self.assertIn("-n", run.call_args.args[0])
+        self.assertNotIn("-y", run.call_args.args[0])
+
     def test_missing_ffmpeg_sets_no_ffmpeg(self):
         logs = []
         conv = Converter(
@@ -111,3 +136,5 @@ class DstFormatValidationTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
