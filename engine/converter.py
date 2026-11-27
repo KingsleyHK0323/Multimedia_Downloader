@@ -41,18 +41,18 @@ class Converter:
 
     def __init__(
         self,
-        save_path:     str,
-        dst_fmt:       str,
-        log_cb:        Optional[LogCallback]       = None,
+        save_path: str,
+        dst_fmt: str,
+        log_cb: Optional[LogCallback] = None,
         job_update_cb: Optional[JobUpdateCallback] = None,
-        ffmpeg_bin:    str = "ffmpeg",
+        ffmpeg_bin: str = "ffmpeg",
     ) -> None:
-        self.save_path     = save_path
-        self.dst_fmt       = dst_fmt
-        self.log_cb        = log_cb
+        self.save_path = save_path
+        self.dst_fmt = dst_fmt
+        self.log_cb = log_cb
         self.job_update_cb = job_update_cb
-        self.ffmpeg_bin    = ffmpeg_bin
-        self._stop         = False
+        self.ffmpeg_bin = ffmpeg_bin
+        self._stop = False
 
     # ── Public ──────────────────────────────────────────────────────────────
     def stop(self) -> None:
@@ -84,15 +84,21 @@ class Converter:
             dst_path=os.path.join(self.save_path, f"{base}.{self.dst_fmt}"),
         )
 
-    def convert_one(self, job: ConvertJob, index: int = 1, total: int = 1) -> ConvertJob:
+    def convert_one(
+        self, job: ConvertJob, index: int = 1, total: int = 1
+    ) -> ConvertJob:
         """
         Run ffmpeg on a single job, updating its status in place. Never raises —
         failures are recorded on the job (status ``error`` / ``no_ffmpeg``).
         """
-        self._log("info", "log_convert_start",
-                  i=index, t=total,
-                  src=os.path.basename(job.src_path),
-                  dst=os.path.basename(job.dst_path))
+        self._log(
+            "info",
+            "log_convert_start",
+            i=index,
+            t=total,
+            src=os.path.basename(job.src_path),
+            dst=os.path.basename(job.dst_path),
+        )
         self._set_status(job, "converting")
 
         try:
@@ -104,21 +110,35 @@ class Converter:
             # containing spaces or metacharacters is one argv entry, not a
             # command. ffmpeg_bin comes from the app, not from user input.
             result = subprocess.run(  # noqa: S603
-                [self.ffmpeg_bin, "-n", "-i", job.src_path,
-                 "-loglevel", "error", job.dst_path],
-                capture_output=True, text=True,
+                [
+                    self.ffmpeg_bin,
+                    "-n",
+                    "-i",
+                    job.src_path,
+                    "-loglevel",
+                    "error",
+                    job.dst_path,
+                ],
+                capture_output=True,
+                text=True,
             )
             if result.returncode == 0:
-                self._log("ok", "log_convert_done",
-                          i=index, t=total, name=os.path.basename(job.dst_path))
+                self._log(
+                    "ok",
+                    "log_convert_done",
+                    i=index,
+                    t=total,
+                    name=os.path.basename(job.dst_path),
+                )
                 self._set_status(job, "done")
             else:
                 raise RuntimeError(result.stderr[:300] or "ffmpeg error (no output)")
 
         except FileNotFoundError as e:
             self._log("err", "log_no_ffmpeg", i=index, t=total)
-            self._set_status(job, "no_ffmpeg", error="ffmpeg not found",
-                             kind=classify(e))
+            self._set_status(
+                job, "no_ffmpeg", error="ffmpeg not found", kind=classify(e)
+            )
 
         except Exception as e:
             self._log("err", "log_convert_error", i=index, t=total, err=str(e))
@@ -148,13 +168,17 @@ class Converter:
         elif ok == 0:
             self._log("err", "log_all_convert_failed", t=fail)
         else:
-            self._log("warn", "log_all_converted_partial",
-                      ok=ok, fail=fail, t=total)
+            self._log("warn", "log_all_converted_partial", ok=ok, fail=fail, t=total)
         return jobs
 
     # ── Internal ──────────────────────────────────────────────────────────────
-    def _set_status(self, job: ConvertJob, status: str, error: str = "",
-                    kind: ErrorKind | None = None) -> None:
+    def _set_status(
+        self,
+        job: ConvertJob,
+        status: str,
+        error: str = "",
+        kind: ErrorKind | None = None,
+    ) -> None:
         job.status = status
         if error:
             job.error = error
@@ -166,5 +190,3 @@ class Converter:
     def _log(self, level: str, key: str, **fmt) -> None:
         if self.log_cb:
             self.log_cb(level, key, **fmt)
-
-

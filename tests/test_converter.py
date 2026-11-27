@@ -43,7 +43,8 @@ class ConvertOneTests(unittest.TestCase):
     def test_missing_ffmpeg_sets_no_ffmpeg(self):
         logs = []
         conv = Converter(
-            save_path="out", dst_fmt="mp4",
+            save_path="out",
+            dst_fmt="mp4",
             log_cb=lambda level, key, **fmt: logs.append((level, key)),
             ffmpeg_bin="___definitely_not_a_real_ffmpeg___",
         )
@@ -55,7 +56,8 @@ class ConvertOneTests(unittest.TestCase):
     def test_job_update_cb_fires(self):
         seen = []
         conv = Converter(
-            save_path="out", dst_fmt="mp4",
+            save_path="out",
+            dst_fmt="mp4",
             job_update_cb=lambda j: seen.append(j.status),
             ffmpeg_bin="___definitely_not_a_real_ffmpeg___",
         )
@@ -73,7 +75,8 @@ class ConvertBatchSummaryTests(unittest.TestCase):
     def _batch_summary(self, n=3):
         logs = []
         conv = Converter(
-            save_path="out", dst_fmt="mp4",
+            save_path="out",
+            dst_fmt="mp4",
             log_cb=lambda level, key, **fmt: logs.append((level, key, fmt)),
             ffmpeg_bin="___definitely_not_a_real_ffmpeg___",
         )
@@ -90,7 +93,8 @@ class ConvertBatchSummaryTests(unittest.TestCase):
     def test_stopped_batch_does_not_count_untouched_jobs_as_failures(self):
         logs = []
         conv = Converter(
-            save_path="out", dst_fmt="mp4",
+            save_path="out",
+            dst_fmt="mp4",
             log_cb=lambda level, key, **fmt: logs.append((level, key, fmt)),
             ffmpeg_bin="___definitely_not_a_real_ffmpeg___",
         )
@@ -101,7 +105,6 @@ class ConvertBatchSummaryTests(unittest.TestCase):
         self.assertEqual(len(summary), 1)
         # Only the one job that ran is counted -- not all three.
         self.assertEqual(summary[0][2], {"t": 1})
-
 
 
 class DstFormatValidationTests(unittest.TestCase):
@@ -134,7 +137,6 @@ class DstFormatValidationTests(unittest.TestCase):
             Converter(save_path="out", dst_fmt="x/y").make_job("a.mkv")
         self.assertIn("bare extension", str(ctx.exception))
 
+
 if __name__ == "__main__":
     unittest.main()
-
-
