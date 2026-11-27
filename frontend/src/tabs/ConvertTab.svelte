@@ -1,16 +1,16 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import { Upload, Play, Square, X, FileVideo } from "lucide-svelte";
   import Card from "../components/Card.svelte";
-  import { api, type Formats } from "../api";
+  import { api, IS_MOCK, IS_TAURI, type Formats } from "../api";
   import { t, busy } from "../store";
   import { toast } from "../lib/toast";
+  import { convertOutcome } from "../lib/convertOutcome";
 
-  let { formats }: { formats: Formats | null } = $props();
+  let { formats, active }: { formats: Formats | null; active: boolean } = $props();
   const tr = $derived($t);
 
-  // Each entry keeps the best "path" we can get per platform:
-  //  - web drag/drop or <input type=file> gives name only (no real path — mock env anyway)
-  //  - typing/pasting full paths works everywhere; Tauri native file-drop TODO(Phase 6)
+  // OpenAI-Codex: real conversions require native paths, not browser file names.
   type Entry = { path: string; size?: number };
   let entries = $state<Entry[]>([]);
   let dstFmt = $state("mp4");
@@ -18,11 +18,43 @@
   let dragOver = $state(false);
   let pathInput = $state("");
   let fileEl = $state<HTMLInputElement | null>(null);
+  let stopping = $state(false);
 
   const allFormats = $derived([...(formats?.video ?? []), ...(formats?.audio ?? [])]);
 
+  onMount(() => {
+    if (!IS_TAURI) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/webview")
+      .then(({ getCurrentWebview }) => getCurrentWebview().onDragDropEvent((event) => {
+        if (disposed || !active) return;
+        if (event.payload.type === "enter" || event.payload.type === "over") dragOver = true;
+        else if (event.payload.type === "leave") dragOver = false;
+        else if (event.payload.type === "drop") {
+          dragOver = false;
+          for (const path of event.payload.paths) entries.push({ path });
+        }
+      }))
+      .then((off) => { if (disposed) off(); else unlisten = off; })
+      .catch((e: unknown) => { if (!disposed) toast(String(e instanceof Error ? e.message : e), "err"); });
+    return () => { disposed = true; unlisten?.(); };
+  });
+
+  async function selectFiles() {
+    if (IS_TAURI) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const paths = await invoke<string[]>("select_convert_files");
+        for (const path of paths) entries.push({ path });
+      } catch (e) { toast(String(e instanceof Error ? e.message : e), "err"); }
+    } else if (IS_MOCK) fileEl?.click();
+    else toast(tr("convert_browser_path_required"), "err");
+  }
+
   function addFiles(files: FileList | null) {
     if (!files) return;
+    if (!IS_MOCK) { toast(tr("convert_browser_path_required"), "err"); return; }
     for (const f of files) entries.push({ path: f.name, size: f.size });
   }
   function addTyped() {
@@ -37,21 +69,35 @@
 
   async function start() {
     if (entries.length === 0) return;
+    const requested = entries.map((e) => e.path);
     busy.set(true);
+    stopping = false;
     try {
-      await api.startConvert({
-        files: entries.map((e) => e.path),
+      const response = await api.startConvert({
+        files: requested,
         dst_fmt: dstFmt,
         save_path: savePath,
       });
-      toast(tr("status_all_done_cv", { t: entries.length }), "ok");
+      // OpenAI-Codex: an accepted request is not proof that files converted.
+      const outcome = convertOutcome(response, requested.length);
+      if (outcome.kind === "unknown") toast(tr("convert_result_unknown"), "err");
+      else if (outcome.kind === "complete") toast(tr("status_all_done_cv", { t: outcome.total }), "ok");
+      else if (outcome.failed === outcome.total) toast(tr("log_all_convert_failed", { t: outcome.failed }), "err");
+      else toast(tr("log_all_converted_partial", { ok: outcome.total - outcome.failed,
+        fail: outcome.failed, t: outcome.total }), "err");
     } catch (e) {
       toast(String(e instanceof Error ? e.message : e), "err");
     } finally {
+      stopping = false;
       busy.set(false);
     }
   }
-  function stop() { api.stop(); busy.set(false); }
+  async function stop() {
+    if (stopping) return;
+    stopping = true;
+    try { await api.stop(); }
+    catch (e) { stopping = false; toast(String(e instanceof Error ? e.message : e), "err"); }
+  }
 
   const inputCls =
     "w-full rounded-lg border border-zinc-300 bg-zinc-50 px-3 py-2.5 text-sm " +
@@ -71,7 +117,7 @@
     ondragover={(e) => { e.preventDefault(); dragOver = true; }}
     ondragleave={() => (dragOver = false)}
     ondrop={(e) => { e.preventDefault(); dragOver = false; addFiles(e.dataTransfer?.files ?? null); }}
-    onclick={() => fileEl?.click()}
+    onclick={selectFiles}
   >
     <Upload class="size-7 text-zinc-400 dark:text-zinc-500" aria-hidden="true" />
     <span class="text-sm font-medium">{tr("drop_title")}</span>
@@ -81,6 +127,7 @@
       type="file"
       multiple
       class="hidden"
+      onclick={(e) => e.stopPropagation()}
       onchange={(e) => addFiles((e.currentTarget as HTMLInputElement).files)}
     />
   </button>
@@ -161,9 +208,11 @@
              px-4 text-sm text-zinc-600 hover:bg-zinc-100 disabled:opacity-40
              dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
       onclick={stop}
-      disabled={!$busy}
+      disabled={!$busy || stopping}
     >
-      <Square class="size-3.5" aria-hidden="true" />{tr("btn_stop")}
+      <Square class="size-3.5" aria-hidden="true" />{stopping ? tr("stop_requested") : tr("btn_stop")}
     </button>
   </div>
 </div>
+
+

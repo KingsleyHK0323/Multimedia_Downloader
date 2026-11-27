@@ -49,6 +49,8 @@
   "download_result_failed": "已完成：{ok} 項成功、{fail} 項失敗，共 {total} 項。",
   "download_result_incomplete": "只收到 {done}/{total} 項結果，其餘結果未知。",
   "download_result_unknown": "無法確認下載結果。",
+  "convert_result_unknown": "無法確認轉換結果。",
+  "convert_browser_path_required": "請輸入伺服器上的檔案路徑；瀏覽器選取不會提供路徑。",
   "status_converting": "轉換中（{n}/{t}）：{file}",
   "status_all_done_cv": "✓  全部 {t} 個檔案已轉換完成。",
   "log_title": "下載日誌",
@@ -219,3 +221,5 @@
   "update_dismiss": "忽略",
   "log_hint_outdated": "[{i}/{t}]  ⚠  連續出現 403 錯誤通常代表內建的下載元件已過期，請更新到最新版本。"
 }
+
+

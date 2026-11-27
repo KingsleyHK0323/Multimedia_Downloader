@@ -49,6 +49,8 @@
   "download_result_failed": "Finished: {ok} succeeded, {fail} failed (of {total}).",
   "download_result_incomplete": "Only {done} of {total} results were returned; the remaining outcomes are unknown.",
   "download_result_unknown": "The download result could not be confirmed.",
+  "convert_result_unknown": "The conversion result could not be confirmed.",
+  "convert_browser_path_required": "Enter a server file path; browser file selection does not provide one.",
   "status_converting": "Converting ({n}/{t}): {file}",
   "status_all_done_cv": "✓  All {t} file(s) converted.",
   "log_title": "Log",
@@ -219,3 +221,5 @@
   "update_dismiss": "Dismiss",
   "log_hint_outdated": "[{i}/{t}]  ⚠  Repeated 403 errors usually mean the bundled downloader is out of date. Please update to the latest version of the app."
 }
+
+

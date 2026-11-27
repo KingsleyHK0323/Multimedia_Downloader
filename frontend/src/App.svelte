@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { Sparkles } from "lucide-svelte";
   import { api, IS_MOCK, IS_TAURI, type Formats, type EngineEvent } from "./api";
-  import { lang, t, pushLog, progress, busy, markDownloadItem } from "./store";
+  import { lang, t, pushLog, progress, markDownloadItem } from "./store";
   import { Translator } from "./i18n";
   import Header from "./components/Header.svelte";
   import TabBar from "./components/TabBar.svelte";
@@ -51,7 +51,7 @@
         else if (e.key === "log_item_error") markDownloadItem((e.fmt?.i as number) - 1, "error");
       } else if (e.type === "progress") {
         progress.set({ pct: e.pct, speed: e.speed, eta: e.eta });
-        if (e.pct >= 100) busy.set(false);
+        // OpenAI-Codex: one completed stream does not complete the batch.
       } else if (e.type === "item_start") {
         progress.set({ pct: 0, speed: "--", eta: "--" });
         markDownloadItem(e.index - 1, "running");
@@ -108,7 +108,7 @@
       <DownloadTab mode="audio" {formats} />
     </div>
     <div id="panel-convert" role="tabpanel" aria-label={tr("tab_convert")} hidden={active !== "convert"}>
-      <ConvertTab {formats} />
+      <ConvertTab {formats} active={active === "convert"} />
     </div>
     <div id="panel-log" role="tabpanel" aria-label={tr("tab_log")} hidden={active !== "log"}>
       {#if active === "log"}<LogTab />{/if}
@@ -141,3 +141,5 @@
 
   <Toasts />
 </div>
+
+

@@ -89,7 +89,7 @@ export interface Api {
   getFormats(): Promise<Formats>;
   getLocales(): Promise<Record<string, string>>;
   startDownload(args: DownloadArgs): Promise<unknown>;
-  startConvert(args: ConvertArgs): Promise<void>;
+  startConvert(args: ConvertArgs): Promise<unknown>;
   aiPlan(apiKey: string, prompt: string, context: AiContext): Promise<AiPlan>;
   runQueue(tasks: AiTask[]): Promise<{ tasks: QueueResultTask[] }>;
   stop(): Promise<void>;
@@ -108,7 +108,7 @@ class TauriApi implements Api {
   getFormats() { return this.invoke<Formats>("get_formats"); }
   getLocales() { return this.invoke<Record<string, string>>("get_locales"); }
   startDownload(args: DownloadArgs) { return this.invoke<unknown>("start_download", { args }); }
-  startConvert(args: ConvertArgs) { return this.invoke<void>("start_convert", { args }); }
+  startConvert(args: ConvertArgs) { return this.invoke<unknown>("start_convert", { args }); }
   aiPlan(apiKey: string, prompt: string, context: AiContext) {
     return this.invoke<AiPlan>("ai_plan", { args: { api_key: apiKey, prompt, context } });
   }
@@ -154,7 +154,7 @@ class WebApi implements Api {
   getFormats() { return this.get<Formats>("/api/formats"); }
   getLocales() { return this.get<Record<string, string>>("/api/locales"); }
   startDownload(args: DownloadArgs) { return this.post<unknown>("/api/download", args); }
-  async startConvert(args: ConvertArgs) { await this.post("/api/convert", args); }
+  startConvert(args: ConvertArgs) { return this.post<unknown>("/api/convert", args); }
   aiPlan(apiKey: string, prompt: string, context: AiContext) {
     return this.post<AiPlan>("/api/ai_plan", { api_key: apiKey, prompt, context });
   }
@@ -231,19 +231,23 @@ class MockApi implements Api {
     this.stopped = false;
     const files = args.files.filter((f) => f.trim());
     const total = files.length;
+    const jobs: Array<{ src: string; dst: string; status: string; error: string }> = [];
     for (let i = 0; i < total; i++) {
       if (this.stopped) {
         this.emit({ type: "log", level: "warn", key: "log_convert_stopped" });
-        return;
+        return { jobs };
       }
       const idx = i + 1;
       const name = files[i].split(/[\\/]/).pop() ?? files[i];
       const dst = name.replace(/\.[^.]+$/, "") + "." + args.dst_fmt;
       this.emit({ type: "log", level: "info", key: "log_convert_start", fmt: { i: idx, t: total, src: name, dst } });
       await delay(320);
+      if (this.stopped) return { jobs };
       this.emit({ type: "log", level: "ok", key: "log_convert_done", fmt: { i: idx, t: total, name: dst } });
+      jobs.push({ src: files[i], dst, status: "done", error: "" });
     }
     this.emit({ type: "log", level: "ok", key: "log_all_converted", fmt: { t: total } });
+    return { jobs }; // OpenAI-Codex: return the same outcome contract as the engine.
   }
 
   stop() { this.stopped = true; return Promise.resolve(); }
@@ -364,3 +368,5 @@ export async function openExternal(url: string): Promise<void> {
     window.open(url, "_blank", "noopener,noreferrer");
   }
 }
+
+

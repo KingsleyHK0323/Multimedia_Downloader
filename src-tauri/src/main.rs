@@ -20,6 +20,7 @@ use std::sync::Mutex;
 use serde_json::{json, Value};
 use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager, State};
+use tauri_plugin_dialog::DialogExt;
 
 /// Tracks the sidecar child of the current streaming op so `stop_engine` can kill it.
 #[derive(Default)]
@@ -183,6 +184,18 @@ async fn start_download(app: tauri::AppHandle, args: Value) -> Result<Value, Str
 }
 
 #[tauri::command]
+// OpenAI-Codex: keep native dialogs off the main thread and return real paths.
+async fn select_convert_files(app: tauri::AppHandle) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.dialog().file().blocking_pick_files().unwrap_or_default().into_iter()
+            .map(|entry| entry.into_path().map_err(|e| e.to_string())
+                .and_then(|path| path.into_os_string().into_string()
+                    .map_err(|_| "A selected path is not valid Unicode".to_string())))
+            .collect()
+    }).await.map_err(|e| format!("file selection failed: {e}"))?
+}
+
+#[tauri::command]
 async fn start_convert(app: tauri::AppHandle, args: Value) -> Result<Value, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let engine = app.state::<Engine>();
@@ -230,12 +243,14 @@ fn stop_engine(engine: State<Engine>) -> Result<(), String> {
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(Engine::default())
         .invoke_handler(tauri::generate_handler![
             get_formats,
             get_locales,
             start_download,
             start_convert,
+            select_convert_files,
             run_queue,
             ai_plan,
             stop_engine
@@ -243,3 +258,5 @@ fn main() {
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+
+

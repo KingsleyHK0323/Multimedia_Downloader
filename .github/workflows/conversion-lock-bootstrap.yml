@@ -1,0 +1,30 @@
+name: Conversion dependency lock bootstrap
+
+# OpenAI-Codex: temporary PR-only lock generation; no secrets or write access.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Generate Cargo lockfile
+        working-directory: src-tauri
+        run: cargo metadata --format-version 1 > /dev/null
+      - uses: actions/upload-artifact@v4
+        with:
+          name: conversion-cargo-lock
+          path: src-tauri/Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
+
