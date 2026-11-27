@@ -804,11 +804,12 @@ jobs:
               if (from.length !== 1 || current.length !== 1 || from[0].type !== 'tree' ||
                   from[0].mode !== '040000' || current[0].type !== 'tree' || current[0].mode !== '040000' ||
                   from[0].sha !== current[0].sha) throw new Error('Release workflow tree changed since the version commit.');
+              // OpenAI-Codex: pin the currently verified release workflow and asset uploader.
               // These exact trusted release files verify staged artifacts and published asset digests.
               const trustedFiles = new Map([
-                ['.github/workflows/release.yml', '55e09f60a5e226fd135711a49868df57ec5428e5'],
+                ['.github/workflows/release.yml', 'e5967adef5a8ea320880355b9ec4ddec0a1c1ba1'],
                 ['.github/workflows/release-build.yml', '27f65bfb9426e86216ffc4ea89e248ea5ac14025'],
-                ['.github/scripts/upload-release-assets.mjs', 'ced6fabf4eb9add7914c6a7a9601f928e6bd9c46'],
+                ['.github/scripts/upload-release-assets.mjs', '5a4c01640a6b58f282aa530d242186e40e54e319'],
                 ['.github/scripts/verify-tag-protection.mjs', '12d61171e87bec08779e52648a77a7d7d5ac62ea'],
                 ['.github/scripts/select-release-artifacts.mjs', 'c7fd3a52e296ef311e230a13d9a8d96039bad621'],
                 ['.github/scripts/download-release-artifacts.py', 'dc8ca25a9548af1098ec63bb4e6a95f27114826e'],

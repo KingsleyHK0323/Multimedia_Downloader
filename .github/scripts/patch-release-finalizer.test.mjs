@@ -1,6 +1,7 @@
 // OpenAI-Codex_health_release_architecture: exercise App version PR reconciliation with in-memory GitHub APIs.
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { reconcileVersionPr } from './auto-patch-pr-writer.mjs';
 import { reconcilePatchReleases } from './patch-release-finalizer.mjs';
@@ -423,9 +424,9 @@ async function prepareRelease() {
   const baseTree = state.trees.get(state.commits.get(fixedSha('a')).tree.sha);
   const headTree = state.trees.get(state.commits.get(prepared.head).tree.sha);
   const pins = [
-    ['.github/workflows/release.yml', '55e09f60a5e226fd135711a49868df57ec5428e5'],
+    ['.github/workflows/release.yml', 'e5967adef5a8ea320880355b9ec4ddec0a1c1ba1'],
     ['.github/workflows/release-build.yml', '27f65bfb9426e86216ffc4ea89e248ea5ac14025'],
-    ['.github/scripts/upload-release-assets.mjs', 'ced6fabf4eb9add7914c6a7a9601f928e6bd9c46'],
+    ['.github/scripts/upload-release-assets.mjs', '5a4c01640a6b58f282aa530d242186e40e54e319'],
     ['.github/scripts/verify-tag-protection.mjs', '12d61171e87bec08779e52648a77a7d7d5ac62ea'],
     ['.github/scripts/select-release-artifacts.mjs', 'c7fd3a52e296ef311e230a13d9a8d96039bad621'],
     ['.github/scripts/download-release-artifacts.py', 'dc8ca25a9548af1098ec63bb4e6a95f27114826e'],
@@ -668,4 +669,16 @@ test('accepts a published release only after trusted run, check and asset proof,
   assert.deepEqual(result.completed, [42]);
   assert.equal((await reconcileVersionPr({ ...args, verifiedCompleted: result.completed })).status, 'idle');
   assert.deepEqual(state.writes, []);
+});
+
+// OpenAI-Codex: a release helper update must refresh the trusted blob pins.
+test('trusted release pins match all current repository helper files', () => {
+  const inspector = readFileSync(new URL('./inspect-merged-patch.mjs', import.meta.url), 'utf8');
+  const entries = [...inspector.matchAll(/^\s*\['(\.github\/(?:workflows|scripts)\/[^']+)', '([0-9a-f]{40})'\],$/gm)];
+  assert.equal(entries.length, 10);
+  assert.equal(new Set(entries.map(entry => entry[1])).size, 10);
+  for (const [, path, expected] of entries) {
+    const source = readFileSync(new URL('../../' + path, import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+    assert.equal(blobHash(source), expected, 'Trusted release helper changed: ' + path);
+  }
 });
