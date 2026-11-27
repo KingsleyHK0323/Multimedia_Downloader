@@ -54,6 +54,7 @@
 
   function addFiles(files: FileList | null) {
     if (!files) return;
+    if (IS_TAURI) return; // Native drop events supply the actual paths.
     if (!IS_MOCK) { toast(tr("convert_browser_path_required"), "err"); return; }
     for (const f of files) entries.push({ path: f.name, size: f.size });
   }
