@@ -45,6 +45,7 @@ _ICON = {"info": "·", "ok": "✓", "warn": "!", "err": "✗"}
 def _make_logger(tr: "i18n.Translator"):
     def log(level: str, key: str, **fmt) -> None:
         print(f" {_ICON.get(level, '·')} {redact_sensitive_urls(tr.t(key, **fmt))}")
+
     return log
 
 
@@ -64,21 +65,30 @@ def cmd_download(args, log) -> int:
     dl = Downloader(opts, log_cb=log)
     dl.download_batch(args.urls)
     summary = dl.last_summary
-    print(f"\nDone: {summary['succeeded']}/{summary['total']} succeeded; "
-          f"{summary['failed']} failed, {summary['skipped']} skipped. "
-          f"Files in {os.path.abspath(args.output)}")
+    print(
+        f"\nDone: {summary['succeeded']}/{summary['total']} succeeded; "
+        f"{summary['failed']} failed, {summary['skipped']} skipped. "
+        f"Files in {os.path.abspath(args.output)}"
+    )
     return 0 if not summary["failed"] and not summary["cancelled"] else 1
 
 
 def cmd_convert(args, log) -> int:
-    conv = Converter(save_path=args.output, dst_fmt=args.format, log_cb=log,
-                     ffmpeg_bin=args.ffmpeg,
-                     conflict_policy=getattr(args, "conflict_policy", "rename"))
+    conv = Converter(
+        save_path=args.output,
+        dst_fmt=args.format,
+        log_cb=log,
+        ffmpeg_bin=args.ffmpeg,
+        conflict_policy=getattr(args, "conflict_policy", "rename"),
+    )
     if getattr(args, "preview", False):
         try:
             rows = conv.preview_batch(args.files)
         except (OSError, ValueError) as exc:
-            print(f"Conversion preview failed: {redact_sensitive_urls(str(exc))}", file=sys.stderr)
+            print(
+                f"Conversion preview failed: {redact_sensitive_urls(str(exc))}",
+                file=sys.stderr,
+            )
             return 1
         tr = i18n.Translator(getattr(args, "lang", "en"))
         print(tr.t("preview_title"))
@@ -86,7 +96,9 @@ def cmd_convert(args, log) -> int:
         for row in rows:
             print(redact_sensitive_urls(f"{row['src']} -> {row['dst']}"))
             print(f"  {tr.t('preview_existing')}: {tr.t('preview_' + row['existing'])}")
-            print(f"  {tr.t('preview_source_matches')}: {tr.t('preview_' + row['source_matches'])}")
+            print(
+                f"  {tr.t('preview_source_matches')}: {tr.t('preview_' + row['source_matches'])}"
+            )
             if row["batch_duplicate"]:
                 print(f"  {tr.t('preview_batch_duplicate')}")
         return 0
@@ -95,12 +107,17 @@ def cmd_convert(args, log) -> int:
     try:
         conv.convert_batch(args.files)
     except ValueError as exc:
-        print(f"Conversion could not start: {redact_sensitive_urls(str(exc))}", file=sys.stderr)
+        print(
+            f"Conversion could not start: {redact_sensitive_urls(str(exc))}",
+            file=sys.stderr,
+        )
         return 1
     summary = conv.last_summary
-    print(f"Done: {summary['succeeded']}/{summary['total']} converted; "
-          f"{summary['failed']} failed, {summary['skipped']} skipped. "
-          f"Files in {os.path.abspath(args.output)}")
+    print(
+        f"Done: {summary['succeeded']}/{summary['total']} converted; "
+        f"{summary['failed']} failed, {summary['skipped']} skipped. "
+        f"Files in {os.path.abspath(args.output)}"
+    )
     return 0 if not summary["failed"] and not summary["cancelled"] else 1
 
 
@@ -122,24 +139,64 @@ def build_parser() -> argparse.ArgumentParser:
 
     d = sub.add_parser("download", help="download video/audio from one or more URLs")
     d.add_argument("urls", nargs="+", help="one or more URLs (500+ sites via yt-dlp)")
-    d.add_argument("-o", "--output", default=".", help="output directory (default: current dir)")
-    d.add_argument("-f", "--format", default="mp4", choices=VIDEO_FORMATS, help="video container")
-    d.add_argument("-q", "--quality", default="best", choices=QUALITY_PRESETS, help="video quality")
-    d.add_argument("--audio", action="store_true", help="extract audio instead of video")
-    d.add_argument("--audio-format", default="mp3", choices=AUDIO_FORMATS, help="audio format (with --audio)")
-    d.add_argument("--bitrate", default="192", help="audio bitrate in kbps (default: 192)")
-    d.add_argument("--browser", default="none", choices=BROWSERS, help="read login cookies from this browser")
-    d.add_argument("--cookies", help="path to a Netscape cookies.txt file (overrides --browser)")
+    d.add_argument(
+        "-o", "--output", default=".", help="output directory (default: current dir)"
+    )
+    d.add_argument(
+        "-f", "--format", default="mp4", choices=VIDEO_FORMATS, help="video container"
+    )
+    d.add_argument(
+        "-q", "--quality", default="best", choices=QUALITY_PRESETS, help="video quality"
+    )
+    d.add_argument(
+        "--audio", action="store_true", help="extract audio instead of video"
+    )
+    d.add_argument(
+        "--audio-format",
+        default="mp3",
+        choices=AUDIO_FORMATS,
+        help="audio format (with --audio)",
+    )
+    d.add_argument(
+        "--bitrate", default="192", help="audio bitrate in kbps (default: 192)"
+    )
+    d.add_argument(
+        "--browser",
+        default="none",
+        choices=BROWSERS,
+        help="read login cookies from this browser",
+    )
+    d.add_argument(
+        "--cookies", help="path to a Netscape cookies.txt file (overrides --browser)"
+    )
     d.set_defaults(func=cmd_download)
 
     c = sub.add_parser("convert", help="convert local media files with ffmpeg")
     c.add_argument("files", nargs="+", help="input files")
-    c.add_argument("-o", "--output", default=".", help="output directory (default: current dir)")
-    c.add_argument("-f", "--format", default="mp4", choices=VIDEO_FORMATS + AUDIO_FORMATS, help="target format")
-    c.add_argument("--ffmpeg", default="ffmpeg", help="ffmpeg binary (default: 'ffmpeg' on PATH)")
-    c.add_argument("--conflict-policy", default="rename", choices=("rename", "skip", "overwrite"),
-                   help="how to handle existing outputs (default: rename)")
-    c.add_argument("--preview", action="store_true", help="inspect destination conflicts without converting")
+    c.add_argument(
+        "-o", "--output", default=".", help="output directory (default: current dir)"
+    )
+    c.add_argument(
+        "-f",
+        "--format",
+        default="mp4",
+        choices=VIDEO_FORMATS + AUDIO_FORMATS,
+        help="target format",
+    )
+    c.add_argument(
+        "--ffmpeg", default="ffmpeg", help="ffmpeg binary (default: 'ffmpeg' on PATH)"
+    )
+    c.add_argument(
+        "--conflict-policy",
+        default="rename",
+        choices=("rename", "skip", "overwrite"),
+        help="how to handle existing outputs (default: rename)",
+    )
+    c.add_argument(
+        "--preview",
+        action="store_true",
+        help="inspect destination conflicts without converting",
+    )
     c.set_defaults(func=cmd_convert)
 
     f = sub.add_parser("formats", help="list supported formats / quality / browsers")

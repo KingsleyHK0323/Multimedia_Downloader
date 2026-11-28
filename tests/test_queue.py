@@ -30,6 +30,7 @@ class FactoryTests(unittest.TestCase):
 
 class _FakeDownloader:
     """Stand-in for engine.queue.Downloader — records URLs, optionally fails."""
+
     fail_urls: set = set()
     on_download = None  # optional hook(url) for side effects (e.g. stop)
     seen: list = []
@@ -69,7 +70,9 @@ class QueueRunTests(unittest.TestCase):
         tq = TaskQueue(task_update_cb=lambda t: updates.append((t.label, t.status)))
         result = tq.run(tasks)
         self.assertTrue(all(t.status == "done" for t in result))
-        self.assertEqual(_FakeDownloader.seen, ["http://x/0", "http://x/1", "http://x/2"])
+        self.assertEqual(
+            _FakeDownloader.seen, ["http://x/0", "http://x/1", "http://x/2"]
+        )
 
     def test_one_failure_recorded(self):
         opts = DownloadOptions(save_path="out")
@@ -87,7 +90,7 @@ class QueueRunTests(unittest.TestCase):
         # Ask the queue to stop while the FIRST task is downloading.
         _FakeDownloader.on_download = lambda url: tq.stop()
         result = tq.run(tasks)
-        self.assertEqual(result[0].status, "done")     # first still finishes
+        self.assertEqual(result[0].status, "done")  # first still finishes
         self.assertTrue(all(t.status == "skipped" for t in result[1:]))
 
     def test_download_task_missing_fields(self):
@@ -114,21 +117,32 @@ class QueueSafetyTests(unittest.TestCase):
         self.assertEqual(supplied.task_id, "request-1")
 
     def test_stop_before_start_marks_every_task_skipped(self):
-        tasks = [download_task("a", DownloadOptions(save_path=".")),
-                 download_task("b", DownloadOptions(save_path="."))]
+        tasks = [
+            download_task("a", DownloadOptions(save_path=".")),
+            download_task("b", DownloadOptions(save_path=".")),
+        ]
         queue = TaskQueue()
         queue.stop()
         with patch.object(q.Downloader, "download_one") as download:
             queue.run(tasks)
         download.assert_not_called()
         self.assertEqual([task.status for task in tasks], ["skipped", "skipped"])
-        self.assertEqual(queue.last_summary, {
-            "total": 2, "succeeded": 0, "failed": 0, "skipped": 2, "cancelled": True,
-        })
+        self.assertEqual(
+            queue.last_summary,
+            {
+                "total": 2,
+                "succeeded": 0,
+                "failed": 0,
+                "skipped": 2,
+                "cancelled": True,
+            },
+        )
 
     def test_queue_download_uses_same_transient_retry_as_batch(self):
         task = download_task("a", DownloadOptions(save_path="."))
-        with patch.object(q.Downloader, "download_one", side_effect=[RuntimeError("403"), None]) as attempt:
+        with patch.object(
+            q.Downloader, "download_one", side_effect=[RuntimeError("403"), None]
+        ) as attempt:
             with patch("engine.downloader.time.sleep"):
                 TaskQueue().run([task])
         self.assertEqual(attempt.call_count, 2)
@@ -137,14 +151,19 @@ class QueueSafetyTests(unittest.TestCase):
     def test_queue_error_redacts_sensitive_url_parts(self):
         task = download_task("a", DownloadOptions(save_path="."))
         error = "https://alice:password@example.com/?token=secret"
-        with patch.object(q.Downloader, "download_one", side_effect=RuntimeError(error)):
+        with patch.object(
+            q.Downloader, "download_one", side_effect=RuntimeError(error)
+        ):
             TaskQueue().run([task])
         self.assertEqual(task.status, "error")
         self.assertNotIn("password", task.error)
         self.assertNotIn("secret", task.error)
 
     def test_duplicate_task_ids_are_rejected_before_any_task_runs(self):
-        tasks = [q.Task(kind="download", task_id="same"), q.Task(kind="download", task_id="same")]
+        tasks = [
+            q.Task(kind="download", task_id="same"),
+            q.Task(kind="download", task_id="same"),
+        ]
         queue = TaskQueue()
         with patch.object(q.Downloader, "download_one") as download:
             with self.assertRaises(ValueError):
@@ -178,9 +197,16 @@ class QueueSafetyTests(unittest.TestCase):
                 queue.run([task])
             ffmpeg.assert_not_called()
             self.assertEqual(task.status, "skipped")
-            self.assertEqual(queue.last_summary, {
-                "total": 1, "succeeded": 0, "failed": 0, "skipped": 1, "cancelled": False,
-            })
+            self.assertEqual(
+                queue.last_summary,
+                {
+                    "total": 1,
+                    "succeeded": 0,
+                    "failed": 0,
+                    "skipped": 1,
+                    "cancelled": False,
+                },
+            )
 
 
 class QueueDependencyTests(unittest.TestCase):
@@ -188,13 +214,17 @@ class QueueDependencyTests(unittest.TestCase):
     def _convert_input(args, **kwargs):
         source = Path(args[3])
         if not source.exists():
-            return SimpleNamespace(returncode=1, stderr=["missing source"], wait=lambda: 1)
+            return SimpleNamespace(
+                returncode=1, stderr=["missing source"], wait=lambda: 1
+            )
         Path(args[-1]).write_bytes(source.read_bytes() + b" converted")
         return SimpleNamespace(returncode=0, stderr=(), wait=lambda: 0)
 
     def test_missing_intermediate_is_created_for_all_policies(self):
         for policy in ("rename", "skip", "overwrite"):
-            with self.subTest(policy=policy), tempfile.TemporaryDirectory() as directory:
+            with self.subTest(
+                policy=policy
+            ), tempfile.TemporaryDirectory() as directory:
                 source = Path(directory) / "a.mkv"
                 middle = Path(directory) / "b.mp4"
                 output = Path(directory) / "c.mp4"
@@ -202,7 +232,9 @@ class QueueDependencyTests(unittest.TestCase):
                 first = convert_task(str(source), str(middle), conflict_policy=policy)
                 second = convert_task(str(middle), str(output))
                 queue = TaskQueue()
-                with patch("engine.converter.subprocess.Popen", side_effect=self._convert_input):
+                with patch(
+                    "engine.converter.subprocess.Popen", side_effect=self._convert_input
+                ):
                     queue.run([first, second])
                 self.assertEqual([first.status, second.status], ["done", "done"])
                 self.assertEqual(Path(first.dst_path), middle)
@@ -217,18 +249,25 @@ class QueueDependencyTests(unittest.TestCase):
             output = Path(directory) / "c.mp4"
             source.write_bytes(b"new")
             middle.write_bytes(b"old")
-            prelude = download_task("https://example.com/video",
-                                    DownloadOptions(save_path=str(Path(directory) / "downloads")))
+            prelude = download_task(
+                "https://example.com/video",
+                DownloadOptions(save_path=str(Path(directory) / "downloads")),
+            )
             first = convert_task(str(source), str(middle))
             second = convert_task(str(middle), str(output))
-            with patch("engine.converter.subprocess.Popen") as ffmpeg, \
-                    patch.object(q.Downloader, "download_one_with_retry") as download:
-                with self.assertRaisesRegex(ValueError, "earlier conversion destination"):
+            with patch("engine.converter.subprocess.Popen") as ffmpeg, patch.object(
+                q.Downloader, "download_one_with_retry"
+            ) as download:
+                with self.assertRaisesRegex(
+                    ValueError, "earlier conversion destination"
+                ):
                     TaskQueue().run([prelude, first, second])
             ffmpeg.assert_not_called()
             download.assert_not_called()
-            self.assertEqual([prelude.status, first.status, second.status],
-                             ["pending", "pending", "pending"])
+            self.assertEqual(
+                [prelude.status, first.status, second.status],
+                ["pending", "pending", "pending"],
+            )
             self.assertEqual(middle.read_bytes(), b"old")
             self.assertFalse(output.exists())
 
@@ -266,7 +305,9 @@ class QueueDependencyTests(unittest.TestCase):
             independent.write_bytes(b"independent")
             first = convert_task(str(source), str(middle))
             second = convert_task(str(independent), str(output))
-            with patch("engine.converter.subprocess.Popen", side_effect=self._convert_input):
+            with patch(
+                "engine.converter.subprocess.Popen", side_effect=self._convert_input
+            ):
                 TaskQueue().run([first, second])
             self.assertEqual([first.status, second.status], ["done", "done"])
             self.assertEqual(output.read_bytes(), b"independent converted")
@@ -282,7 +323,9 @@ class QueueDependencyTests(unittest.TestCase):
             destination.write_bytes(b"existing")
             first = convert_task(str(source), str(destination))
             second = convert_task(str(reserved_source), str(output))
-            with patch("engine.converter.subprocess.Popen", side_effect=self._convert_input):
+            with patch(
+                "engine.converter.subprocess.Popen", side_effect=self._convert_input
+            ):
                 TaskQueue().run([first, second])
             self.assertEqual(first.status, "done")
             self.assertEqual(Path(first.dst_path), Path(directory) / "b (2).mp4")
@@ -294,33 +337,47 @@ class QueueDependencyTests(unittest.TestCase):
     def test_multiple_producers_for_a_later_source_are_rejected_before_any_task(self):
         with tempfile.TemporaryDirectory() as directory:
             middle = Path(directory) / "b.mp4"
-            prelude = download_task("https://example.com/video",
-                                    DownloadOptions(save_path=str(Path(directory) / "downloads")))
+            prelude = download_task(
+                "https://example.com/video",
+                DownloadOptions(save_path=str(Path(directory) / "downloads")),
+            )
             first = convert_task("a.mkv", str(middle))
             second = convert_task("other.mkv", str(middle))
             dependent = convert_task(str(middle), str(Path(directory) / "c.mp4"))
-            with patch("engine.converter.subprocess.Popen") as ffmpeg, \
-                    patch.object(q.Downloader, "download_one_with_retry") as download:
+            with patch("engine.converter.subprocess.Popen") as ffmpeg, patch.object(
+                q.Downloader, "download_one_with_retry"
+            ) as download:
                 with self.assertRaisesRegex(ValueError, "multiple earlier conversions"):
                     TaskQueue().run([prelude, first, second, dependent])
             ffmpeg.assert_not_called()
             download.assert_not_called()
-            self.assertEqual([task.status for task in (prelude, first, second, dependent)],
-                             ["pending", "pending", "pending", "pending"])
+            self.assertEqual(
+                [task.status for task in (prelude, first, second, dependent)],
+                ["pending", "pending", "pending", "pending"],
+            )
             self.assertFalse(middle.exists())
 
     def test_prior_download_with_source_in_output_directory_is_rejected(self):
         for relative in ("clip.mkv", "nested/clip.mkv"):
-            with self.subTest(relative=relative), tempfile.TemporaryDirectory() as directory:
-                download = download_task("https://example.com/video", DownloadOptions(save_path=directory))
-                convert = convert_task(str(Path(directory) / relative), str(Path(directory) / "out.mp4"))
-                with patch("engine.converter.subprocess.Popen") as ffmpeg, \
-                        patch.object(q.Downloader, "download_one_with_retry") as start_download:
+            with self.subTest(
+                relative=relative
+            ), tempfile.TemporaryDirectory() as directory:
+                download = download_task(
+                    "https://example.com/video", DownloadOptions(save_path=directory)
+                )
+                convert = convert_task(
+                    str(Path(directory) / relative), str(Path(directory) / "out.mp4")
+                )
+                with patch("engine.converter.subprocess.Popen") as ffmpeg, patch.object(
+                    q.Downloader, "download_one_with_retry"
+                ) as start_download:
                     with self.assertRaisesRegex(ValueError, "separately"):
                         TaskQueue().run([download, convert])
                 ffmpeg.assert_not_called()
                 start_download.assert_not_called()
-                self.assertEqual([download.status, convert.status], ["pending", "pending"])
+                self.assertEqual(
+                    [download.status, convert.status], ["pending", "pending"]
+                )
 
     def test_disjoint_directory_and_reverse_order_are_allowed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -329,33 +386,50 @@ class QueueDependencyTests(unittest.TestCase):
             download_dir.mkdir()
             separate = root / "separate"
             separate.mkdir()
-            for source, reverse in ((separate / "first.mkv", False),
-                                    (download_dir / "second.mkv", True)):
+            for source, reverse in (
+                (separate / "first.mkv", False),
+                (download_dir / "second.mkv", True),
+            ):
                 with self.subTest(reverse=reverse):
                     source.write_bytes(b"source")
-                    download = download_task("https://example.com/video",
-                                             DownloadOptions(save_path=str(download_dir)))
-                    convert = convert_task(str(source), str(separate / (source.stem + ".mp4")))
+                    download = download_task(
+                        "https://example.com/video",
+                        DownloadOptions(save_path=str(download_dir)),
+                    )
+                    convert = convert_task(
+                        str(source), str(separate / (source.stem + ".mp4"))
+                    )
                     tasks = [convert, download] if reverse else [download, convert]
-                    with patch("engine.converter.subprocess.Popen", side_effect=self._convert_input), \
-                            patch.object(q.Downloader, "download_one_with_retry"):
+                    with patch(
+                        "engine.converter.subprocess.Popen",
+                        side_effect=self._convert_input,
+                    ), patch.object(q.Downloader, "download_one_with_retry"):
                         TaskQueue().run(tasks)
                     self.assertEqual([task.status for task in tasks], ["done", "done"])
 
     def test_mixed_path_comparison_handles_relative_alias_and_other_drive(self):
         def absolute(value):
-            return ntpath.normpath(value if ntpath.isabs(value) else ntpath.join(r"C:\work", value))
+            return ntpath.normpath(
+                value if ntpath.isabs(value) else ntpath.join(r"C:\work", value)
+            )
 
         def resolved(value, *, strict=False):
             value = absolute(value)
             alias = ntpath.normcase(r"C:\alias")
-            if ntpath.normcase(value) == alias or ntpath.normcase(value).startswith(alias + "\\"):
-                return r"C:\work\downloads" + value[len(alias):]
+            if ntpath.normcase(value) == alias or ntpath.normcase(value).startswith(
+                alias + "\\"
+            ):
+                return r"C:\work\downloads" + value[len(alias) :]
             return value
 
-        fake_path = SimpleNamespace(abspath=absolute, realpath=resolved, normcase=ntpath.normcase,
-                                    isabs=ntpath.isabs, splitdrive=ntpath.splitdrive,
-                                    commonpath=ntpath.commonpath)
+        fake_path = SimpleNamespace(
+            abspath=absolute,
+            realpath=resolved,
+            normcase=ntpath.normcase,
+            isabs=ntpath.isabs,
+            splitdrive=ntpath.splitdrive,
+            commonpath=ntpath.commonpath,
+        )
         with patch.object(q, "os", SimpleNamespace(path=fake_path)):
             contains = TaskQueue._download_may_contain_source
             self.assertTrue(contains("downloads", r"downloads\nested\clip.mkv"))
@@ -365,18 +439,24 @@ class QueueDependencyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "separately"):
                 contains(None, r"C:\work\clip.mkv")
 
-    def test_mixed_path_comparison_supports_legacy_realpath_and_rejects_broken_links(self):
+    def test_mixed_path_comparison_supports_legacy_realpath_and_rejects_broken_links(
+        self,
+    ):
         def absolute(value):
-            return ntpath.normpath(value if ntpath.isabs(value) else ntpath.join(r"C:\work", value))
+            return ntpath.normpath(
+                value if ntpath.isabs(value) else ntpath.join(r"C:\work", value)
+            )
 
         unresolved = [False]
 
         def legacy_realpath(value):
             value = absolute(value)
             alias = ntpath.normcase(r"C:\alias")
-            if not unresolved[0] and (ntpath.normcase(value) == alias
-                                      or ntpath.normcase(value).startswith(alias + "\\")):
-                return r"C:\work\downloads" + value[len(alias):]
+            if not unresolved[0] and (
+                ntpath.normcase(value) == alias
+                or ntpath.normcase(value).startswith(alias + "\\")
+            ):
+                return r"C:\work\downloads" + value[len(alias) :]
             return value
 
         broken = [False]
@@ -386,17 +466,25 @@ class QueueDependencyTests(unittest.TestCase):
         def fake_lstat(value):
             if ntpath.basename(value) == "clip.mkv":
                 raise FileNotFoundError(value)
-            return link_info if ntpath.normcase(value) == r"c:\alias" else directory_info
+            return (
+                link_info if ntpath.normcase(value) == r"c:\alias" else directory_info
+            )
 
         def fake_stat(value):
             if broken[0]:
                 raise FileNotFoundError(value)
             return directory_info
 
-        fake_path = SimpleNamespace(abspath=absolute, realpath=legacy_realpath, normcase=ntpath.normcase,
-                                    isabs=ntpath.isabs, splitdrive=ntpath.splitdrive,
-                                    dirname=ntpath.dirname, commonpath=ntpath.commonpath,
-                                    samefile=lambda first, second: True)
+        fake_path = SimpleNamespace(
+            abspath=absolute,
+            realpath=legacy_realpath,
+            normcase=ntpath.normcase,
+            isabs=ntpath.isabs,
+            splitdrive=ntpath.splitdrive,
+            dirname=ntpath.dirname,
+            commonpath=ntpath.commonpath,
+            samefile=lambda first, second: True,
+        )
         fake_os = SimpleNamespace(path=fake_path, lstat=fake_lstat, stat=fake_stat)
         with patch.object(q, "os", fake_os):
             contains = TaskQueue._download_may_contain_source
@@ -413,7 +501,9 @@ class QueueDependencyTests(unittest.TestCase):
 
     def test_skipped_or_failed_predecessor_blocks_dependent_conversion(self):
         for outcome in ("skipped", "failed"):
-            with self.subTest(outcome=outcome), tempfile.TemporaryDirectory() as directory:
+            with self.subTest(
+                outcome=outcome
+            ), tempfile.TemporaryDirectory() as directory:
                 source = Path(directory) / "a.mkv"
                 middle = Path(directory) / "b.mp4"
                 output = Path(directory) / "c.mp4"
@@ -425,21 +515,30 @@ class QueueDependencyTests(unittest.TestCase):
                 def collide_or_fail(args, **kwargs):
                     middle.write_bytes(b"old")
                     if outcome == "failed":
-                        return SimpleNamespace(returncode=1, stderr=["failed"], wait=lambda: 1)
+                        return SimpleNamespace(
+                            returncode=1, stderr=["failed"], wait=lambda: 1
+                        )
                     Path(args[-1]).write_bytes(b"converted")
                     return SimpleNamespace(returncode=0, stderr=(), wait=lambda: 0)
 
-                with patch("engine.converter.subprocess.Popen", side_effect=collide_or_fail):
+                with patch(
+                    "engine.converter.subprocess.Popen", side_effect=collide_or_fail
+                ):
                     TaskQueue().run([first, second])
-                self.assertEqual(first.status, "skipped" if outcome == "skipped" else "error")
+                self.assertEqual(
+                    first.status, "skipped" if outcome == "skipped" else "error"
+                )
                 self.assertEqual(second.status, "skipped")
                 self.assertIn("ambiguous", second.error)
                 self.assertEqual(middle.read_bytes(), b"old")
                 self.assertFalse(output.exists())
 
     def test_duplicate_destinations_with_overwrite_are_rejected_before_any_task(self):
-        for policies in (("rename", "overwrite"), ("overwrite", "rename"),
-                         ("overwrite", "overwrite")):
+        for policies in (
+            ("rename", "overwrite"),
+            ("overwrite", "rename"),
+            ("overwrite", "overwrite"),
+        ):
             with self.subTest(policies=policies):
                 first = convert_task("a.mkv", "same.mp4", conflict_policy=policies[0])
                 second = convert_task("b.mkv", "same.mp4", conflict_policy=policies[1])
@@ -458,8 +557,13 @@ class QueueRetryTests(unittest.TestCase):
     # OpenAI-Codex_Fork_GitHub_REPO: verify retries without network or sleeps.
     def test_transient_failure_retries_and_succeeds(self):
         from engine.errors import ErrorKind
-        task = download_task("https://example.com/media", DownloadOptions(save_path="out"))
-        with patch.object(q.Downloader, "download_one", side_effect=[RuntimeError("temporary"), None]) as call:
+
+        task = download_task(
+            "https://example.com/media", DownloadOptions(save_path="out")
+        )
+        with patch.object(
+            q.Downloader, "download_one", side_effect=[RuntimeError("temporary"), None]
+        ) as call:
             with patch("engine.downloader.classify", return_value=ErrorKind.TRANSIENT):
                 with patch("engine.downloader.time.sleep") as sleep:
                     TaskQueue().run([task])
@@ -469,8 +573,13 @@ class QueueRetryTests(unittest.TestCase):
 
     def test_non_transient_failure_does_not_retry(self):
         from engine.errors import ErrorKind
-        task = download_task("https://example.com/media", DownloadOptions(save_path="out"))
-        with patch.object(q.Downloader, "download_one", side_effect=RuntimeError("permanent")) as call:
+
+        task = download_task(
+            "https://example.com/media", DownloadOptions(save_path="out")
+        )
+        with patch.object(
+            q.Downloader, "download_one", side_effect=RuntimeError("permanent")
+        ) as call:
             with patch("engine.downloader.classify", return_value=ErrorKind.UNKNOWN):
                 with patch("engine.downloader.time.sleep") as sleep:
                     TaskQueue().run([task])

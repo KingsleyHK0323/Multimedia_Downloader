@@ -45,17 +45,20 @@ def _exclusive_converter_call(method):
             else:
                 context = self._batch_guard_context
                 job = args[0] if args else kwargs.get("job")
-                if (self._operation_kind != "convert_batch"
-                        or method.__name__ != "convert_one"
-                        or context is None
-                        or context[0] is not job
-                        or context[2]["entered"]):
+                if (
+                    self._operation_kind != "convert_batch"
+                    or method.__name__ != "convert_one"
+                    or context is None
+                    or context[0] is not job
+                    or context[2]["entered"]
+                ):
                     raise RuntimeError("converter already has an active operation")
             return method(self, *args, **kwargs)
         finally:
             if owner:
                 self._operation_kind = None
             self._operation_lock.release()
+
     return guarded
 
 
@@ -65,7 +68,10 @@ def _include_canonical_casefold(method):
     def guarded(path):
         existing = method(path)
         canonical = unicodedata.normalize("NFD", path).casefold()
-        return existing | {unicodedata.normalize(form, canonical) for form in ("NFC", "NFD")}
+        return existing | {
+            unicodedata.normalize(form, canonical) for form in ("NFC", "NFD")
+        }
+
     return guarded
 
 
@@ -86,11 +92,11 @@ class Converter:
 
     def __init__(
         self,
-        save_path:     str,
-        dst_fmt:       str,
-        log_cb:        Optional[LogCallback]       = None,
+        save_path: str,
+        dst_fmt: str,
+        log_cb: Optional[LogCallback] = None,
         job_update_cb: Optional[JobUpdateCallback] = None,
-        ffmpeg_bin:    str = "ffmpeg",
+        ffmpeg_bin: str = "ffmpeg",
         conflict_policy: str = "rename",
         protected_paths: Optional[Iterable[str]] = None,
         video_encoder: str = "software",
@@ -99,20 +105,21 @@ class Converter:
             raise ValueError("conflict_policy must be rename, skip, or overwrite")
         video_encoder = ensure_known(video_encoder, VIDEO_ENCODERS, "video encoder")
         if video_encoder != "software" and (
-                not isinstance(dst_fmt, str)
-                or dst_fmt.lower() not in HARDWARE_VIDEO_FORMATS):
+            not isinstance(dst_fmt, str)
+            or dst_fmt.lower() not in HARDWARE_VIDEO_FORMATS
+        ):
             raise ValueError(
                 f"{video_encoder} supports only {', '.join(HARDWARE_VIDEO_FORMATS)} output"
             )
-        self.save_path     = save_path
-        self.dst_fmt       = dst_fmt
-        self.log_cb        = log_cb
+        self.save_path = save_path
+        self.dst_fmt = dst_fmt
+        self.log_cb = log_cb
         self.job_update_cb = job_update_cb
-        self.ffmpeg_bin    = ffmpeg_bin
+        self.ffmpeg_bin = ffmpeg_bin
         # OpenAI-Codex_Fork_Source_Code: hardware is explicit; no detection or fallback.
         self.video_encoder = video_encoder
         self.conflict_policy = conflict_policy
-        self._stop         = False
+        self._stop = False
         self._protected_paths: set[str] = set()
         for path in protected_paths or ():
             self._protected_paths.update(self._identities(path))
@@ -197,10 +204,13 @@ class Converter:
             for source in sources:
                 try:
                     # OpenAI-Codex_engine_cli: uncertain aliases must not report no.
-                    if not cls._identities(source).isdisjoint(cls._identities(job.dst_path)):
+                    if not cls._identities(source).isdisjoint(
+                        cls._identities(job.dst_path)
+                    ):
                         matches = "unknown"
-                    same_path = (os.path.normcase(os.path.abspath(source))
-                                 == os.path.normcase(os.path.abspath(job.dst_path)))
+                    same_path = os.path.normcase(
+                        os.path.abspath(source)
+                    ) == os.path.normcase(os.path.abspath(job.dst_path))
                     # OpenAI-Codex_engine_cli: case-folded equality is not proof of identity.
                     if os.path.abspath(source) != os.path.abspath(job.dst_path):
                         same_path = False
@@ -217,18 +227,30 @@ class Converter:
                 except (OSError, ValueError, TypeError, NotImplementedError):
                     matches = "unknown"
             possible_duplicate = any(
-                index != other and (identity is None or identities[index] is None
-                                    or not identities[index].isdisjoint(identity))
+                index != other
+                and (
+                    identity is None
+                    or identities[index] is None
+                    or not identities[index].isdisjoint(identity)
+                )
                 for other, identity in enumerate(identities)
             )
-            previews.append({"src": job.src_path, "dst": job.dst_path,
-                             "existing": states[index], "batch_duplicate": possible_duplicate,
-                             "source_matches": matches})
+            previews.append(
+                {
+                    "src": job.src_path,
+                    "dst": job.dst_path,
+                    "existing": states[index],
+                    "batch_duplicate": possible_duplicate,
+                    "source_matches": matches,
+                }
+            )
         return previews
 
     # OpenAI-Codex_engine_cli: keep batch context stable during single jobs.
     @_exclusive_converter_call
-    def convert_one(self, job: ConvertJob, index: int = 1, total: int = 1) -> ConvertJob:
+    def convert_one(
+        self, job: ConvertJob, index: int = 1, total: int = 1
+    ) -> ConvertJob:
         """
         Run ffmpeg on a single job, updating its status in place. Failures are
         recorded on the job; a collision or cancellation can mark it skipped.
@@ -243,10 +265,14 @@ class Converter:
             self._set_status(job, "skipped")
             return job
 
-        self._log("info", "log_convert_start",
-                  i=index, t=total,
-                  src=os.path.basename(job.src_path),
-                  dst=os.path.basename(job.dst_path))
+        self._log(
+            "info",
+            "log_convert_start",
+            i=index,
+            t=total,
+            src=os.path.basename(job.src_path),
+            dst=os.path.basename(job.dst_path),
+        )
         self._set_status(job, "converting")
 
         temporary = None
@@ -254,8 +280,10 @@ class Converter:
             extension = os.path.splitext(job.dst_path)[1].lstrip(".")
             if not _VALID_FMT.fullmatch(extension):
                 raise ValueError("destination must have a bare format extension")
-            if (self.video_encoder != "software"
-                    and extension.lower() not in HARDWARE_VIDEO_FORMATS):
+            if (
+                self.video_encoder != "software"
+                and extension.lower() not in HARDWARE_VIDEO_FORMATS
+            ):
                 raise ValueError(
                     f"{self.video_encoder} supports only {', '.join(HARDWARE_VIDEO_FORMATS)} output"
                 )
@@ -263,30 +291,43 @@ class Converter:
             protected = self._protected_paths | self._identities(job.src_path)
             # OpenAI-Codex_Fork_Source_Code: guard only the active direct-batch job.
             context = self._batch_guard_context
-            batch_guard = (context[1] | self._identities(job.src_path)
-                           if context is not None and context[0] is job else None)
-            if batch_guard is not None and not self._identities(job.dst_path).isdisjoint(batch_guard):
+            batch_guard = (
+                context[1] | self._identities(job.src_path)
+                if context is not None and context[0] is job
+                else None
+            )
+            if batch_guard is not None and not self._identities(
+                job.dst_path
+            ).isdisjoint(batch_guard):
                 if self.conflict_policy == "overwrite":
                     raise ValueError("refusing to publish to a protected input path")
-                if (self.conflict_policy == "skip"
-                        and self._identities(job.dst_path).isdisjoint(self._identities(job.src_path))
-                        # OpenAI-Codex_Fork_Source_Code: missing inputs still report failure.
-                        and os.path.lexists(job.src_path)
-                        # OpenAI-Codex_Fork_Source_Code: a dangling source must still fail.
-                        and os.path.exists(job.src_path)):
+                if (
+                    self.conflict_policy == "skip"
+                    and self._identities(job.dst_path).isdisjoint(
+                        self._identities(job.src_path)
+                    )
+                    # OpenAI-Codex_Fork_Source_Code: missing inputs still report failure.
+                    and os.path.lexists(job.src_path)
+                    # OpenAI-Codex_Fork_Source_Code: a dangling source must still fail.
+                    and os.path.exists(job.src_path)
+                ):
                     self._set_status(job, "skipped")
                     return job
             if self.conflict_policy == "skip" and os.path.lexists(job.dst_path):
                 self._set_status(job, "skipped")
                 return job
-            if (self.conflict_policy == "overwrite"
-                    and not self._identities(job.dst_path).isdisjoint(protected)
-                    and os.path.lexists(job.dst_path)):
+            if (
+                self.conflict_policy == "overwrite"
+                and not self._identities(job.dst_path).isdisjoint(protected)
+                and os.path.lexists(job.dst_path)
+            ):
                 raise ValueError("refusing to overwrite an input file")
 
             directory = os.path.dirname(os.path.abspath(job.dst_path))
             # OpenAI-Codex: publish on the same filesystem as the destination.
-            fd, temporary = tempfile.mkstemp(prefix=".mmdl-", suffix="." + extension, dir=directory)
+            fd, temporary = tempfile.mkstemp(
+                prefix=".mmdl-", suffix="." + extension, dir=directory
+            )
             os.close(fd)
             try:
                 # ffmpeg writes only to our fresh temporary file, never directly
@@ -296,7 +337,9 @@ class Converter:
                     command.extend(["-c:v", self.video_encoder])
                 command.extend(["-loglevel", "error", temporary])
                 process = subprocess.Popen(  # noqa: S603
-                    command, stderr=subprocess.PIPE, text=True,
+                    command,
+                    stderr=subprocess.PIPE,
+                    text=True,
                 )
                 stderr_parts: list[str] = []
                 if process.stderr:
@@ -306,10 +349,16 @@ class Converter:
                             self.log_cb("info", "log_ffmpeg_stderr", line=line.rstrip())
                 process.wait()
                 stderr = "".join(stderr_parts)
-                result = type("FFmpegResult", (), {"returncode": process.returncode, "stderr": stderr})()
+                result = type(
+                    "FFmpegResult",
+                    (),
+                    {"returncode": process.returncode, "stderr": stderr},
+                )()
             except FileNotFoundError as e:
                 self._log("err", "log_no_ffmpeg", i=index, t=total)
-                self._set_status(job, "no_ffmpeg", error="ffmpeg not found", kind=classify(e))
+                self._set_status(
+                    job, "no_ffmpeg", error="ffmpeg not found", kind=classify(e)
+                )
                 return job
 
             if result.returncode != 0:
@@ -322,11 +371,15 @@ class Converter:
                     previous_legacy_guard = self._legacy_batch_guard
                     self._legacy_batch_guard = batch_guard
                     try:
-                        published, moved = self._publish(temporary, job.dst_path, protected)
+                        published, moved = self._publish(
+                            temporary, job.dst_path, protected
+                        )
                     finally:
                         self._legacy_batch_guard = previous_legacy_guard
                 else:
-                    published, moved = self._publish(temporary, job.dst_path, protected, batch_guard=batch_guard)
+                    published, moved = self._publish(
+                        temporary, job.dst_path, protected, batch_guard=batch_guard
+                    )
             else:
                 published, moved = self._publish(temporary, job.dst_path, protected)
             if published is None:
@@ -335,25 +388,42 @@ class Converter:
                 if moved:
                     temporary = None  # os.replace moved it into place
                 job.dst_path = published
-                self._log("ok", "log_convert_done",
-                          i=index, t=total, name=os.path.basename(job.dst_path))
+                self._log(
+                    "ok",
+                    "log_convert_done",
+                    i=index,
+                    t=total,
+                    name=os.path.basename(job.dst_path),
+                )
                 self._set_status(job, "done")
 
         except Exception as e:
             self._log("err", "log_convert_error", i=index, t=total, err=str(e))
             # A missing output directory is not a missing ffmpeg executable.
-            kind = ErrorKind.UNKNOWN if isinstance(e, FileNotFoundError) else classify(e)
+            kind = (
+                ErrorKind.UNKNOWN if isinstance(e, FileNotFoundError) else classify(e)
+            )
             self._set_status(job, "error", error=str(e), kind=kind)
         finally:
             if temporary is not None:
                 try:
                     os.unlink(temporary)
                 except FileNotFoundError:
-                    self._log("warn", "log_convert_error", i=index, t=total,
-                              err="temporary output disappeared before cleanup")
+                    self._log(
+                        "warn",
+                        "log_convert_error",
+                        i=index,
+                        t=total,
+                        err="temporary output disappeared before cleanup",
+                    )
                 except OSError as e:
-                    self._log("warn", "log_convert_error", i=index, t=total,
-                              err=f"temporary output could not be removed: {e}")
+                    self._log(
+                        "warn",
+                        "log_convert_error",
+                        i=index,
+                        t=total,
+                        err=f"temporary output could not be removed: {e}",
+                    )
 
         return job
 
@@ -371,7 +441,9 @@ class Converter:
             for job in jobs:
                 identities = self._identities(job.dst_path)
                 if not identities.isdisjoint(destinations) and not self._stop:
-                    raise ValueError("overwrite cannot target the same destination for multiple files")
+                    raise ValueError(
+                        "overwrite cannot target the same destination for multiple files"
+                    )
                 destinations.update(identities)
         # OpenAI-Codex_Fork_Source_Code: do not reserve paths from earlier batches.
         batch_protected_paths = set(self._configured_protected_paths)
@@ -383,7 +455,7 @@ class Converter:
         for i, job in enumerate(jobs, start=1):
             if self._stop:
                 self._log("warn", "log_convert_stopped")
-                for pending in jobs[i - 1:]:
+                for pending in jobs[i - 1 :]:
                     self._set_status(pending, "skipped")
                 break
             # OpenAI-Codex_Fork_Source_Code: restore scope on callback or worker errors.
@@ -402,8 +474,7 @@ class Converter:
         elif fail and ok == 0:
             self._log("err", "log_all_convert_failed", t=fail)
         elif fail:
-            self._log("warn", "log_all_converted_partial",
-                      ok=ok, fail=fail, t=total)
+            self._log("warn", "log_all_converted_partial", ok=ok, fail=fail, t=total)
         return jobs
 
     # ── Internal ──────────────────────────────────────────────────────────────
@@ -429,11 +500,19 @@ class Converter:
         """Keep both the stable path spelling and its current resolved target."""
         # OpenAI-Codex_engine_cli: POSIX normcase may not reflect the mounted volume.
         exact = {os.path.normcase(os.path.abspath(path)), cls._identity(path)}
-        return exact | {folded for item in exact for folded in cls._conservative_spellings(item)}
+        return exact | {
+            folded for item in exact for folded in cls._conservative_spellings(item)
+        }
         return {os.path.normcase(os.path.abspath(path)), cls._identity(path)}
 
-    def _publish(self, temporary: str, desired: str,
-                 protected: set[str], *, batch_guard: Optional[set[str]] = None) -> tuple[Optional[str], bool]:
+    def _publish(
+        self,
+        temporary: str,
+        desired: str,
+        protected: set[str],
+        *,
+        batch_guard: Optional[set[str]] = None,
+    ) -> tuple[Optional[str], bool]:
         """Atomically publish without overwriting unless explicitly requested.
 
         No-replace publication requires same-filesystem hard-link support; an
@@ -442,13 +521,17 @@ class Converter:
         if batch_guard is None:
             batch_guard = self._legacy_batch_guard
         # OpenAI-Codex_Fork_Source_Code: recheck reserved destinations before publication.
-        if batch_guard is not None and not self._identities(desired).isdisjoint(batch_guard):
+        if batch_guard is not None and not self._identities(desired).isdisjoint(
+            batch_guard
+        ):
             if self.conflict_policy == "skip":
                 return None, False
             if self.conflict_policy == "overwrite":
                 raise ValueError("refusing to publish to a protected input path")
-        protected_overwrite = (self.conflict_policy == "overwrite"
-                               and not self._identities(desired).isdisjoint(protected))
+        protected_overwrite = (
+            self.conflict_policy == "overwrite"
+            and not self._identities(desired).isdisjoint(protected)
+        )
         if self.conflict_policy == "overwrite" and not protected_overwrite:
             os.replace(temporary, desired)
             return desired, True
@@ -457,11 +540,16 @@ class Converter:
         index = 0
         while True:
             candidate = desired if index == 0 else f"{stem} ({index}){extension}"
-            if (batch_guard is not None and index == 0
-                    and not self._identities(candidate).isdisjoint(batch_guard)):
+            if (
+                batch_guard is not None
+                and index == 0
+                and not self._identities(candidate).isdisjoint(batch_guard)
+            ):
                 index += 1
                 continue
-            if index and not self._identities(candidate).isdisjoint(batch_guard if batch_guard is not None else protected):
+            if index and not self._identities(candidate).isdisjoint(
+                batch_guard if batch_guard is not None else protected
+            ):
                 index += 1
                 continue
             try:
@@ -479,8 +567,13 @@ class Converter:
                     "filesystem must support hard links and permit their creation"
                 ) from e
 
-    def _set_status(self, job: ConvertJob, status: str, error: str = "",
-                    kind: ErrorKind | None = None) -> None:
+    def _set_status(
+        self,
+        job: ConvertJob,
+        status: str,
+        error: str = "",
+        kind: ErrorKind | None = None,
+    ) -> None:
         job.status = status
         if error:
             job.error = redact_sensitive_urls(error)
@@ -491,6 +584,8 @@ class Converter:
 
     def _log(self, level: str, key: str, **fmt) -> None:
         if self.log_cb:
-            safe = {name: redact_sensitive_urls(value) if isinstance(value, str) else value
-                    for name, value in fmt.items()}
+            safe = {
+                name: redact_sensitive_urls(value) if isinstance(value, str) else value
+                for name, value in fmt.items()
+            }
             self.log_cb(level, key, **safe)

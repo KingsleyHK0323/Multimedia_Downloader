@@ -153,23 +153,39 @@ def _check_apostrophe_urls():
     assert not failures, "synthetic URL cases failed: " + ", ".join(failures)
 
 
-
-
 # OpenAI-Codex_engine_cli: raw double quotes must not expose URL private parts.
 def _check_double_quote_urls():
     cases = (
-        ("userinfo", 'https://FAKE_USER"FAKE_PART:FAKE_PASS@example.invalid/watch',
-         ("FAKE_USER", "FAKE_PART", "FAKE_PASS")),
-        ("query", 'https://example.invalid/watch?token=FAKE_HEAD"FAKE_TAIL',
-         ("FAKE_HEAD", "FAKE_TAIL")),
-        ("fragment", 'https://example.invalid/watch#FAKE_HEAD"FAKE_TAIL',
-         ("FAKE_HEAD", "FAKE_TAIL")),
-        ("quoted userinfo", 'Fetch "https://FAKE_USER"FAKE_PART:FAKE_PASS@example.invalid/watch" done.',
-         ("FAKE_USER", "FAKE_PART", "FAKE_PASS")),
-        ("quoted query", 'Fetch "https://example.invalid/watch?token=FAKE_HEAD"FAKE_TAIL" done.',
-         ("FAKE_HEAD", "FAKE_TAIL")),
-        ("header with URL", 'Authorization: Basic FAKE_AUTH https://example.invalid/watch?x=FAKE_HEAD"FAKE_TAIL',
-         ("FAKE_AUTH", "FAKE_HEAD", "FAKE_TAIL")),
+        (
+            "userinfo",
+            'https://FAKE_USER"FAKE_PART:FAKE_PASS@example.invalid/watch',
+            ("FAKE_USER", "FAKE_PART", "FAKE_PASS"),
+        ),
+        (
+            "query",
+            'https://example.invalid/watch?token=FAKE_HEAD"FAKE_TAIL',
+            ("FAKE_HEAD", "FAKE_TAIL"),
+        ),
+        (
+            "fragment",
+            'https://example.invalid/watch#FAKE_HEAD"FAKE_TAIL',
+            ("FAKE_HEAD", "FAKE_TAIL"),
+        ),
+        (
+            "quoted userinfo",
+            'Fetch "https://FAKE_USER"FAKE_PART:FAKE_PASS@example.invalid/watch" done.',
+            ("FAKE_USER", "FAKE_PART", "FAKE_PASS"),
+        ),
+        (
+            "quoted query",
+            'Fetch "https://example.invalid/watch?token=FAKE_HEAD"FAKE_TAIL" done.',
+            ("FAKE_HEAD", "FAKE_TAIL"),
+        ),
+        (
+            "header with URL",
+            'Authorization: Basic FAKE_AUTH https://example.invalid/watch?x=FAKE_HEAD"FAKE_TAIL',
+            ("FAKE_AUTH", "FAKE_HEAD", "FAKE_TAIL"),
+        ),
     )
     failures = []
     for name, text, markers in cases:
@@ -183,15 +199,22 @@ def _check_double_quote_urls():
         failures.append("ordinary quoted URL changed")
     assert not failures, "synthetic double-quote URL failures: " + ", ".join(failures)
 
+
 def main():
     examples = (
         ("Authorization: Basic FAKE_BASIC_42", "FAKE_BASIC_42"),
         ('{"Authorization":"Basic FAKE_JSON_42", "status":401}', "FAKE_JSON_42"),
-        ('{"Cookie":"session=FAKE_COOKIE_42; theme=dark", "status":401}', "FAKE_COOKIE_42"),
+        (
+            '{"Cookie":"session=FAKE_COOKIE_42; theme=dark", "status":401}',
+            "FAKE_COOKIE_42",
+        ),
         ("Proxy-Authorization: Negotiate FAKE_PROXY_42", "FAKE_PROXY_42"),
         ("Set-Cookie: session=FAKE_SET_42; Path=/", "FAKE_SET_42"),
         ("Authorization:\r\n  Basic FAKE_FOLDED_42", "FAKE_FOLDED_42"),
-        (r'{"Authorization":"Basic FAKE_ESCAPE_42\"tail","status":401}', "FAKE_ESCAPE_42"),
+        (
+            r'{"Authorization":"Basic FAKE_ESCAPE_42\"tail","status":401}',
+            "FAKE_ESCAPE_42",
+        ),
         ("Bearer FAKE_BEARER_42", "FAKE_BEARER_42"),
         ('api_key="FAKE_KEY_42"', "FAKE_KEY_42"),
         ("access_token=FAKE_ACCESS_42", "FAKE_ACCESS_42"),
@@ -206,11 +229,20 @@ def main():
         assert redact(safe) == safe
 
     assert '"status":401' in redact(examples[1][0])
-    assert redact("Conversion failed: unsupported media format") == "Conversion failed: unsupported media format"
+    assert (
+        redact("Conversion failed: unsupported media format")
+        == "Conversion failed: unsupported media format"
+    )
     source = "Downloading https://FAKE_USER:FAKE_PASSWORD@example.invalid/watch?key=FAKE_QUERY#FAKE_FRAGMENT"
-    assert redact(source) == "Downloading https://[redacted]@example.invalid/watch?[redacted]#[redacted]"
+    assert (
+        redact(source)
+        == "Downloading https://[redacted]@example.invalid/watch?[redacted]#[redacted]"
+    )
     multiple = "https://example.invalid/a and https://example.test/b?key=FAKE_QUERY."
-    assert redact(multiple) == "https://example.invalid/a and https://example.test/b?[redacted]."
+    assert (
+        redact(multiple)
+        == "https://example.invalid/a and https://example.test/b?[redacted]."
+    )
 
     # OpenAI-Codex_web_ai: verify apostrophe-bearing URLs and redaction stability.
     _check_apostrophe_urls()
@@ -223,7 +255,9 @@ def main():
     url_path = "https://example.invalid/FAKE_PATH_COMPONENT_42"
     assert redact(opaque) == opaque
     assert redact(url_path) == url_path
-    print(f"Synthetic standalone log redaction checks passed ({len(examples)} field cases).")
+    print(
+        f"Synthetic standalone log redaction checks passed ({len(examples)} field cases)."
+    )
 
 
 if __name__ == "__main__":

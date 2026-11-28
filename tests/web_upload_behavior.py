@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import uuid
+
 if os.name == "nt":
     import ctypes
     from ctypes import wintypes
@@ -17,7 +18,9 @@ from web_upload import UploadError, UploadStore  # noqa: E402
 import web_upload as upload_module  # noqa: E402
 
 
-ARTIFACTS = Path(__file__).resolve().parents[2] / "_Retained_Upload_Safety_20261114_app_ui"
+ARTIFACTS = (
+    Path(__file__).resolve().parents[2] / "_Retained_Upload_Safety_20261114_app_ui"
+)
 # OpenAI-Codex_app_ui: CI retains its own exclusively created workspace artifacts.
 if os.environ.get("GITHUB_ACTIONS") == "true" and os.name == "nt":
     workspace_value = os.environ.get("GITHUB_WORKSPACE", "")
@@ -52,7 +55,6 @@ def rejected(code, call, *args, **kwargs):
 
 def b64(value):
     return base64.b64encode(value).decode("ascii")
-
 
 
 # OpenAI-Codex_web_ai: release failures must still close the synthetic lock handle.
@@ -91,18 +93,37 @@ def check_lock_release_cleanup():
             assert fd == fake_fd
             events.append("close")
 
-        backend = SimpleNamespace(LK_NBLCK=1, LK_UNLCK=2, locking=locking,
-                                  LOCK_EX=2, LOCK_NB=4, LOCK_UN=8, flock=flock)
+        backend = SimpleNamespace(
+            LK_NBLCK=1,
+            LK_UNLCK=2,
+            locking=locking,
+            LOCK_EX=2,
+            LOCK_NB=4,
+            LOCK_UN=8,
+            flock=flock,
+        )
         caught = None
         with ExitStack() as stack:
-            stack.enter_context(patch.object(upload_module, "_directory", lambda _path: None))
-            stack.enter_context(patch.object(upload_module, "_open_regular", lambda _path, _flags: fake_fd))
-            stack.enter_context(patch.object(os, "fstat", lambda _fd: SimpleNamespace(st_size=1)))
+            stack.enter_context(
+                patch.object(upload_module, "_directory", lambda _path: None)
+            )
+            stack.enter_context(
+                patch.object(
+                    upload_module, "_open_regular", lambda _path, _flags: fake_fd
+                )
+            )
+            stack.enter_context(
+                patch.object(os, "fstat", lambda _fd: SimpleNamespace(st_size=1))
+            )
             stack.enter_context(patch.object(os, "lseek", seek))
             stack.enter_context(patch.object(os, "close", close))
             stack.enter_context(patch.object(os, "name", platform))
-            stack.enter_context(patch.object(upload_module, "msvcrt", backend, create=True))
-            stack.enter_context(patch.object(upload_module, "fcntl", backend, create=True))
+            stack.enter_context(
+                patch.object(upload_module, "msvcrt", backend, create=True)
+            )
+            stack.enter_context(
+                patch.object(upload_module, "fcntl", backend, create=True)
+            )
             try:
                 with UploadStore._locked("synthetic-slot"):
                     events.append("body")
@@ -131,10 +152,14 @@ def check_lock_release_cleanup():
     assert events == ["seek", "acquire", "body", "seek", "close"]
     assert isinstance(error, OSError)
 
+
 def main():
     check_lock_release_cleanup()
     if os.name != "nt":
-        assert UploadStore(str(DOWNLOADS), str(DIST), ENV).capabilities() == {"enabled": False, "reason": "unsupported_platform"}
+        assert UploadStore(str(DOWNLOADS), str(DIST), ENV).capabilities() == {
+            "enabled": False,
+            "reason": "unsupported_platform",
+        }
         assert not RUN.exists(), "unsupported platforms must not create test artifacts"
         print("POSIX upload remains disabled; no synthetic artifacts created.")
         return
@@ -143,11 +168,15 @@ def main():
     disabled = UploadStore(str(DOWNLOADS), str(DIST), {})
     assert disabled.capabilities() == {"enabled": False, "reason": "not_configured"}
     assert not RUN.exists(), "capabilities must not touch disk"
-    original_os = {name: getattr(os, name) for name in ("open", "stat", "lstat", "mkdir")}
+    original_os = {
+        name: getattr(os, name) for name in ("open", "stat", "lstat", "mkdir")
+    }
     original_realpath = os.path.realpath
     try:
+
         def deny_fs(*_args, **_kwargs):
             raise AssertionError("configuration must not inspect the filesystem")
+
         for name in original_os:
             setattr(os, name, deny_fs)
         os.path.realpath = deny_fs
@@ -157,16 +186,50 @@ def main():
         for name, value in original_os.items():
             setattr(os, name, value)
         os.path.realpath = original_realpath
-    assert UploadStore(str(DOWNLOADS), str(DIST), ENV, restricted_paths=False).capabilities()["reason"] == "unrestricted_paths"
-    assert UploadStore(str(DOWNLOADS), str(DIST), {**ENV, "MMDL_UPLOAD_MAX_TOTAL_BYTES": "1"}).capabilities()["reason"] == "insufficient_total"
-    assert UploadStore(str(DOWNLOADS), str(DIST), {**ENV, "MMDL_UPLOAD_MAX_TOTAL_BYTES": str(1 << 53)}).capabilities()["reason"] == "invalid_configuration"
-    assert UploadStore(str(DOWNLOADS), str(DIST), {**ENV, "MMDL_UPLOAD_MAX_FILE_BYTES": str(1 << 53)}).capabilities()["reason"] == "invalid_configuration"
-    assert UploadStore(str(DOWNLOADS), str(DIST), {"MMDL_UPLOAD_MAX_FILE_BYTES": "1", "MMDL_UPLOAD_MAX_TOTAL_BYTES": str((1 << 53) - 1)}).capabilities()["enabled"]
+    assert (
+        UploadStore(
+            str(DOWNLOADS), str(DIST), ENV, restricted_paths=False
+        ).capabilities()["reason"]
+        == "unrestricted_paths"
+    )
+    assert (
+        UploadStore(
+            str(DOWNLOADS), str(DIST), {**ENV, "MMDL_UPLOAD_MAX_TOTAL_BYTES": "1"}
+        ).capabilities()["reason"]
+        == "insufficient_total"
+    )
+    assert (
+        UploadStore(
+            str(DOWNLOADS),
+            str(DIST),
+            {**ENV, "MMDL_UPLOAD_MAX_TOTAL_BYTES": str(1 << 53)},
+        ).capabilities()["reason"]
+        == "invalid_configuration"
+    )
+    assert (
+        UploadStore(
+            str(DOWNLOADS),
+            str(DIST),
+            {**ENV, "MMDL_UPLOAD_MAX_FILE_BYTES": str(1 << 53)},
+        ).capabilities()["reason"]
+        == "invalid_configuration"
+    )
+    assert UploadStore(
+        str(DOWNLOADS),
+        str(DIST),
+        {
+            "MMDL_UPLOAD_MAX_FILE_BYTES": "1",
+            "MMDL_UPLOAD_MAX_TOTAL_BYTES": str((1 << 53) - 1),
+        },
+    ).capabilities()["enabled"]
     assert not RUN.exists()
     original_name = os.name
     try:
         os.name = "posix"
-        assert UploadStore(str(DOWNLOADS), str(DIST), ENV).capabilities()["reason"] == "unsupported_platform"
+        assert (
+            UploadStore(str(DOWNLOADS), str(DIST), ENV).capabilities()["reason"]
+            == "unsupported_platform"
+        )
     finally:
         os.name = original_name
     os.mkdir(RUN)
@@ -200,8 +263,12 @@ def main():
     assert store.write_chunk(upload_id, 0, b64(first))["next_offset"] == CHUNK
     rejected("conflict", store.write_chunk, upload_id, 0, b64(b"x" * CHUNK))
     rejected("conflict", store.write_chunk, upload_id, CHUNK + 1, b64(b"last!"))
-    rejected("invalid_request", store.write_chunk, upload_id, CHUNK, "not-valid-base64!")
-    assert store.write_chunk(upload_id, CHUNK, b64(b"last!"))["next_offset"] == CHUNK + 5
+    rejected(
+        "invalid_request", store.write_chunk, upload_id, CHUNK, "not-valid-base64!"
+    )
+    assert (
+        store.write_chunk(upload_id, CHUNK, b64(b"last!"))["next_offset"] == CHUNK + 5
+    )
     rejected("unsafe_path", store.authorize_path, str(payload))
     finished = store.finish(upload_id)
     assert finished == {"path": f".mmdl-uploads-v1/slot-{upload_id[:2]}/payload.mkv"}
@@ -213,7 +280,12 @@ def main():
         alias = str(stage) + suffix
         if os.path.samefile(alias, stage):
             rejected("unsafe_path", store.authorize_path, alias, write=True)
-            rejected("unsafe_path", store.authorize_path, os.path.join(alias, "slot-00", "future"), write=True)
+            rejected(
+                "unsafe_path",
+                store.authorize_path,
+                os.path.join(alias, "slot-00", "future"),
+                write=True,
+            )
     rejected("unsafe_path", store.authorize_path, str(stage).upper(), write=True)
     rejected("unsafe_path", store.authorize_path, "\\\\?\\" + str(stage), write=True)
     rejected("unsafe_path", store.authorize_path, str(stage) + ":synthetic", write=True)
@@ -222,10 +294,18 @@ def main():
     short_name.restype = wintypes.DWORD
     short_buffer = ctypes.create_unicode_buffer(32768)
     short_length = short_name(str(stage), short_buffer, len(short_buffer))
-    distinct_short = bool(short_length and short_length < len(short_buffer) and
-                          os.path.normcase(short_buffer.value) != os.path.normcase(str(stage)))
+    distinct_short = bool(
+        short_length
+        and short_length < len(short_buffer)
+        and os.path.normcase(short_buffer.value) != os.path.normcase(str(stage))
+    )
     if distinct_short and os.path.samefile(short_buffer.value, stage):
-        rejected("unsafe_path", store.authorize_path, os.path.join(short_buffer.value, "slot-00", "future"), write=True)
+        rejected(
+            "unsafe_path",
+            store.authorize_path,
+            os.path.join(short_buffer.value, "slot-00", "future"),
+            write=True,
+        )
     print("Distinct Windows 8.3 stage alias tested:", distinct_short)
 
     # Simulate a short name for a nested or older staging root; no real short name is assumed.
@@ -235,24 +315,39 @@ def main():
     os.mkdir(fake_short)
     saved_long = upload_module._windows_long_path
     try:
+
         def fake_long(value):
-            if os.path.normcase(os.path.normpath(value)) == os.path.normcase(os.path.normpath(str(fake_short))):
+            if os.path.normcase(os.path.normpath(value)) == os.path.normcase(
+                os.path.normpath(str(fake_short))
+            ):
                 return str(stage)
             return saved_long(value)
+
         upload_module._windows_long_path = fake_long
-        rejected("unsafe_path", store.authorize_path, str(fake_short / "slot-00" / "future"), write=True)
+        rejected(
+            "unsafe_path",
+            store.authorize_path,
+            str(fake_short / "slot-00" / "future"),
+            write=True,
+        )
     finally:
         upload_module._windows_long_path = saved_long
 
     # Generic UNC/device inputs retain existing behavior without core network probing.
     saved_realpath, saved_samefile = os.path.realpath, os.path.samefile
     try:
+
         def no_remote_probe(*_args, **_kwargs):
             raise AssertionError("the core must not probe a generic UNC path")
+
         os.path.realpath = no_remote_probe
         os.path.samefile = no_remote_probe
         store.authorize_path(r"\\synthetic.invalid\share\ordinary")
-        rejected("unsafe_path", store.authorize_path, r"\\synthetic.invalid\share\.mmdl-uploads-v1\payload")
+        rejected(
+            "unsafe_path",
+            store.authorize_path,
+            r"\\synthetic.invalid\share\.mmdl-uploads-v1\payload",
+        )
     finally:
         os.path.realpath, os.path.samefile = saved_realpath, saved_samefile
     rejected("unsafe_path", store.authorize_path, str(payload), write=True)
@@ -275,7 +370,9 @@ def main():
 
     other_root = RUN / "old-root" / ".mmdl-uploads-v1" / "slot-00" / "payload.mp4"
     rejected("unsafe_path", store.authorize_path, str(other_root))
-    changed = UploadStore(str(DOWNLOADS), str(DIST), {**ENV, "MMDL_UPLOAD_MAX_FILE_BYTES": str(CHUNK)})
+    changed = UploadStore(
+        str(DOWNLOADS), str(DIST), {**ENV, "MMDL_UPLOAD_MAX_FILE_BYTES": str(CHUNK)}
+    )
     rejected("invalid_config", changed.create, "later.mp4", 1)
 
     # An uncreated root is not touched by a stray chunk; an explicit create may initialize it.
@@ -311,14 +408,20 @@ def main():
     fixed_alias = str(RUN / "synthetic-fixed-alias")
     saved_realpath = os.path.realpath
     saved_local_root = upload_module._windows_local_root
-    saved_mutations = {name: getattr(os, name) for name in ("mkdir", "makedirs", "open")}
+    saved_mutations = {
+        name: getattr(os, name) for name in ("mkdir", "makedirs", "open")
+    }
     try:
+
         def forbidden_write(*_args, **_kwargs):
             raise AssertionError("remote upload root must be rejected before writing")
+
         for name in saved_mutations:
             setattr(os, name, forbidden_write)
         for remote in (r"Z:\synthetic-remote", r"\\synthetic.invalid\share\synthetic"):
-            os.path.realpath = lambda value, *a, **kw: remote if value == fixed_alias else saved_realpath(value, *a, **kw)
+            os.path.realpath = lambda value, *a, **kw: (
+                remote if value == fixed_alias else saved_realpath(value, *a, **kw)
+            )
             upload_module._windows_local_root = lambda value: value != remote
             remote_store = UploadStore(fixed_alias, str(DIST), ENV)
             rejected("unsafe_path", remote_store.create, "synthetic.mp4", 1)
@@ -332,24 +435,43 @@ def main():
     fake_junction = str(RUN / "synthetic-junction")
     fake_child = os.path.join(fake_junction, "missing", "downloads")
     saved_lstat, saved_realpath = os.lstat, os.path.realpath
-    saved_mutations = {name: getattr(os, name) for name in ("mkdir", "makedirs", "open")}
+    saved_mutations = {
+        name: getattr(os, name) for name in ("mkdir", "makedirs", "open")
+    }
     try:
+
         class FakeReparse:
             st_mode = 0o040700
             st_file_attributes = 0x400
+
         def fake_lstat(value, *args, **kwargs):
-            if os.path.normcase(os.path.normpath(value)) == os.path.normcase(os.path.normpath(fake_junction)):
+            if os.path.normcase(os.path.normpath(value)) == os.path.normcase(
+                os.path.normpath(fake_junction)
+            ):
                 return FakeReparse()
-            if os.path.normcase(value).startswith(os.path.normcase(fake_junction + os.sep)):
-                raise AssertionError("must not traverse beyond an untrusted reparse ancestor")
+            if os.path.normcase(value).startswith(
+                os.path.normcase(fake_junction + os.sep)
+            ):
+                raise AssertionError(
+                    "must not traverse beyond an untrusted reparse ancestor"
+                )
             return saved_lstat(value, *args, **kwargs)
+
         def forbidden_reparse_io(*_args, **_kwargs):
-            raise AssertionError("reparse root must be rejected before resolution or writing")
+            raise AssertionError(
+                "reparse root must be rejected before resolution or writing"
+            )
+
         os.lstat = fake_lstat
         os.path.realpath = forbidden_reparse_io
         for name in saved_mutations:
             setattr(os, name, forbidden_reparse_io)
-        rejected("unsafe_path", UploadStore(fake_child, str(DIST), ENV).create, "synthetic.mp4", 1)
+        rejected(
+            "unsafe_path",
+            UploadStore(fake_child, str(DIST), ENV).create,
+            "synthetic.mp4",
+            1,
+        )
     finally:
         os.lstat, os.path.realpath = saved_lstat, saved_realpath
         for name, value in saved_mutations.items():
@@ -357,25 +479,43 @@ def main():
 
     # A mapped or unknown drive is classified before realpath or filesystem probes.
     saved_local_root = upload_module._windows_local_root
-    saved_realpath, saved_samefile, saved_lstat = os.path.realpath, os.path.samefile, os.lstat
+    saved_realpath, saved_samefile, saved_lstat = (
+        os.path.realpath,
+        os.path.samefile,
+        os.lstat,
+    )
     try:
+
         def forbidden_mapped_probe(*_args, **_kwargs):
-            raise AssertionError("mapped drives must not be resolved or probed by the upload guard")
-        upload_module._windows_local_root = lambda value: not str(value).lower().startswith("z:")
+            raise AssertionError(
+                "mapped drives must not be resolved or probed by the upload guard"
+            )
+
+        upload_module._windows_local_root = (
+            lambda value: not str(value).lower().startswith("z:")
+        )
         os.path.realpath = forbidden_mapped_probe
         os.path.samefile = forbidden_mapped_probe
         os.lstat = forbidden_mapped_probe
         store.authorize_path(r"Z:\synthetic\ordinary")
-        rejected("unsafe_path", store.authorize_path, r"Z:\synthetic\.mmdl-uploads-v1\payload")
+        rejected(
+            "unsafe_path",
+            store.authorize_path,
+            r"Z:\synthetic\.mmdl-uploads-v1\payload",
+        )
     finally:
         upload_module._windows_local_root = saved_local_root
-        os.path.realpath, os.path.samefile, os.lstat = saved_realpath, saved_samefile, saved_lstat
+        os.path.realpath, os.path.samefile, os.lstat = (
+            saved_realpath,
+            saved_samefile,
+            saved_lstat,
+        )
 
     # Competing processes with different bytes cannot both commit one offset.
     race_root = RUN / "race-downloads"
     racer = UploadStore(str(race_root), str(DIST), ENV)
     race = racer.create("race.mp4", CHUNK)
-    child = r'''
+    child = r"""
 import base64, json, sys
 sys.path.insert(0, sys.argv[1])
 from web_upload import UploadError, UploadStore
@@ -388,13 +528,29 @@ try:
     print(json.dumps({"result": "committed", "label": label, "offset": result["next_offset"]}))
 except UploadError as exc:
     print(json.dumps({"result": exc.code, "label": label}))
-'''
-    procs = [subprocess.Popen(  # noqa: S603
-        [sys.executable, "-B", "-c", child, str(Path(__file__).resolve().parents[1]),
-         str(race_root), str(DIST), race["upload_id"], label,
-         ENV["MMDL_UPLOAD_MAX_FILE_BYTES"], ENV["MMDL_UPLOAD_MAX_TOTAL_BYTES"]],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-    ) for label in ("A", "B")]
+"""
+    procs = [
+        subprocess.Popen(  # noqa: S603
+            [
+                sys.executable,
+                "-B",
+                "-c",
+                child,
+                str(Path(__file__).resolve().parents[1]),
+                str(race_root),
+                str(DIST),
+                race["upload_id"],
+                label,
+                ENV["MMDL_UPLOAD_MAX_FILE_BYTES"],
+                ENV["MMDL_UPLOAD_MAX_TOTAL_BYTES"],
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        for label in ("A", "B")
+    ]
     for proc in procs:
         proc.stdin.write("x")
         proc.stdin.flush()
@@ -404,15 +560,21 @@ except UploadError as exc:
         assert proc.returncode == 0 and not stderr, (proc.returncode, stderr)
         outcomes.append(json.loads(stdout))
     winners = [outcome for outcome in outcomes if outcome["result"] == "committed"]
-    assert len(winners) == 1 and sum(outcome["result"] == "conflict" for outcome in outcomes) == 1, outcomes
+    assert (
+        len(winners) == 1
+        and sum(outcome["result"] == "conflict" for outcome in outcomes) == 1
+    ), outcomes
     race_path = race_root / racer.finish(race["upload_id"])["path"]
     with open(race_path, "rb") as stream:
-        assert hashlib.sha256(stream.read()).digest() == hashlib.sha256(winners[0]["label"].encode() * CHUNK).digest()
+        assert (
+            hashlib.sha256(stream.read()).digest()
+            == hashlib.sha256(winners[0]["label"].encode() * CHUNK).digest()
+        )
 
     # A process crash after recording an intent and writing data cannot publish or resume it.
     crash = racer.create("crash.mp4", 1)
     crash_slot = race_root / ".mmdl-uploads-v1" / ("slot-" + crash["upload_id"][:2])
-    crash_child = r'''
+    crash_child = r"""
 import hashlib, os, struct, sys
 slot = sys.argv[1]
 with open(os.path.join(slot, "journal.bin"), "ab") as stream:
@@ -424,9 +586,13 @@ with open(os.path.join(slot, "payload.mp4"), "ab") as stream:
     stream.flush()
     os.fsync(stream.fileno())
 os._exit(23)
-'''
-    crashed = subprocess.run([sys.executable, "-B", "-c", crash_child, str(crash_slot)],  # noqa: S603
-                             capture_output=True, text=True, timeout=30)
+"""
+    crashed = subprocess.run(
+        [sys.executable, "-B", "-c", crash_child, str(crash_slot)],  # noqa: S603
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
     assert crashed.returncode == 23 and not crashed.stderr
     restarted = UploadStore(str(race_root), str(DIST), ENV)
     rejected("interrupted", restarted.write_chunk, crash["upload_id"], 0, b64(b"x"))
@@ -436,7 +602,7 @@ os._exit(23)
     # An in-flight writer's lock prevents simultaneous seal or payload access.
     locked = racer.create("locked.mp4", 0)
     locked_slot = race_root / ".mmdl-uploads-v1" / ("slot-" + locked["upload_id"][:2])
-    lock_child = r'''
+    lock_child = r"""
 import sys
 sys.path.insert(0, sys.argv[1])
 from web_upload import UploadStore
@@ -447,12 +613,24 @@ slot, _ = store._slot(upload_id)
 with store._locked(slot):
     print("locked", flush=True)
     sys.stdin.read(1)
-'''
+"""
     holder = subprocess.Popen(  # noqa: S603
-        [sys.executable, "-B", "-c", lock_child, str(Path(__file__).resolve().parents[1]),
-         str(race_root), str(DIST), locked["upload_id"],
-         ENV["MMDL_UPLOAD_MAX_FILE_BYTES"], ENV["MMDL_UPLOAD_MAX_TOTAL_BYTES"]],
-        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        [
+            sys.executable,
+            "-B",
+            "-c",
+            lock_child,
+            str(Path(__file__).resolve().parents[1]),
+            str(race_root),
+            str(DIST),
+            locked["upload_id"],
+            ENV["MMDL_UPLOAD_MAX_FILE_BYTES"],
+            ENV["MMDL_UPLOAD_MAX_TOTAL_BYTES"],
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
     assert holder.stdout.readline().strip() == "locked"
     rejected("conflict", racer.finish, locked["upload_id"])
@@ -476,12 +654,16 @@ with store._locked(slot):
     alias = str(DOWNLOADS / "synthetic-alias")
     original_realpath = os.path.realpath
     try:
-        os.path.realpath = lambda value, *a, **kw: str(payload) if value == alias else original_realpath(value, *a, **kw)
+        os.path.realpath = lambda value, *a, **kw: (
+            str(payload) if value == alias else original_realpath(value, *a, **kw)
+        )
         store.authorize_path(alias)
         rejected("unsafe_path", store.authorize_path, alias, write=True)
     finally:
         os.path.realpath = original_realpath
-    print("Upload storage checks passed; all synthetic artifacts retained at " + str(RUN))
+    print(
+        "Upload storage checks passed; all synthetic artifacts retained at " + str(RUN)
+    )
 
 
 if __name__ == "__main__":

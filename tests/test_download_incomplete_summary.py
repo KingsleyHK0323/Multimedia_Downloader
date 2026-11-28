@@ -36,17 +36,18 @@ class IncompleteDownloadSummaryTests(unittest.TestCase):
                 self.assertEqual(calls, ["synthetic-a"])
                 self.assertEqual(len(results), 1)
                 self.assertIs(results[0][1], first_succeeds)
-                self.assertIn(("warn", "log_stopped_dl"), [
-                    (level, key) for level, key, _fmt in events
-                ])
-                self.assertFalse([
-                    key for _level, key, _fmt in events
-                    if key.startswith("log_all_")
-                ])
+                self.assertIn(
+                    ("warn", "log_stopped_dl"),
+                    [(level, key) for level, key, _fmt in events],
+                )
+                self.assertFalse(
+                    [key for _level, key, _fmt in events if key.startswith("log_all_")]
+                )
                 if not first_succeeds:
-                    self.assertIn(("err", "log_item_error"), [
-                        (level, key) for level, key, _fmt in events
-                    ])
+                    self.assertIn(
+                        ("err", "log_item_error"),
+                        [(level, key) for level, key, _fmt in events],
+                    )
 
     def test_complete_batches_keep_existing_summaries(self):
         for outcomes, expected in (
@@ -59,7 +60,8 @@ class IncompleteDownloadSummaryTests(unittest.TestCase):
                 self.assertEqual(len(results), 2)
                 self.assertEqual(len(calls), 2)
                 summaries = [
-                    (level, key) for level, key, _fmt in events
+                    (level, key)
+                    for level, key, _fmt in events
                     if key.startswith("log_all_")
                 ]
                 self.assertEqual(summaries, [expected])
@@ -74,7 +76,6 @@ class IncompleteDownloadSummaryTests(unittest.TestCase):
             [("synthetic-a", True, ""), ("synthetic-b", True, "")], 1
         )
         self.assertEqual(events, [])
-
 
     # OpenAI-Codex_engine_cli: include failed outcomes in the overfull case.
     def test_more_results_with_failure_have_no_completion_summary(self):

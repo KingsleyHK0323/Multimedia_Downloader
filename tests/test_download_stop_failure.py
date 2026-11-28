@@ -11,7 +11,11 @@ from engine.errors import OperationCancelled
 
 class DownloadStopFailureTests(unittest.TestCase):
     def test_inflight_failure_is_recorded_after_stop_without_retry(self):
-        for error in (RuntimeError("HTTP Error 503: synthetic"), ValueError("synthetic"), RuntimeError("")):
+        for error in (
+            RuntimeError("HTTP Error 503: synthetic"),
+            ValueError("synthetic"),
+            RuntimeError(""),
+        ):
             with self.subTest(error=repr(error)):
                 events = []
                 downloader = Downloader(
@@ -23,14 +27,23 @@ class DownloadStopFailureTests(unittest.TestCase):
                     downloader.stop()
                     raise error
 
-                with patch.object(downloader, "download_one", side_effect=fail_after_stop) as attempt:
+                with patch.object(
+                    downloader, "download_one", side_effect=fail_after_stop
+                ) as attempt:
                     results = downloader.download_batch(["synthetic-a", "synthetic-b"])
 
                 self.assertEqual(attempt.call_count, 1)
                 self.assertEqual(results, [("synthetic-a", False, str(error))])
-                self.assertEqual(downloader.last_summary, {
-                    "total": 2, "succeeded": 0, "failed": 1, "skipped": 1, "cancelled": True,
-                })
+                self.assertEqual(
+                    downloader.last_summary,
+                    {
+                        "total": 2,
+                        "succeeded": 0,
+                        "failed": 1,
+                        "skipped": 1,
+                        "cancelled": True,
+                    },
+                )
                 keys = [key for _level, key, _fmt in events]
                 self.assertIn("log_item_error", keys)
                 self.assertIn("log_stopped_dl", keys)
@@ -42,7 +55,9 @@ class DownloadStopFailureTests(unittest.TestCase):
         cancellation = OperationCancelled("HTTP Error 503: synthetic cancellation")
         fake_time = SimpleNamespace(sleep=lambda _delay: self.fail("unexpected retry"))
         with (
-            patch.object(downloader, "download_one", side_effect=cancellation) as attempt,
+            patch.object(
+                downloader, "download_one", side_effect=cancellation
+            ) as attempt,
             patch.object(downloader_module, "time", fake_time),
         ):
             with self.assertRaises(OperationCancelled) as caught:
@@ -58,30 +73,55 @@ class DownloadStopFailureTests(unittest.TestCase):
             downloader.stop()
             raise cancellation
 
-        with patch.object(downloader, "download_one", side_effect=cancel_after_stop) as attempt:
-            self.assertEqual(downloader.download_batch(["synthetic-a", "synthetic-b"]), [])
+        with patch.object(
+            downloader, "download_one", side_effect=cancel_after_stop
+        ) as attempt:
+            self.assertEqual(
+                downloader.download_batch(["synthetic-a", "synthetic-b"]), []
+            )
         self.assertEqual(attempt.call_count, 1)
-        self.assertEqual(downloader.last_summary, {
-            "total": 2, "succeeded": 0, "failed": 0, "skipped": 2, "cancelled": True,
-        })
+        self.assertEqual(
+            downloader.last_summary,
+            {
+                "total": 2,
+                "succeeded": 0,
+                "failed": 0,
+                "skipped": 2,
+                "cancelled": True,
+            },
+        )
 
     def test_stopped_inflight_success_is_still_recorded(self):
         downloader = Downloader(DownloadOptions(save_path="synthetic"))
-        with patch.object(downloader, "download_one", side_effect=lambda _url: downloader.stop()) as attempt:
+        with patch.object(
+            downloader, "download_one", side_effect=lambda _url: downloader.stop()
+        ) as attempt:
             results = downloader.download_batch(["synthetic-a", "synthetic-b"])
         self.assertEqual(attempt.call_count, 1)
         self.assertEqual(results, [("synthetic-a", True, "")])
-        self.assertEqual(downloader.last_summary, {
-            "total": 2, "succeeded": 1, "failed": 0, "skipped": 1, "cancelled": True,
-        })
+        self.assertEqual(
+            downloader.last_summary,
+            {
+                "total": 2,
+                "succeeded": 1,
+                "failed": 0,
+                "skipped": 1,
+                "cancelled": True,
+            },
+        )
 
     def test_transient_failure_still_retries_without_stop(self):
         downloader = Downloader(DownloadOptions(save_path="synthetic"))
         delays = []
         with (
-            patch.object(downloader, "download_one",
-                         side_effect=[RuntimeError("HTTP Error 503: synthetic"), None]) as attempt,
-            patch.object(downloader_module, "time", SimpleNamespace(sleep=delays.append)),
+            patch.object(
+                downloader,
+                "download_one",
+                side_effect=[RuntimeError("HTTP Error 503: synthetic"), None],
+            ) as attempt,
+            patch.object(
+                downloader_module, "time", SimpleNamespace(sleep=delays.append)
+            ),
         ):
             downloader.download_one_with_retry("synthetic")
         self.assertEqual(attempt.call_count, 2)
@@ -97,17 +137,25 @@ class DownloadStopFailureTests(unittest.TestCase):
             queue.stop()
             raise error
 
-        with patch.object(Downloader, "download_one", autospec=True, side_effect=fail_after_stop) as attempt:
+        with patch.object(
+            Downloader, "download_one", autospec=True, side_effect=fail_after_stop
+        ) as attempt:
             result = queue.run(tasks)
 
         self.assertIs(result, tasks)
         self.assertEqual(attempt.call_count, 1)
         self.assertEqual([task.status for task in tasks], ["error", "skipped"])
         self.assertEqual(tasks[0].error, str(error))
-        self.assertEqual(queue.last_summary, {
-            "total": 2, "succeeded": 0, "failed": 1, "skipped": 1, "cancelled": True,
-        })
-
+        self.assertEqual(
+            queue.last_summary,
+            {
+                "total": 2,
+                "succeeded": 0,
+                "failed": 1,
+                "skipped": 1,
+                "cancelled": True,
+            },
+        )
 
     # OpenAI-Codex_app_ui: preserve a transient failure when stop arrives during retry.
     def test_stop_during_retry_sleep_records_the_previous_failure(self):
@@ -121,16 +169,25 @@ class DownloadStopFailureTests(unittest.TestCase):
 
         with (
             patch.object(downloader, "download_one", side_effect=error) as attempt,
-            patch.object(downloader_module, "time", SimpleNamespace(sleep=stop_during_sleep)),
+            patch.object(
+                downloader_module, "time", SimpleNamespace(sleep=stop_during_sleep)
+            ),
         ):
             results = downloader.download_batch(["synthetic-a", "synthetic-b"])
 
         self.assertEqual(attempt.call_count, 1)
         self.assertEqual(delays, [downloader_module._RETRY_DELAY_S])
         self.assertEqual(results, [("synthetic-a", False, str(error))])
-        self.assertEqual(downloader.last_summary, {
-            "total": 2, "succeeded": 0, "failed": 1, "skipped": 1, "cancelled": True,
-        })
+        self.assertEqual(
+            downloader.last_summary,
+            {
+                "total": 2,
+                "succeeded": 0,
+                "failed": 1,
+                "skipped": 1,
+                "cancelled": True,
+            },
+        )
 
     def test_stop_from_retry_log_does_not_enter_sleep(self):
         events = []
@@ -152,11 +209,17 @@ class DownloadStopFailureTests(unittest.TestCase):
 
         self.assertEqual(attempt.call_count, 1)
         self.assertEqual(results, [("synthetic-a", False, str(error))])
-        self.assertEqual(downloader.last_summary, {
-            "total": 2, "succeeded": 0, "failed": 1, "skipped": 1, "cancelled": True,
-        })
+        self.assertEqual(
+            downloader.last_summary,
+            {
+                "total": 2,
+                "succeeded": 0,
+                "failed": 1,
+                "skipped": 1,
+                "cancelled": True,
+            },
+        )
         self.assertIn("log_item_error", [key for _level, key, _fmt in events])
-
 
     # OpenAI-Codex_app_ui: a stop between adjacent checks must not hide the error.
     def test_stop_arriving_between_exception_checks_preserves_failure(self):
@@ -184,35 +247,55 @@ class DownloadStopFailureTests(unittest.TestCase):
         self.assertEqual(attempt.call_count, 1)
         self.assertEqual(downloader.stop_reads, 3)
 
-
     # OpenAI-Codex_engine_cli: explicit cancellation ends either batch entry point.
     def test_explicit_cancellation_without_stop_cancels_download_batch(self):
         downloader = Downloader(DownloadOptions(save_path="synthetic"))
         cancellation = OperationCancelled("synthetic cancellation")
         events = []
         downloader.log_cb = lambda level, key, **fmt: events.append((level, key, fmt))
-        with patch.object(downloader, "download_one", side_effect=cancellation) as attempt:
+        with patch.object(
+            downloader, "download_one", side_effect=cancellation
+        ) as attempt:
             results = downloader.download_batch(["synthetic-a", "synthetic-b"])
         self.assertEqual(results, [])
         self.assertEqual(attempt.call_count, 1)
-        self.assertEqual(downloader.last_summary, {
-            "total": 2, "succeeded": 0, "failed": 0, "skipped": 2, "cancelled": True,
-        })
+        self.assertEqual(
+            downloader.last_summary,
+            {
+                "total": 2,
+                "succeeded": 0,
+                "failed": 0,
+                "skipped": 2,
+                "cancelled": True,
+            },
+        )
         self.assertIn("log_stopped_dl", [key for _level, key, _fmt in events])
 
     def test_explicit_cancellation_without_stop_cancels_queue(self):
         queue = TaskQueue()
         options = DownloadOptions(save_path="synthetic")
-        tasks = [download_task("synthetic-a", options), download_task("synthetic-b", options)]
+        tasks = [
+            download_task("synthetic-a", options),
+            download_task("synthetic-b", options),
+        ]
         cancellation = OperationCancelled("synthetic cancellation")
-        with patch.object(Downloader, "download_one", autospec=True, side_effect=cancellation) as attempt:
+        with patch.object(
+            Downloader, "download_one", autospec=True, side_effect=cancellation
+        ) as attempt:
             result = queue.run(tasks)
         self.assertIs(result, tasks)
         self.assertEqual(attempt.call_count, 1)
         self.assertEqual([task.status for task in tasks], ["skipped", "skipped"])
-        self.assertEqual(queue.last_summary, {
-            "total": 2, "succeeded": 0, "failed": 0, "skipped": 2, "cancelled": True,
-        })
+        self.assertEqual(
+            queue.last_summary,
+            {
+                "total": 2,
+                "succeeded": 0,
+                "failed": 0,
+                "skipped": 2,
+                "cancelled": True,
+            },
+        )
 
     # OpenAI-Codex_engine_cli: stop during classification is not repeated failure.
     def test_stop_during_classification_does_not_report_repeated_403(self):
@@ -237,9 +320,16 @@ class DownloadStopFailureTests(unittest.TestCase):
             results = downloader.download_batch(["synthetic-a", "synthetic-b"])
         self.assertEqual(attempt.call_count, 1)
         self.assertEqual(results, [("synthetic-a", False, str(error))])
-        self.assertEqual(downloader.last_summary, {
-            "total": 2, "succeeded": 0, "failed": 1, "skipped": 1, "cancelled": True,
-        })
+        self.assertEqual(
+            downloader.last_summary,
+            {
+                "total": 2,
+                "succeeded": 0,
+                "failed": 1,
+                "skipped": 1,
+                "cancelled": True,
+            },
+        )
         self.assertNotIn("log_hint_outdated", [key for _level, key, _fmt in events])
 
     def test_exhausted_403_keeps_hint_when_stop_arrives_at_last_classification(self):
@@ -260,16 +350,28 @@ class DownloadStopFailureTests(unittest.TestCase):
 
         with (
             patch.object(downloader, "download_one", side_effect=error) as attempt,
-            patch.object(downloader_module, "classify", side_effect=classify_until_last),
-            patch.object(downloader_module, "time", SimpleNamespace(sleep=lambda _delay: None)),
+            patch.object(
+                downloader_module, "classify", side_effect=classify_until_last
+            ),
+            patch.object(
+                downloader_module, "time", SimpleNamespace(sleep=lambda _delay: None)
+            ),
         ):
             results = downloader.download_batch(["synthetic-a"])
         self.assertEqual(attempt.call_count, downloader_module._MAX_RETRIES + 1)
         self.assertEqual(results, [("synthetic-a", False, str(error))])
-        self.assertEqual(downloader.last_summary, {
-            "total": 1, "succeeded": 0, "failed": 1, "skipped": 0, "cancelled": True,
-        })
+        self.assertEqual(
+            downloader.last_summary,
+            {
+                "total": 1,
+                "succeeded": 0,
+                "failed": 1,
+                "skipped": 0,
+                "cancelled": True,
+            },
+        )
         self.assertIn("log_hint_outdated", [key for _level, key, _fmt in events])
+
 
 if __name__ == "__main__":
     unittest.main()

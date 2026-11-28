@@ -47,16 +47,36 @@ class ConfirmDialog:
 def load_convert_tab():
     source = Path(__file__).resolve().parents[1] / "tui" / "convert_tab.py"
     tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
-    tab = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ConvertTab")
-    names = {"__init__", "on_button_pressed", "_invalidate_preview", "_start", "_begin", "_finish"}
-    methods = [node for node in tab.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    tab = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ConvertTab"
+    )
+    names = {
+        "__init__",
+        "on_button_pressed",
+        "_invalidate_preview",
+        "_start",
+        "_begin",
+        "_finish",
+    }
+    methods = [
+        node
+        for node in tab.body
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    ]
     assert {node.name for node in methods} == names
     tab.body = methods
     tab.bases = [ast.Name(id="FakeBase", ctx=ast.Load())]
     tab.keywords = []
     tab.decorator_list = []
     module = ast.Module(
-        body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), tab],
+        body=[
+            ast.ImportFrom(
+                module="__future__", names=[ast.alias(name="annotations")], level=0
+            ),
+            tab,
+        ],
         type_ignores=[],
     )
     ast.fix_missing_locations(module)
@@ -69,7 +89,9 @@ def load_convert_tab():
         "ConfirmDialog": ConfirmDialog,
         "threading": threading,
     }
-    exec(compile(module, str(source), "exec"), namespace)  # noqa: S102 - Extract local methods without Textual.
+    exec(
+        compile(module, str(source), "exec"), namespace
+    )  # noqa: S102 - Extract local methods without Textual.
     return namespace["ConvertTab"]
 
 
@@ -93,7 +115,10 @@ def make_tab(policy="rename"):
         "#dst-fmt": Select("mp4"),
         "#conflict-policy": Select(policy),
         "#preview-results": Static(),
-        **{f"#{name}": Button(name) for name in ("start", "stop", "add-file", "remove-file", "preview")},
+        **{
+            f"#{name}": Button(name)
+            for name in ("start", "stop", "add-file", "remove-file", "preview")
+        },
     }
     tab.widgets = widgets
     tab.query_one = lambda selector, *_: widgets[selector]
@@ -109,7 +134,9 @@ def test_normal_modes_and_finish():
     for policy in ("rename", "skip"):
         tab = make_tab(policy)
         press_start(tab)
-        assert tab.runs == [(["synthetic-a.mkv"], "synthetic-output", "mp4", "ffmpeg", policy)]
+        assert tab.runs == [
+            (["synthetic-a.mkv"], "synthetic-output", "mp4", "ffmpeg", policy)
+        ]
         assert tab._conversion_running and tab.widgets["#start"].disabled
         tab._finish()
         assert not tab._conversion_running and not tab.widgets["#start"].disabled
@@ -139,7 +166,9 @@ def test_overwrite_requires_confirmation():
     press_start(tab)
     assert len(tab.dialogs) == 1 and not tab.runs
     tab.dialogs[0][1](True)
-    assert tab.runs == [(["synthetic-a.mkv"], "synthetic-output", "mp4", "ffmpeg", "overwrite")]
+    assert tab.runs == [
+        (["synthetic-a.mkv"], "synthetic-output", "mp4", "ffmpeg", "overwrite")
+    ]
 
 
 def test_confirm_is_single_use_even_after_finish():
@@ -219,7 +248,9 @@ def test_synchronous_reentry_during_begin_is_ignored():
 
     display.update = reentrant_update
     press_start(tab)
-    assert len(tab.runs) == 1, "reentry during preview invalidation launched a second conversion"
+    assert (
+        len(tab.runs) == 1
+    ), "reentry during preview invalidation launched a second conversion"
 
 
 def test_failed_preview_invalidation_does_not_leave_busy():

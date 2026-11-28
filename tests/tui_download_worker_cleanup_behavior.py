@@ -12,17 +12,32 @@ from types import SimpleNamespace
 
 
 HERE = Path(__file__).resolve().parent
-SPEC = importlib.util.spec_from_file_location("download_fake_ui", HERE / "tui_download_reentry_behavior.py")
+SPEC = importlib.util.spec_from_file_location(
+    "download_fake_ui", HERE / "tui_download_reentry_behavior.py"
+)
 assert SPEC is not None and SPEC.loader is not None
 ui = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(ui)
 SOURCE = HERE.parent / "tui" / "download_tab.py"
 tree = ast.parse(SOURCE.read_text(encoding="utf-8"), filename=str(SOURCE))
-tab_node = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "DownloadTab")
-worker = next(node for node in tab_node.body if isinstance(node, ast.FunctionDef) and node.name == "_run_download")
+tab_node = next(
+    node
+    for node in tree.body
+    if isinstance(node, ast.ClassDef) and node.name == "DownloadTab"
+)
+worker = next(
+    node
+    for node in tab_node.body
+    if isinstance(node, ast.FunctionDef) and node.name == "_run_download"
+)
 worker.decorator_list = []
 module = ast.Module(
-    body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), worker],
+    body=[
+        ast.ImportFrom(
+            module="__future__", names=[ast.alias(name="annotations")], level=0
+        ),
+        worker,
+    ],
     type_ignores=[],
 )
 ast.fix_missing_locations(module)
@@ -68,7 +83,9 @@ def scenario(kind, failure=None):
         return SimpleNamespace(stop=stop, download_batch=download_batch)
 
     namespace = {"Downloader": make_downloader}
-    exec(CODE, namespace)  # noqa: S102 - Execute the selected worker with a fake downloader.
+    exec(
+        CODE, namespace
+    )  # noqa: S102 - Execute the selected worker with a fake downloader.
     caught = None
     try:
         namespace["_run_download"](tab, urls, options)
@@ -81,7 +98,9 @@ def check_initialization_failure(kind, error_type):
     failure = error_type("synthetic initialization failure")
     tab, dispatches, marks, stops, batches, caught = scenario(kind, failure)
     assert caught is failure
-    assert dispatches.count("_finish") == 1, "initialization failure did not dispatch finish exactly once"
+    assert (
+        dispatches.count("_finish") == 1
+    ), "initialization failure did not dispatch finish exactly once"
     assert not tab._download_running and tab._downloader is None
     assert not tab.widgets["#start"].disabled and tab.widgets["#stop"].disabled
     assert not marks and not batches
@@ -99,7 +118,12 @@ def check_batch_failure():
     failure = RuntimeError("synthetic batch failure")
     tab, dispatches, marks, _stops, batches, caught = scenario("batch_failure", failure)
     assert caught is failure and dispatches.count("_finish") == 1
-    assert not tab._download_running and tab._downloader is None and not marks and len(batches) == 1
+    assert (
+        not tab._download_running
+        and tab._downloader is None
+        and not marks
+        and len(batches) == 1
+    )
 
 
 def check_pre_cancel():
@@ -139,16 +163,26 @@ def check_finish_dispatch_failure_keeps_both_errors():
 
 def main():
     checks = [
-        (f"{kind} {error_type.__name__}", lambda k=kind, e=error_type: check_initialization_failure(k, e))
+        (
+            f"{kind} {error_type.__name__}",
+            lambda k=kind, e=error_type: check_initialization_failure(k, e),
+        )
         for kind in ("constructor_failure", "stop_failure")
         for error_type in (RuntimeError, KeyboardInterrupt, SystemExit)
     ]
-    checks.extend([
-        ("normal completion", check_normal_completion),
-        ("batch failure", check_batch_failure),
-        ("pre-cancel", check_pre_cancel),
-    ])
-    checks.append(("failed finish dispatch preserves both errors", check_finish_dispatch_failure_keeps_both_errors))
+    checks.extend(
+        [
+            ("normal completion", check_normal_completion),
+            ("batch failure", check_batch_failure),
+            ("pre-cancel", check_pre_cancel),
+        ]
+    )
+    checks.append(
+        (
+            "failed finish dispatch preserves both errors",
+            check_finish_dispatch_failure_keeps_both_errors,
+        )
+    )
     failures = []
     for name, check in checks:
         try:

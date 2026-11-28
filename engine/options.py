@@ -16,6 +16,7 @@ from typing import Callable, Optional
 #  DownloadOptions — the settings for one download (or download batch)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 @dataclass
 class DownloadOptions:
     """
@@ -42,21 +43,23 @@ class DownloadOptions:
     noplaylist : bool
         Treat supplied URLs as individual videos instead of expanding playlists.
     """
-    save_path:   str
-    mode:        str = "video"
-    video_fmt:   str = "mp4"
-    audio_fmt:   str = "mp3"
-    quality:     str = "best"
+
+    save_path: str
+    mode: str = "video"
+    video_fmt: str = "mp4"
+    audio_fmt: str = "mp3"
+    quality: str = "best"
     cookie_file: Optional[str] = None
-    browser:     Optional[str] = None
-    bitrate:     str = "192"
+    browser: Optional[str] = None
+    bitrate: str = "192"
     # OpenAI-Codex_Fork_Source_Code: selected playlist entries download singly.
-    noplaylist:  bool = False
+    noplaylist: bool = False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  ConvertJob — one file in a conversion queue
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class ConvertJob:
@@ -68,10 +71,11 @@ class ConvertJob:
     because the TUI and the tests read ``status`` and changing its values would
     break them for no gain.
     """
+
     src_path: str
     dst_path: str
-    status:   str = "pending"   # pending | converting | done | error | no_ffmpeg | skipped
-    error:    str = ""
+    status: str = "pending"  # pending | converting | done | error | no_ffmpeg | skipped
+    error: str = ""
     #: str value of an :class:`engine.errors.ErrorKind`; "" while not failed.
     #: Typed as str so this module stays dependency-free for the AI planner.
     error_kind: str = ""
