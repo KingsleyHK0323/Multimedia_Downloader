@@ -272,8 +272,15 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
       ['ahead', 'identical'].includes(comparison.status);
   };
   // OpenAI-Codex_formatter_fix: GitHub can retain an older base on an open PR.
-  const prInfo = async (number, expectedHead, allowHistoricalBase = false) => {
-    const pr = (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
+  const prInfo = async (number, expectedHead, allowHistoricalBase = false, previousHead) => {
+    const read = async () => (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
+    let pr = await read();
+    // OpenAI-Codex_restore127: GitHub may briefly report the previous head after a verified ref update.
+    for (const delay of [500, 1000, 2000]) {
+      if (!previousHead || pr?.head?.sha !== previousHead) break;
+      await new Promise(resolve => setTimeout(resolve, delay));
+      pr = await read();
+    }
     if (pr?.number !== number || pr.state !== 'open' || !isBot(pr.user) ||
         pr.head?.repo?.full_name !== FULL || pr.head.ref !== SERVICE || pr.head.sha !== expectedHead ||
         pr.base?.repo?.full_name !== FULL || pr.base.ref !== SOURCE ||
@@ -453,6 +460,7 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
       const ref = (await app.rest.git.createRef({ owner, repo, ref: 'refs/heads/' + SERVICE, sha: created.sha })).data;
       if (ref?.ref !== 'refs/heads/' + SERVICE || ref.object?.sha !== created.sha) fail('Service branch creation was not confirmed.');
     }
+    const previousHead = serviceHead;
     serviceHead = created.sha;
     if (await getRef(SERVICE) !== serviceHead) fail('Service branch moved after update.');
     await commitsBot(serviceHead);
@@ -466,7 +474,7 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
       await prInfo(opened.number, serviceHead);
       return { status: 'created', pr: opened.number, head: serviceHead };
     }
-    await prInfo(pr.number, serviceHead, true);
+    await prInfo(pr.number, serviceHead, true, previousHead);
     return { status: 'updated', pr: pr.number, head: serviceHead };
   }
 
@@ -554,7 +562,7 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
     successfulJobs(run, [expectedContext, ...required[index].jobs])));
   await requireBase();
   if (await getRef(SERVICE) !== serviceHead) fail('Service branch changed before source update.');
-  await prInfo(pr.number, serviceHead);
+  await prInfo(pr.number, serviceHead, true);
   if (await rulesSnapshot() !== firstRules) fail('Source_Code rules changed before source update.');
   const secondRuns = await getRuns();
   if (JSON.stringify(firstRuns) !== JSON.stringify(secondRuns)) fail('Push runs changed before source update.');

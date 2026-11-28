@@ -157,7 +157,8 @@ class DownloadTab(VerticalScroll):
                 for selector, disabled in (("#start", False), ("#stop", True)):
                     try:
                         self.query_one(selector, Button).disabled = disabled
-                    except Exception:  # noqa: S112 -- preserve the original start error if a widget is gone.
+                    # OpenAI-Codex_restore127: Preserve the original start error if a widget is gone.
+                    except Exception:  # noqa: S112
                         continue
             finally:
                 self._download_running = False

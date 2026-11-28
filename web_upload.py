@@ -101,7 +101,8 @@ def _open_regular(path: str, flags: int) -> int:
         _open_control = None
         try:
             raise
-        except Exception:  # noqa: S110 - Preserve the active exception for the outer re-raise. OpenAI-Codex_Fork_Source_Code
+        # OpenAI-Codex_restore127: Preserve the active exception for the outer re-raise.
+        except Exception:  # noqa: S110
             pass
         except BaseException as _control_error:
             _open_control = _control_error
@@ -527,7 +528,8 @@ class UploadStore:
                         _unlock_control = None
                         try:
                             raise
-                        except Exception:  # noqa: S110 - Preserve the active exception for the outer re-raise. OpenAI-Codex_Fork_Source_Code
+                        # Preserve the active exception for the outer re-raise.
+                        except Exception:  # noqa: S110
                             pass
                         except BaseException as _control_error:
                             _unlock_control = _control_error
