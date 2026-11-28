@@ -367,7 +367,7 @@ test('approved Public Beta tags create and validate prerelease drafts', async ()
     return created;
   }
 
-  for (const tag of ['v4.3.22', 'v4.3.23', 'v4.3.24']) {
+  for (const tag of ['v4.3.22', 'v4.3.23', 'v4.3.24', 'v4.3.25']) {
     const created = await run(tag);
     assert.equal(created.draft, true);
     assert.equal(created.prerelease, true);
@@ -377,9 +377,9 @@ test('approved Public Beta tags create and validate prerelease drafts', async ()
     await assert.rejects(run(tag, { tag_name: tag, draft: true, prerelease: false }), /expected draft/);
     await assert.rejects(run(tag, [{ tag_name: tag }, { tag_name: tag }]), /Ambiguous releases/);
   }
-  const stable = await run('v4.3.25');
+  const stable = await run('v4.3.26');
   assert.equal(stable.prerelease, false);
-  assert.equal(stable.name, 'v4.3.25');
+  assert.equal(stable.name, 'v4.3.26');
   await assert.rejects(run('v4.3.3'), /Invalid release target/);
 });
 
@@ -388,7 +388,7 @@ test('approved Public Beta tags route only through verified beta publication', (
   const beta = source.split('  publish-beta:\n')[1]?.split('  # OpenAI-Codex: publish only complete builds')[0];
   const stable = source.split('  publish-stable:\n')[1]?.split('  # OpenAI-Codex: dispatch package publication')[0];
   assert.ok(beta && stable);
-  for (const tag of ['v4.3.22', 'v4.3.23', 'v4.3.24']) {
+  for (const tag of ['v4.3.22', 'v4.3.23', 'v4.3.24', 'v4.3.25']) {
     assert.ok(beta.includes("needs.metadata.outputs.tag == '" + tag + "'"));
     assert.ok(stable.includes("needs.metadata.outputs.tag != '" + tag + "'"));
   }

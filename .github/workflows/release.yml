@@ -484,7 +484,7 @@ jobs:
             }
             if (object?.type !== 'commit' || object.sha !== target) throw new Error('Tag target changed.');
             // OpenAI-Codex: only explicitly approved tags use the Public Beta path.
-            const beta = tag === 'v4.3.22' || tag === 'v4.3.23' || tag === 'v4.3.24';
+            const beta = tag === 'v4.3.22' || tag === 'v4.3.23' || tag === 'v4.3.24' || tag === 'v4.3.25';
             // OpenAI-Codex: list releases because getReleaseByTag excludes drafts.
             const findRelease = async () => {
               const releases = await github.paginate(github.rest.repos.listReleases, { ...params, per_page: 100 });
@@ -551,7 +551,7 @@ jobs:
     permissions:
       contents: write
       actions: read
-    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && (needs.metadata.outputs.tag == 'v4.3.22' || needs.metadata.outputs.tag == 'v4.3.23' || needs.metadata.outputs.tag == 'v4.3.24')
+    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && (needs.metadata.outputs.tag == 'v4.3.22' || needs.metadata.outputs.tag == 'v4.3.23' || needs.metadata.outputs.tag == 'v4.3.24' || needs.metadata.outputs.tag == 'v4.3.25')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -570,7 +570,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="$RELEASE_TAG"
-          [[ "$TAG" == v4.3.22 || "$TAG" == v4.3.23 || "$TAG" == v4.3.24 ]] || exit 1
+          [[ "$TAG" == v4.3.22 || "$TAG" == v4.3.23 || "$TAG" == v4.3.24 || "$TAG" == v4.3.25 ]] || exit 1
           node automation/.github/scripts/upload-release-assets.mjs "$TAG" --verify-inventory
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease > "$RUNNER_TEMP/beta-release.json"
           jq -e '.isDraft == true and .isPrerelease == true' "$RUNNER_TEMP/beta-release.json" >/dev/null
@@ -629,7 +629,7 @@ jobs:
     permissions:
       contents: write
       actions: read
-    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && needs.metadata.outputs.tag != 'v4.3.22' && needs.metadata.outputs.tag != 'v4.3.23' && needs.metadata.outputs.tag != 'v4.3.24' && needs.metadata.outputs.tag != 'v4.3.3'
+    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && needs.metadata.outputs.tag != 'v4.3.22' && needs.metadata.outputs.tag != 'v4.3.23' && needs.metadata.outputs.tag != 'v4.3.24' && needs.metadata.outputs.tag != 'v4.3.25' && needs.metadata.outputs.tag != 'v4.3.3'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -12,6 +12,10 @@
 
 ### Unreleased
 
+### [4.3.25] — 2026-11-28 (Public Beta)
+
+> Public Beta. Some build dependencies remain unpinned. Native file selection, screen-reader use, Android/Termux and authenticated downloads still require device testing. (OpenAI-Codex_verify_auto)
+
 - Preserve existing conversion outputs, review and confirm overwrite plans, and restrict server-side paths and Web operations.
 - Share task, cancellation, progress and result state across interfaces. Support native multi-file selection, audio bitrate and cookie options.
 - Validate AI plans and responses, protect credentials and exported logs, and verify update sources. Preserve tab state and support keyboard navigation.

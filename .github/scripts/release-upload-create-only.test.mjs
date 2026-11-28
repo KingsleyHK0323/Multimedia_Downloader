@@ -151,16 +151,17 @@ test('publication inventory must match all six staged bytes', async () => {
   await assert.rejects(verifyInventory({ api: state.api, repo, tag, expectedSha: sha, manifest }), /differs/);
 });
 
-// OpenAI-Codex: v4.3.24 can publish only from a Public Beta draft.
-test('v4.3.24 inventory requires a matching beta draft', async () => {
-  const betaTag = 'v4.3.24';
-  const manifest = expectedNames(betaTag, 'all').map((name, index) => ({ name, size: index + 1, digest }));
-  const state = fake({ assets: manifest.map(item => ({ ...item, state: 'uploaded' })) });
-  state.api.release = async () => ({ id: 123, tag_name: betaTag, draft: true, prerelease: true });
-  await verifyInventory({ api: state.api, repo, tag: betaTag, expectedSha: sha, manifest });
-  state.api.release = async () => ({ id: 123, tag_name: betaTag, draft: true, prerelease: false });
-  await assert.rejects(verifyInventory({ api: state.api, repo, tag: betaTag, expectedSha: sha, manifest }), /expected draft/);
-});
+// OpenAI-Codex_verify_auto: each approved beta must use a matching prerelease draft.
+for (const betaTag of ['v4.3.24', 'v4.3.25']) {
+  test(`${betaTag} inventory requires a matching beta draft`, async () => {
+    const manifest = expectedNames(betaTag, 'all').map((name, index) => ({ name, size: index + 1, digest }));
+    const state = fake({ assets: manifest.map(item => ({ ...item, state: 'uploaded' })) });
+    state.api.release = async () => ({ id: 123, tag_name: betaTag, draft: true, prerelease: true });
+    await verifyInventory({ api: state.api, repo, tag: betaTag, expectedSha: sha, manifest });
+    state.api.release = async () => ({ id: 123, tag_name: betaTag, draft: true, prerelease: false });
+    await assert.rejects(verifyInventory({ api: state.api, repo, tag: betaTag, expectedSha: sha, manifest }), /expected draft/);
+  });
+}
 
 test('tag protection failure prevents asset upload or publication inventory approval', async () => {
   const upload = fake({ unsafeRules: true });
