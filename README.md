@@ -38,7 +38,7 @@ npm run build
 npm run preview
 ```
 
-The build uses the repository project path `/Multimedia_Downloader/` so its static assets work on GitHub Pages. The GitHub Actions workflow builds `dist/` and publishes it through the GitHub Pages deployment environment when `Multimedia_Downloader_Web_Preview` is pushed. Configure the repository's Pages source to **GitHub Actions** before enabling its first deployment.
+The build uses the repository project path `/Multimedia_Downloader/` so its static assets work on GitHub Pages. The GitHub Actions workflow builds `dist/` and publishes it through the GitHub Pages deployment environment when `Multimedia_Downloader_Website` is pushed. Configure the repository's Pages source to **GitHub Actions** before enabling its first deployment.
 
 Owner pull requests from `automation/protected-workflows` can be applied automatically after the required website build succeeds. Changes to automation or build configuration require separate review.
 
