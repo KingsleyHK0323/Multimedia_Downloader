@@ -27,13 +27,25 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
       headers: { Accept: "application/vnd.github+json" },
+      redirect: "error",
     });
     if (!res.ok) return null;
     const data = await res.json();
-    const latest = String(data.tag_name ?? "").replace(/^v/, "");
-    if (!latest || !isNewer(latest, __APP_VERSION__)) return null;
-    if (localStorage.getItem(DISMISSED_KEY) === latest) return null;
-    return { latest, url: data.html_url ?? `https://github.com/${REPO}/releases/latest` };
+    // OpenAI-Codex_ops_check: accept only canonical stable project versions.
+    if (data.draft || data.prerelease || typeof data.tag_name !== "string" ||
+        !/^v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/.test(data.tag_name)) return null;
+    const latest: string = data.tag_name.slice(1);
+    if (!latest.split(".").every(part => Number.isSafeInteger(Number(part))) ||
+        !isNewer(latest, __APP_VERSION__)) return null;
+    // OpenAI-Codex_Fork_Source_Code: blocked storage must not hide available updates.
+    try {
+      if (localStorage.getItem(DISMISSED_KEY) === latest) return null;
+    } catch {
+      // Continue without a persisted dismissal.
+    }
+    // OpenAI-Codex_Fork_Source_Code: only open the configured repository release page.
+    const canonicalReleaseUrl = `https://github.com/${REPO}/releases/latest`;
+    return { latest, url: canonicalReleaseUrl };
   } catch {
     return null; // offline, rate-limited, blocked network, etc. -- fail silently
   }
@@ -41,5 +53,10 @@ export async function checkForUpdate(): Promise<UpdateInfo | null> {
 
 /** Suppresses the banner for this specific version (shown again on the next release). */
 export function dismissUpdate(version: string): void {
-  localStorage.setItem(DISMISSED_KEY, version);
+  // OpenAI-Codex_Fork_Source_Code: storage denial must not block the current dismissal.
+  try {
+    localStorage.setItem(DISMISSED_KEY, version);
+  } catch {
+    // The banner may reappear when storage is unavailable.
+  }
 }

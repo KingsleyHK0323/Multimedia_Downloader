@@ -1,16 +1,21 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import {
     Sparkles, X, Settings, Lock, Loader2, RotateCcw,
     Download, RefreshCw, Clock, CheckCircle2, XCircle, SkipForward,
   } from "lucide-svelte";
-  import { t } from "../store";
-  import { api, IS_MOCK, IS_TAURI, type AiPlan, type AiTask, type EngineEvent } from "../api";
-  import { keyStorageView, type KeySaveState } from "../lib/keyStorage";
+  import { t, busy, activeOperation, eventReady } from "../store";
+  import { api, IS_MOCK, IS_TAURI, IS_WEB, type AiPlan, type AiTask, type EngineEvent, type QueueConversionPreview, type QueueResultTask } from "../api";
   import { toast } from "../lib/toast";
+  import { operationOutcome, reconcileTaskStatuses, redactLog, isAbsoluteNativePath } from "../lib/operation";
+  import { safeAiErrorText } from "../lib/operation"; // OpenAI-Codex_app_ui
+  import { keyStorageView, type KeySaveState } from "../lib/keyStorage";
+  import { QueuePreviewSession, queuePreviewInput } from "../lib/queuePreview";
+  import { isValidQueueResult } from "../lib/queueResult";
 
   const tr = $derived($t);
 
-  let { onclose }: { onclose: () => void } = $props();
+  let { onclose, open }: { onclose: () => void; open: boolean } = $props();
 
   // OpenAI-Codex_app_ui: session-only keys are never written to localStorage.
   // Previously saved keys are preserved until the user explicitly removes them.
@@ -49,59 +54,195 @@
   let phase = $state<Phase>("idle");
   let prompt = $state("");
   let plan = $state<AiPlan | null>(null);
-  let taskStatus = $state<Record<number, string>>({});
+  let taskStatus = $state<Record<string, string>>({});
+  let taskResults = $state<Record<string, QueueResultTask>>({});
   let errorText = $state("");
+  let stopping = $state(false);
+  let queueStarted = $state(false);
+  let queueResultsUnreliable = $state(false);
+  let queuePreview = $state<QueueConversionPreview | null>(null);
+  let queuePreviewing = $state(false);
+  const queuePreviewSession = new QueuePreviewSession();
+  let nextPlan = 0;
+  let dialog = $state<HTMLDivElement | null>(null);
+  let closeButton = $state<HTMLButtonElement | null>(null);
+  const planPathsValid = $derived(!IS_TAURI || !plan || plan.tasks.every((task) =>
+    task.kind === "download" ? isAbsoluteNativePath(task.options.save_path) &&
+      (!task.options.cookie_file || isAbsoluteNativePath(task.options.cookie_file)) :
+      isAbsoluteNativePath(task.src_path) && isAbsoluteNativePath(task.dst_path)));
+  const hasConvertTasks = $derived(Boolean(plan?.tasks.some((task) => task.kind === "convert")));
+  const queuePreviewInputs = $derived(plan ? queuePreviewInput(plan.tasks) : []);
+  const queuePreviewKey = $derived(JSON.stringify(plan?.tasks.map((task) => task.kind === "convert"
+    ? { kind: task.kind, task_id: task.task_id, src_path: task.src_path, dst_path: task.dst_path,
+      conflict_policy: task.conflict_policy, label: task.label }
+    : { kind: task.kind, task_id: task.task_id }) ?? []));
+  let disposed = false;
+  let activeUnlisten: (() => void) | undefined;
+  function clearSubscription() { const off = activeUnlisten; activeUnlisten = undefined; off?.(); }
+  function invalidateQueuePreview() { queuePreviewSession.invalidate(); queuePreview = null; queuePreviewing = false; }
+  onDestroy(() => { disposed = true; invalidateQueuePreview(); clearSubscription(); });
+
+  $effect(() => { queuePreviewKey; invalidateQueuePreview(); });
 
   const examples = $derived([tr("ai_example_1"), tr("ai_example_2"), tr("ai_example_3"), tr("ai_example_4")]);
 
   function reset() {
-    phase = "idle"; plan = null; taskStatus = {}; errorText = ""; prompt = "";
+    invalidateQueuePreview();
+    phase = "idle"; plan = null; taskStatus = {}; taskResults = {}; errorText = ""; prompt = "";
+    queueResultsUnreliable = false;
+  }
+
+  function removeTask(taskId: string) {
+    if (plan && phase === "review") {
+      invalidateQueuePreview();
+      plan = { ...plan, tasks: plan.tasks.filter((task) => task.task_id !== taskId) };
+    }
+  }
+
+  $effect(() => {
+    if (!open) return;
+    const previous = document.activeElement;
+    queueMicrotask(() => { if (open) closeButton?.focus(); });
+    return () => { if (previous instanceof HTMLElement) previous.focus(); };
+  });
+
+  function dialogKey(event: KeyboardEvent) {
+    if (event.key === "Escape") { event.preventDefault(); onclose(); return; }
+    if (event.key !== "Tab" || !dialog) return;
+    const controls = Array.from(dialog.querySelectorAll<HTMLElement>("button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href]"));
+    if (!controls.length) return;
+    if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls[controls.length - 1].focus(); }
+    else if (!event.shiftKey && document.activeElement === controls[controls.length - 1]) { event.preventDefault(); controls[0].focus(); }
   }
 
   async function getPlan() {
     if (!IS_MOCK && !apiKey.trim()) {
       errorText = tr("ai_no_key"); phase = "error"; showSettings = true; return;
     }
-    if (!prompt.trim()) return;
+    if (!prompt.trim() || $busy || !$eventReady) return;
+    invalidateQueuePreview();
     phase = "planning"; errorText = "";
+    busy.set(true); activeOperation.set("ai-plan");
     try {
       const result = await api.aiPlan(apiKey, prompt, { save_path: defaultSavePath, browser: "none" });
-      plan = result;
-      taskStatus = Object.fromEntries(result.tasks.map((_, i) => [i, "pending"]));
+      const prefix = `plan-${Date.now()}-${++nextPlan}`;
+      plan = { ...result, tasks: result.tasks.map((task, i) => ({ ...task, task_id: `${prefix}-${i}` })) };
+      taskStatus = Object.fromEntries(plan.tasks.map((task) => [task.task_id!, "pending"]));
+      taskResults = {};
       phase = "review";
     } catch (e) {
-      errorText = String(e instanceof Error ? e.message : e); phase = "error";
+      // OpenAI-Codex_app_ui: fall back safely if error redaction fails.
+      try {
+        errorText = redactLog(String(e instanceof Error ? e.message : e));
+      } catch { errorText = "[redacted]"; }
+      if (typeof errorText !== "string") errorText = "[redacted]";
+      phase = "error";
+    } finally {
+      busy.set(false); activeOperation.set(null);
     }
+  }
+
+  async function previewQueueConversions() {
+    if (phase !== "review" || !plan || !hasConvertTasks || !queuePreviewInputs || queuePreviewing || $busy || !planPathsValid) return;
+    invalidateQueuePreview();
+    queuePreviewing = true;
+    const key = queuePreviewKey;
+    const result = await queuePreviewSession.request(plan.tasks, (tasks) => api.previewQueue(tasks));
+    if (disposed || !queuePreviewSession.isCurrent(result.generation) || result.kind === "stale") return;
+    if (phase !== "review" || key !== queuePreviewKey) { invalidateQueuePreview(); return; }
+    queuePreviewing = false;
+    if (result.kind === "ready") queuePreview = result.value;
+    else if (result.kind === "invalid") toast(tr("preview_failed"), "err");
+    else if (result.kind === "error") toast(safeAiErrorText(() => redactLog(String(result.error instanceof Error ? result.error.message : result.error))), "err");
   }
 
   // D4 gate: this is the ONLY place execution starts, and only on user click.
+  // OpenAI-Codex_engine_cli: terminal results supersede provisional event states.
+  function markQueueResultUnreliable(tasks: readonly AiTask[]) {
+    queueResultsUnreliable = true;
+    taskStatus = Object.fromEntries(tasks.map((task) => [task.task_id ?? "", "unknown"]));
+    taskResults = {};
+    toast(tr("queue_result_unreliable"), "err", 9000);
+  }
+
   async function confirmAndRun() {
-    if (!plan || plan.tasks.length === 0) return;
+    if (!plan || plan.tasks.length === 0 || $busy || !$eventReady || !planPathsValid) return;
+    const tasksToRun = plan.tasks;
+    const overwrite = plan.tasks.some((task) => task.kind === "convert" && task.conflict_policy === "overwrite");
+    if (overwrite && !window.confirm(tr("conflict_overwrite_confirm"))) return;
+    invalidateQueuePreview();
+    queueResultsUnreliable = false;
     phase = "running";
-    const off = api.onEvent((e: EngineEvent) => {
-      if (e.type === "task_update") {
-        const idx = plan!.tasks.findIndex((t) => t.label === e.label);
-        if (idx >= 0) taskStatus = { ...taskStatus, [idx]: e.status };
-      }
-    });
+    busy.set(true); activeOperation.set("ai-queue"); stopping = false; queueStarted = false;
     try {
-      const res = await api.runQueue(plan.tasks);
-      const ok = res.tasks.filter((t) => t.status === "done").length;
-      toast(tr("log_queue_done", { ok, fail: res.tasks.length - ok, t: res.tasks.length }),
-            ok === res.tasks.length ? "ok" : "err");
+      const off = await api.onEvent((e: EngineEvent) => {
+        if (queueResultsUnreliable) return;
+        if (e.type === "task_update" && e.task_id) taskStatus = { ...taskStatus, [e.task_id]: e.status };
+      });
+      if (disposed || !$eventReady) {
+        off();
+        if (!disposed) { errorText = tr("event_disconnected"); toast(errorText, "err"); }
+        if (!disposed) markQueueResultUnreliable(tasksToRun);
+        return;
+      }
+      activeUnlisten = off;
+      queueStarted = true;
+      const res = await api.runQueue(tasksToRun, overwrite);
+      if (!isValidQueueResult(tasksToRun, res)) {
+        if (!disposed) markQueueResultUnreliable(tasksToRun);
+        return;
+      }
+      const ids = new Set(tasksToRun.map((task) => task.task_id));
+      const consistent = Array.isArray(res?.tasks) && res.tasks.length === tasksToRun.length &&
+        res.summary?.total === tasksToRun.length && new Set(res.tasks.map((task) => task.task_id)).size === ids.size &&
+        res.tasks.every((task) => ids.has(task.task_id));
+      if (consistent) {
+        taskStatus = { ...taskStatus, ...reconcileTaskStatuses(res.tasks) };
+        taskResults = Object.fromEntries(res.tasks.map((task) => [task.task_id, task]));
+      }
+      const outcome = consistent ? operationOutcome(res?.summary) : "unknown";
+      toast(tr(`operation_${outcome}`, res?.summary), outcome === "succeeded" ? "ok" : outcome === "cancelled" ? "info" : "err");
     } catch (e) {
-      errorText = String(e instanceof Error ? e.message : e);
+      if (!disposed) markQueueResultUnreliable(tasksToRun);
+      // OpenAI-Codex_app_ui: fall back safely if queue error redaction fails.
+      try {
+        errorText = redactLog(String(e instanceof Error ? e.message : e));
+      } catch { errorText = "[redacted]"; }
+      if (typeof errorText !== "string") errorText = "[redacted]";
       toast(errorText, "err");
     } finally {
-      off(); phase = "done";
+      invalidateQueuePreview();
+      clearSubscription(); phase = "done"; stopping = false; queueStarted = false;
+      busy.set(false); activeOperation.set(null);
     }
   }
 
+  async function stopQueue() {
+    if (stopping || !queueStarted || $activeOperation !== "ai-queue") return;
+    stopping = true;
+    try {
+      const result = await api.stop();
+      if (result?.stopping) toast(tr("stop_requested"), "info");
+      else { stopping = false; toast(tr("stop_not_active"), "info"); }
+    }
+    catch (e) { stopping = false; toast(safeAiErrorText(() => redactLog(String(e instanceof Error ? e.message : e))), "err"); }
+  }
+
   function taskLine(task: AiTask): string {
-    return task.kind === "download" ? task.url : `${task.src_path} → ${task.dst_path}`;
+    const actual = task.task_id ? taskResults[task.task_id]?.dst_path : undefined;
+    return task.kind === "download" ? task.url : `${task.src_path} → ${actual || task.dst_path}`;
+  }
+
+  function downloadLink(value?: string): string | null {
+    if (!IS_WEB || !value) return null;
+    try {
+      const url = new URL(value, window.location.origin);
+      return url.origin === window.location.origin && url.pathname.startsWith("/files/") ? url.href : null;
+    } catch { return null; }
   }
 
   const statusIcons: Record<string, { icon: typeof Clock; cls: string }> = {
+    unknown: { icon: Clock, cls: "text-amber-500" },
     pending: { icon: Clock, cls: "text-zinc-400" },
     running: { icon: Loader2, cls: "animate-spin text-indigo-500" },
     done: { icon: CheckCircle2, cls: "text-emerald-500" },
@@ -123,10 +264,13 @@
 
 <!-- Panel: right sidebar on lg+, bottom sheet (with drag handle + safe area) below -->
 <div
+  bind:this={dialog}
   class="fixed z-50 flex flex-col border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900
          inset-x-0 bottom-0 max-h-[85dvh] rounded-t-2xl border-t
          lg:inset-x-auto lg:top-0 lg:right-0 lg:h-full lg:max-h-none lg:w-105 lg:rounded-none lg:border-t-0 lg:border-l"
   role="dialog"
+  tabindex="-1"
+  onkeydown={dialogKey}
   aria-modal="true"
   aria-label={tr("ai_assistant")}
 >
@@ -150,6 +294,7 @@
       aria-expanded={showSettings}
     ><Settings class="size-4" aria-hidden="true" /></button>
     <button
+      bind:this={closeButton}
       class="grid size-9 place-items-center rounded-lg text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
       onclick={onclose}
       aria-label={tr("btn_cancel")}
@@ -176,10 +321,11 @@
         </label>
         <p id="ai-key-storage-hint" role={keyStorageStatus.hint === "ai_key_save_failed_hint" ? "alert" : undefined} class="text-xs text-zinc-600 dark:text-zinc-400">{keyStorageStatus.hint ? tr(keyStorageStatus.hint) : ""}</p>
         {#if keyStorageStatus.legacy}<p id="ai-key-legacy-hint" class="text-xs text-amber-700 dark:text-amber-400">{tr(keyStorageStatus.legacy)}</p>{/if}
-        {#if !IS_TAURI && !IS_MOCK}<p class="text-xs text-zinc-600 dark:text-zinc-400">{tr("ai_key_web_hint")}</p>{/if}
+        {#if IS_WEB}<p class="text-xs text-zinc-600 dark:text-zinc-400">{tr("ai_key_web_hint")}</p>{/if}
         <label class="block">
           <span class="mb-1.5 block text-xs font-medium text-zinc-600 dark:text-zinc-400">{tr("ai_default_save_path")}</span>
-          <input class={inputCls} bind:value={defaultSavePath} placeholder="C:\Downloads" />
+          <input class={inputCls} bind:value={defaultSavePath} placeholder={tr(IS_WEB ? "ai_web_output_placeholder" : "local_output_placeholder")} aria-describedby="ai-save-hint" />
+          <span id="ai-save-hint" class="mt-1 block text-xs text-zinc-500">{tr("ai_save_path_hint")}</span>
         </label>
       </div>
     {/if}
@@ -200,7 +346,7 @@
         </div>
       </div>
 
-      <textarea rows="4" class={inputCls + " resize-y"} bind:value={prompt} placeholder={tr("ai_prompt_placeholder")}></textarea>
+      <textarea rows="4" aria-label={tr("ai_prompt_label")} class={inputCls + " resize-y"} bind:value={prompt} placeholder={tr("ai_prompt_placeholder")}></textarea>
 
       {#if phase === "error"}
         <p class="text-xs text-red-500">{errorText}</p>
@@ -211,7 +357,7 @@
                from-indigo-500 to-violet-600 text-sm font-semibold text-white shadow-sm
                transition hover:opacity-95 active:scale-[0.99] disabled:opacity-50"
         onclick={getPlan}
-        disabled={!prompt.trim()}
+        disabled={!prompt.trim() || $busy || !$eventReady}
       >
         <Sparkles class="size-4" aria-hidden="true" />{tr("ai_btn_plan")}
       </button>
@@ -234,7 +380,8 @@
           </p>
           <ul class="flex flex-col gap-1.5">
             {#each plan.tasks as task, i}
-              {@const s = statusIcons[taskStatus[i] ?? "pending"]}
+              {@const s = statusIcons[taskStatus[task.task_id ?? ""] ?? "pending"] ?? statusIcons.pending}
+              {@const snapshot = queuePreview?.jobs.find((job) => job.task_id === task.task_id)}
               <li class="flex items-center gap-2.5 rounded-lg bg-zinc-50 px-3 py-2.5 text-xs dark:bg-zinc-950">
                 <s.icon class="size-4 shrink-0 {s.cls}" aria-hidden="true" />
                 {#if task.kind === "download"}
@@ -246,12 +393,26 @@
                   <span class="block text-[10px] text-zinc-400">
                     {task.kind === "download" ? tr("ai_task_download") : tr("ai_task_convert")}
                   </span>
-                  <span class="block truncate font-mono text-zinc-700 dark:text-zinc-300">{taskLine(task)}</span>
-                  {#if task.kind === "download" && task.options.mode === "audio"}
-                    <span class="block text-zinc-500">{tr("lbl_bitrate")}: {task.options.bitrate ?? "192"} kbps</span>
+                  <span class="block break-all font-mono text-zinc-700 dark:text-zinc-300">{taskLine(task)}</span>
+                  <span class="block">{tr(`task_status_${taskStatus[task.task_id ?? ""] ?? "pending"}`)}</span>
+                  {#if task.kind === "download"}
+                    <span class="block break-all">{tr("ai_plan_save_path")}: {task.options.save_path}</span>
+                    <span class="block">{tr("ai_plan_mode")}: {task.options.mode} · {tr("ai_plan_format")}: {task.options.mode === "audio" ? task.options.audio_fmt : task.options.video_fmt} · {tr("lbl_quality")} {task.options.quality} · {tr("ai_plan_browser")}: {task.options.browser}</span>
+                    {#if task.options.mode === "audio"}<span class="block">{tr("ai_plan_bitrate")}: {task.options.bitrate ?? "192"} kbps</span>{/if}
+                    {#if task.options.cookie_file}<span class="block break-all">{tr("ai_plan_cookie_file")}: {task.options.cookie_file}</span>{/if}
+                  {:else}
+                    <span class="block">{tr("conflict_label")}: {tr(`conflict_${task.conflict_policy ?? "rename"}`)}</span>
+                    {#if phase === "review" && snapshot}
+                      <span class="mt-1 block break-all font-mono">{snapshot.src} → {snapshot.dst}</span>
+                      <span class="block">{tr("preview_existing")}: {tr(`preview_${snapshot.existing}`)}</span>
+                      <span class="block">{tr("preview_source_matches")}: {tr(`preview_${snapshot.source_matches}`)}</span>
+                      {#if snapshot.batch_duplicate}<span class="block text-amber-700 dark:text-amber-400">{tr("preview_batch_duplicate")}</span>{/if}
+                    {/if}
                   {/if}
-                  <!-- OpenAI-Codex_Fork_GitHub_REPO: show the requested bitrate before confirmation. -->
+                  {#if task.task_id && taskResults[task.task_id]?.error}<span class="block break-all text-red-600 dark:text-red-400">{redactLog(taskResults[task.task_id].error)}</span>{/if}
+                  {#if task.task_id && downloadLink(taskResults[task.task_id]?.download_url)}<a class="underline" href={downloadLink(taskResults[task.task_id]?.download_url) ?? undefined}>{tr("download_output")}</a>{/if}
                 </div>
+                {#if phase === "review"}<button class="min-h-11 px-2 underline" onclick={() => removeTask(task.task_id ?? "")}>{tr("btn_remove_selected")}</button>{/if}
               </li>
             {/each}
           </ul>
@@ -268,6 +429,13 @@
       {/if}
 
       {#if phase === "review"}
+        {#if !planPathsValid}<p role="alert" class="text-sm text-red-700 dark:text-red-400">{tr("ai_local_paths_invalid")}</p>{/if}
+        {#if hasConvertTasks}
+          {#if !queuePreviewInputs}<p role="alert" class="text-xs text-red-600 dark:text-red-400">{tr("preview_failed")}</p>{/if}
+          <button type="button" class="min-h-11 rounded-xl border border-zinc-300 px-4 text-xs disabled:opacity-50 dark:border-zinc-700"
+                  onclick={previewQueueConversions} disabled={queuePreviewing || $busy || !planPathsValid || !queuePreviewInputs}>{tr("preview_button")}</button>
+          {#if queuePreview}<p role="status" class="text-xs text-zinc-600 dark:text-zinc-400">{tr("ai_preview_snapshot_hint")}</p>{/if}
+        {/if}
         <!-- Safety gate (D4): nothing has run yet; execution needs this click. -->
         <p class="flex items-start gap-2 rounded-lg bg-zinc-100 px-3 py-2.5 text-[11px] leading-snug text-zinc-600 dark:bg-zinc-950 dark:text-zinc-400">
           <Lock class="mt-0.5 size-3.5 shrink-0 text-emerald-500" aria-hidden="true" />
@@ -279,7 +447,7 @@
                    text-sm font-bold text-white shadow-sm transition hover:bg-emerald-500
                    active:scale-[0.99] disabled:opacity-50"
             onclick={confirmAndRun}
-            disabled={plan.tasks.length === 0}
+            disabled={plan.tasks.length === 0 || $busy || !$eventReady || !planPathsValid}
           >
             <CheckCircle2 class="size-4.5" aria-hidden="true" />{tr("btn_confirm")}
           </button>
@@ -297,10 +465,13 @@
           </div>
         </div>
       {:else if phase === "running"}
-        <div class="flex items-center justify-center gap-2 py-3 text-sm text-zinc-500 dark:text-zinc-400">
-          <Loader2 class="size-4 animate-spin text-indigo-500" aria-hidden="true" />{tr("ai_running")}
+        <div class="flex flex-col items-center justify-center gap-2 py-3 text-sm text-zinc-500 dark:text-zinc-400">
+          <span class="flex items-center gap-2"><Loader2 class="size-4 animate-spin text-indigo-500" aria-hidden="true" />{tr("ai_running")}</span>
+          <p>{tr("ai_close_background")}</p>
+          <button class="min-h-11 rounded-lg border px-4 disabled:opacity-50" onclick={stopQueue} disabled={stopping || !queueStarted || $activeOperation !== "ai-queue"}>{tr("btn_stop")}</button>
         </div>
       {:else if phase === "done"}
+        {#if queueResultsUnreliable}<p role="alert" class="text-xs text-amber-700 dark:text-amber-400">{tr("queue_result_unreliable")}</p>{/if}
         {#if errorText}<p class="text-xs text-red-500">{errorText}</p>{/if}
         <div class="flex gap-2">
           <button

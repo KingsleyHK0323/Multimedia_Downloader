@@ -17,6 +17,10 @@
     { id: "help", icon: HelpCircle, titleKey: "manual_sec_help_title", bodyKey: "manual_sec_help_body" },
   ];
 
+  // OpenAI-Codex_Fork_Source_Code: describe the optional, retained web upload.
+  const convertManual = sections.find((section) => section.id === "convert");
+  if (convertManual) convertManual.bodyKey = "manual_sec_convert_body_upload";
+
   let sectionEls = $state<Record<string, HTMLElement>>({});
   function jumpTo(id: string) {
     sectionEls[id]?.scrollIntoView({ behavior: "smooth", block: "start" });

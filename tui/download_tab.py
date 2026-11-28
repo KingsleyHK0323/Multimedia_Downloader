@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+
 from textual import work
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal, VerticalScroll
@@ -32,6 +34,9 @@ class DownloadTab(VerticalScroll):
         super().__init__()
         self.tr = tr
         self._downloader: Downloader | None = None
+        self._cancel_requested = threading.Event()
+        # OpenAI-Codex_web_check: keep download state separate from the Textual message pump.
+        self._download_running = False
 
     def compose(self) -> ComposeResult:
         tr = self.tr
@@ -54,9 +59,9 @@ class DownloadTab(VerticalScroll):
         with Vertical(id="audio-fields", classes="field-row"):
             yield Label(tr.t("lbl_audio_fmt"))
             yield Select(((f, f) for f in AUDIO_FORMATS), value=AUDIO_FORMATS[0], id="audio-fmt", allow_blank=False)
-            # OpenAI-Codex_engine_cli: forward the selected audio bitrate.
             yield Label(tr.t("lbl_bitrate"))
-            yield Select(((f"{v} kbps", v) for v in ("128", "192", "320")), value="192", id="bitrate", allow_blank=False)
+            yield Select(((f"{v} kbps", v) for v in ("128", "192", "320")),
+                         value="192", id="bitrate", allow_blank=False)
 
         yield Label(tr.t("sec_cookie"), classes="section-title")
         with Vertical(classes="field-row"):
@@ -100,39 +105,66 @@ class DownloadTab(VerticalScroll):
         return [u.strip() for u in text.splitlines() if u.strip()]
 
     def _start(self) -> None:
-        urls = self._urls()
-        if not urls:
-            self.app.notify(self.tr.t("msg_no_url_body"), severity="warning")
+        # OpenAI-Codex_app_ui: reserve the form before any callback can reenter.
+        if self._download_running:
             return
+        # OpenAI-Codex_app_ui: reset the old stop before any UI callback.
+        self._cancel_requested.clear()
+        self._download_running = True
+        try:
+            urls = self._urls()
+            if not urls:
+                self.app.notify(self.tr.t("msg_no_url_body"), severity="warning")
+                self._download_running = False
+                return
 
-        save_path = self.query_one("#save-path", Input).value.strip() or "."
-        opts = DownloadOptions(
-            save_path=save_path,
-            mode=self.mode,
-            video_fmt=self.query_one("#video-fmt", Select).value,
-            audio_fmt=self.query_one("#audio-fmt", Select).value,
-            quality=self.query_one("#quality", Select).value,
-            cookie_file=self.query_one("#cookie-file", Input).value.strip() or None,
-            browser=self.query_one("#browser", Select).value,
-            bitrate=self.query_one("#bitrate", Select).value,
-        )
+            save_path = self.query_one("#save-path", Input).value.strip() or "."
+            opts = DownloadOptions(
+                save_path=save_path,
+                mode=self.mode,
+                video_fmt=self.query_one("#video-fmt", Select).value,
+                audio_fmt=self.query_one("#audio-fmt", Select).value,
+                quality=self.query_one("#quality", Select).value,
+                cookie_file=self.query_one("#cookie-file", Input).value.strip() or None,
+                browser=self.query_one("#browser", Select).value,
+                bitrate=self.query_one("#bitrate", Select).value,
+            )
 
-        items = self.query_one("#items-list", ListView)
-        items.clear()
-        self._item_widgets: dict[int, Static] = {}
-        self._item_urls: dict[int, str] = {}
-        for i, url in enumerate(urls):
-            static = Static(f"⏳ {url}")
-            self._item_widgets[i] = static
-            self._item_urls[i] = url
-            items.append(ListItem(static))
+            items = self.query_one("#items-list", ListView)
+            items.clear()
+            self._item_widgets: dict[int, Static] = {}
+            self._item_urls: dict[int, str] = {}
+            for i, url in enumerate(urls):
+                static = Static(f"⏳ {url}")
+                self._item_widgets[i] = static
+                self._item_urls[i] = url
+                items.append(ListItem(static))
 
-        self.query_one("#start", Button).disabled = True
-        self.query_one("#stop", Button).disabled = False
-        self.query_one("#progress", ProgressBar).update(progress=0, total=100)
-        self._run_download(urls, opts)
+            # OpenAI-Codex_app_ui: only reset before an operation is reserved.
+            if not self._download_running:
+                self._cancel_requested.clear()
+            self.query_one("#start", Button).disabled = True
+            self.query_one("#stop", Button).disabled = False
+            # OpenAI-Codex_app_ui: keep an early stop visibly pending.
+            if self._cancel_requested.is_set():
+                self.query_one("#stop", Button).disabled = True
+            self.query_one("#progress", ProgressBar).update(progress=0, total=100)
+            self._run_download(urls, opts)
+
+        except BaseException:
+            # OpenAI-Codex_app_ui: restore controls without masking the start error.
+            try:
+                for selector, disabled in (("#start", False), ("#stop", True)):
+                    try:
+                        self.query_one(selector, Button).disabled = disabled
+                    except Exception:  # noqa: S112 -- preserve the original start error if a widget is gone.
+                        continue
+            finally:
+                self._download_running = False
+            raise
 
     def _stop(self) -> None:
+        self._cancel_requested.set()
         downloader = self._downloader
         if downloader is not None:
             downloader.stop()
@@ -149,12 +181,25 @@ class DownloadTab(VerticalScroll):
         def item_start_cb(i: int, total: int, url: str) -> None:
             self.app.call_from_thread(self._mark_item, i - 1, "running")
 
-        downloader = Downloader(opts, log_cb=log_cb, progress_cb=progress_cb, item_start_cb=item_start_cb)
-        self._downloader = downloader
+        # OpenAI-Codex_app_ui: finish once if downloader initialization fails.
+        try:
+            downloader = Downloader(opts, log_cb=log_cb, progress_cb=progress_cb, item_start_cb=item_start_cb)
+            self._downloader = downloader
+            if self._cancel_requested.is_set():
+                downloader.stop()
+        except BaseException as _initialization_error:
+            self._downloader = None
+            try:
+                self.app.call_from_thread(self._finish)
+            except Exception as _finish_error:
+                raise _initialization_error from _finish_error
+            raise
         try:
             results = downloader.download_batch(urls)
             for i, (_, success, _) in enumerate(results):
                 self.app.call_from_thread(self._mark_item, i, "done" if success else "error")
+            for i in range(len(results), len(urls)):
+                self.app.call_from_thread(self._mark_item, i, "skipped")
         finally:
             self._downloader = None
             self.app.call_from_thread(self._finish)
@@ -164,12 +209,19 @@ class DownloadTab(VerticalScroll):
         self.query_one("#status", Static).update(self.tr.t("status_progress", pct=pct, speed=speed, eta=eta))
 
     def _mark_item(self, index: int, status: str) -> None:
-        icon = {"running": "▶", "done": "✓", "error": "✗"}.get(status, "⏳")
+        icon = {"running": "▶", "done": "✓", "error": "✗", "skipped": "–"}.get(status, "⏳")
         widget = self._item_widgets.get(index)
         url = self._item_urls.get(index)
         if widget is not None and url is not None:
             widget.update(f"{icon} {url}")
 
     def _finish(self) -> None:
-        self.query_one("#start", Button).disabled = False
-        self.query_one("#stop", Button).disabled = True
+        # OpenAI-Codex_app_ui: keep busy until both controls have been restored.
+        try:
+            self.query_one("#start", Button).disabled = False
+            self.query_one("#stop", Button).disabled = True
+        finally:
+            self._download_running = False
+
+
+# Updated by OpenAI-Codex_Fork_Source_Code.

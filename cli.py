@@ -37,7 +37,6 @@ from engine import (
     DownloadOptions,
     Downloader,
 )
-
 from engine.log_safety import redact_sensitive_urls
 
 _ICON = {"info": "·", "ok": "✓", "warn": "!", "err": "✗"}
@@ -63,19 +62,46 @@ def cmd_download(args, log) -> int:
     )
     # yt-dlp prints its own progress bar; no extra progress_cb needed here.
     dl = Downloader(opts, log_cb=log)
-    results = dl.download_batch(args.urls)
-    ok = sum(1 for _, success, _ in results if success)
-    print(f"\nDone: {ok}/{len(results)} succeeded. Files in {os.path.abspath(args.output)}")
-    return 0 if ok == len(results) else 1
+    dl.download_batch(args.urls)
+    summary = dl.last_summary
+    print(f"\nDone: {summary['succeeded']}/{summary['total']} succeeded; "
+          f"{summary['failed']} failed, {summary['skipped']} skipped. "
+          f"Files in {os.path.abspath(args.output)}")
+    return 0 if not summary["failed"] and not summary["cancelled"] else 1
 
 
 def cmd_convert(args, log) -> int:
+    conv = Converter(save_path=args.output, dst_fmt=args.format, log_cb=log,
+                     ffmpeg_bin=args.ffmpeg,
+                     conflict_policy=getattr(args, "conflict_policy", "rename"))
+    if getattr(args, "preview", False):
+        try:
+            rows = conv.preview_batch(args.files)
+        except (OSError, ValueError) as exc:
+            print(f"Conversion preview failed: {redact_sensitive_urls(str(exc))}", file=sys.stderr)
+            return 1
+        tr = i18n.Translator(getattr(args, "lang", "en"))
+        print(tr.t("preview_title"))
+        print(tr.t("preview_snapshot_hint"))
+        for row in rows:
+            print(redact_sensitive_urls(f"{row['src']} -> {row['dst']}"))
+            print(f"  {tr.t('preview_existing')}: {tr.t('preview_' + row['existing'])}")
+            print(f"  {tr.t('preview_source_matches')}: {tr.t('preview_' + row['source_matches'])}")
+            if row["batch_duplicate"]:
+                print(f"  {tr.t('preview_batch_duplicate')}")
+        return 0
+
     os.makedirs(args.output, exist_ok=True)
-    conv = Converter(save_path=args.output, dst_fmt=args.format, log_cb=log, ffmpeg_bin=args.ffmpeg)
-    jobs = conv.convert_batch(args.files)
-    ok = sum(1 for j in jobs if j.status == "done")
-    print(f"Done: {ok}/{len(jobs)} converted. Files in {os.path.abspath(args.output)}")
-    return 0 if ok == len(jobs) else 1
+    try:
+        conv.convert_batch(args.files)
+    except ValueError as exc:
+        print(f"Conversion could not start: {redact_sensitive_urls(str(exc))}", file=sys.stderr)
+        return 1
+    summary = conv.last_summary
+    print(f"Done: {summary['succeeded']}/{summary['total']} converted; "
+          f"{summary['failed']} failed, {summary['skipped']} skipped. "
+          f"Files in {os.path.abspath(args.output)}")
+    return 0 if not summary["failed"] and not summary["cancelled"] else 1
 
 
 def cmd_formats(args, log) -> int:
@@ -111,6 +137,9 @@ def build_parser() -> argparse.ArgumentParser:
     c.add_argument("-o", "--output", default=".", help="output directory (default: current dir)")
     c.add_argument("-f", "--format", default="mp4", choices=VIDEO_FORMATS + AUDIO_FORMATS, help="target format")
     c.add_argument("--ffmpeg", default="ffmpeg", help="ffmpeg binary (default: 'ffmpeg' on PATH)")
+    c.add_argument("--conflict-policy", default="rename", choices=("rename", "skip", "overwrite"),
+                   help="how to handle existing outputs (default: rename)")
+    c.add_argument("--preview", action="store_true", help="inspect destination conflicts without converting")
     c.set_defaults(func=cmd_convert)
 
     f = sub.add_parser("formats", help="list supported formats / quality / browsers")
@@ -130,3 +159,5 @@ def main(argv=None) -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
+
+# Updated by OpenAI-Codex_Fork_Source_Code.

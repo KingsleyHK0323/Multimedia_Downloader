@@ -12,6 +12,11 @@
 
 ### Unreleased
 
+- Preserve existing conversion outputs, review and confirm overwrite plans, and restrict server-side paths and Web operations.
+- Share task, cancellation, progress and result state across interfaces. Support native multi-file selection, audio bitrate and cookie options.
+- Validate AI plans and responses, protect credentials and exported logs, and verify update sources. Preserve tab state and support keyboard navigation.
+- Separate Termux launch and installation, unify retry guidance, and expand cross-interface regression coverage. (OpenAI-Codex)
+
 - Apply the destination space check to queued downloads and honor cancellation requested before batch startup. (OpenAI-Codex)
 
 - Download up to four native HLS/DASH fragments concurrently, check the destination's free space, and preserve pre-start cancellation without cancelling the following queue run. (OpenAI-Codex)

@@ -36,7 +36,7 @@ for (const name of ['LICENSE', 'THIRD-PARTY-NOTICES.md']) {
   await cp(path.join(source, name), path.join(output, name));
 }
 await cp(path.join(source, 'third-party'), path.join(output, 'third-party'), { recursive: true });
-for (const name of ['web_app.py', 'engine_sidecar.py', 'requirements-web.txt']) {
+for (const name of ['web_app.py', 'web_upload.py', 'engine_sidecar.py', 'requirements-web.txt']) {
   await cp(path.join(source, name), path.join(output, 'app', name));
 }
 for (const name of ['ai', 'engine', 'i18n', 'locales']) {

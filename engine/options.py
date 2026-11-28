@@ -39,6 +39,8 @@ class DownloadOptions:
         Browser name to read cookies from. ``"none"`` or ``None`` disables.
     bitrate : str
         Requested audio bitrate in kbps, as a decimal string.
+    noplaylist : bool
+        Treat supplied URLs as individual videos instead of expanding playlists.
     """
     save_path:   str
     mode:        str = "video"
@@ -48,6 +50,8 @@ class DownloadOptions:
     cookie_file: Optional[str] = None
     browser:     Optional[str] = None
     bitrate:     str = "192"
+    # OpenAI-Codex_Fork_Source_Code: selected playlist entries download singly.
+    noplaylist:  bool = False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -66,7 +70,7 @@ class ConvertJob:
     """
     src_path: str
     dst_path: str
-    status:   str = "pending"   # pending | converting | done | error | no_ffmpeg
+    status:   str = "pending"   # pending | converting | done | error | no_ffmpeg | skipped
     error:    str = ""
     #: str value of an :class:`engine.errors.ErrorKind`; "" while not failed.
     #: Typed as str so this module stays dependency-free for the AI planner.
@@ -88,3 +92,14 @@ ItemStartCallback = Callable[[int, int, str], None]
 
 #: ``(job) -> None`` — a ConvertJob whose status just changed
 JobUpdateCallback = Callable[["ConvertJob"], None]
+
+
+def batch_summary(total: int, succeeded: int, failed: int, cancelled: bool) -> dict:
+    """Build the common terminal result without counting skipped items as failures."""
+    return {
+        "total": total,
+        "succeeded": succeeded,
+        "failed": failed,
+        "skipped": total - succeeded - failed,
+        "cancelled": cancelled,
+    }

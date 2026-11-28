@@ -9,9 +9,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Input, RichLog, Select
 
-# OpenAI-Codex_engine_cli: redact selected URL components before display/export.
 from engine.log_safety import redact_sensitive_urls
-
 from .widgets import ConfirmDialog
 
 _LEVEL_COLOR = {
@@ -128,7 +126,7 @@ class LogTab(Vertical):
         if not self._entries:
             self.app.notify(self.tr.t("msg_log_empty_body"), severity="warning")
             return
-        name = f"mmdl_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        stem = f"mmdl_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         lines = [
             self.tr.t("log_file_header"),
             self.tr.t("log_file_generated", ts=datetime.now().isoformat(timespec="seconds")),
@@ -137,9 +135,22 @@ class LogTab(Vertical):
         lines += [f"[{ts}] [{level.upper():4}] {text}" for ts, level, text in self._entries]
         lines.append("")
         lines.append(self.tr.t("log_file_end", n=len(self._entries)))
-        try:
-            with open(name, "w", encoding="utf-8") as f:
-                f.write("\n".join(lines))
+        for index in range(1000):
+            suffix = "" if index == 0 else f"_{index}"
+            name = f"{stem}{suffix}.txt"
+            try:
+                # Exclusive creation prevents replacing another log in a race.
+                with open(name, "x", encoding="utf-8") as f:
+                    f.write("\n".join(lines))
+            except FileExistsError:
+                continue
+            except OSError as e:
+                self.app.notify(self.tr.t("log_save_failed", err=str(e)), severity="error")
+                return
             self.app.notify(self.tr.t("log_saved", name=name))
-        except OSError as e:
-            self.app.notify(self.tr.t("log_save_failed", err=str(e)), severity="error")
+            return
+        self.app.notify(self.tr.t("log_save_failed", err="No available log filename"),
+                        severity="error")
+
+
+# Updated by OpenAI-Codex_Fork_Source_Code.

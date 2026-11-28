@@ -17,6 +17,11 @@ VIDEO_FORMATS: list[str] = [
     "flv", "wmv", "ts",  "m4v", "3gp",
 ]
 
+# OpenAI-Codex_Fork_Source_Code: expose explicit conversion encoder choices.
+# OpenAI-Codex_Fork_Source_Code: VideoToolbox is an explicit choice, not detection.
+VIDEO_ENCODERS: list[str] = ["software", "h264_nvenc", "h264_qsv", "h264_amf", "h264_videotoolbox"]
+HARDWARE_VIDEO_FORMATS: list[str] = ["mp4", "mkv", "mov"]
+
 AUDIO_FORMATS: list[str] = [
     "mp3", "flac", "aac", "wav",
     "ogg", "m4a", "opus", "wma",
