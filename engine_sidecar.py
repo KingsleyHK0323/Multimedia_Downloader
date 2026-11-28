@@ -147,8 +147,13 @@ def _valid_conversion_results(files, jobs, summary, converter) -> bool:
                 prefix, suffix = stem + " (", ")" + extension
                 if not dst.startswith(prefix) or not dst.endswith(suffix):
                     return False
-                number = dst[len(prefix):-len(suffix)]
-                if not number or not number.isascii() or not number.isdigit() or number[0] == "0":
+                number = dst[len(prefix) : -len(suffix)]
+                if (
+                    not number
+                    or not number.isascii()
+                    or not number.isdigit()
+                    or number[0] == "0"
+                ):
                     return False
         return all(summary[key] == count for key, count in seen.items())
     except Exception:
@@ -215,7 +220,13 @@ class Sidecar:
     def _after_fork(self) -> None:
         self._reset_process_state()
 
-    _EXCLUSIVE_COMMANDS = {"download", "convert", "run_queue", "ai_plan", "ai_summarize"}
+    _EXCLUSIVE_COMMANDS = {
+        "download",
+        "convert",
+        "run_queue",
+        "ai_plan",
+        "ai_summarize",
+    }
     _STOPPABLE_COMMANDS = {"download", "convert", "run_queue"}
     _RESERVATION_TTL = 120
     _COMPLETED_TTL = 300
@@ -227,8 +238,10 @@ class Sidecar:
         now = time.monotonic()
         if self._reservation and now >= self._reservation["expires_at"]:
             self._reservation = None
-        for records, ttl in ((self._completed, self._COMPLETED_TTL),
-                             (self._released, self._RELEASED_TTL)):
+        for records, ttl in (
+            (self._completed, self._COMPLETED_TTL),
+            (self._released, self._RELEASED_TTL),
+        ):
             for operation_id, recorded_at in list(records.items()):
                 if now - recorded_at >= ttl:
                     del records[operation_id]
@@ -251,28 +264,46 @@ class Sidecar:
                 self._expire_reservation_locked()
                 if "operation_id" in req:
                     reservation = self._reservation
-                    if (cmd not in self._STOPPABLE_COMMANDS or not isinstance(operation_id, str)
-                            or not operation_id or reservation is None
-                            or reservation["operation_id"] != operation_id
-                            or reservation["command"] != cmd):
+                    if (
+                        cmd not in self._STOPPABLE_COMMANDS
+                        or not isinstance(operation_id, str)
+                        or not operation_id
+                        or reservation is None
+                        or reservation["operation_id"] != operation_id
+                        or reservation["command"] != cmd
+                    ):
                         if _started is not None:
                             _started.set()
-                        return {"id": rid, "ok": False, "error_code": "invalid_operation",
-                                "error": "operation reservation is invalid or expired"}
+                        return {
+                            "id": rid,
+                            "ok": False,
+                            "error_code": "invalid_operation",
+                            "error": "operation reservation is invalid or expired",
+                        }
                     cancelled_on_claim = reservation["cancelled"]
                 elif self._reservation is not None:
                     if _started is not None:
                         _started.set()
-                    return {"id": rid, "ok": False, "error_code": "busy",
-                            "error": "another operation is already running or reserved"}
+                    return {
+                        "id": rid,
+                        "ok": False,
+                        "error_code": "busy",
+                        "error": "another operation is already running or reserved",
+                    }
                 else:
-                    cancelled_on_claim = (cmd in self._STOPPABLE_COMMANDS
-                                          and req.get("pre_cancelled") is True)
+                    cancelled_on_claim = (
+                        cmd in self._STOPPABLE_COMMANDS
+                        and req.get("pre_cancelled") is True
+                    )
                 if self._current_command is not None:
                     if _started is not None:
                         _started.set()
-                    return {"id": rid, "ok": False, "error_code": "busy",
-                            "error": "another operation is already running"}
+                    return {
+                        "id": rid,
+                        "ok": False,
+                        "error_code": "busy",
+                        "error": "another operation is already running",
+                    }
                 if operation_id is not None:
                     self._reservation = None
                 self._current_command = cmd
@@ -293,7 +324,11 @@ class Sidecar:
                     raise ValueError("before_execute must be callable")
                 if not cancelled_on_claim:
                     hook()
-            result = handler(args, operation_id) if cmd in self._STOPPABLE_COMMANDS else handler(args)
+            result = (
+                handler(args, operation_id)
+                if cmd in self._STOPPABLE_COMMANDS
+                else handler(args)
+            )
             return {"id": rid, "ok": True, "result": result}
         except _BusyError as e:
             return {"id": rid, "ok": False, "error_code": "busy", "error": str(e)}
@@ -321,6 +356,7 @@ class Sidecar:
 
     def _callbacks(self, operation_id: Optional[str]):
         """Bind each event to the operation that created its callbacks."""
+
         def emit(event):
             if operation_id is not None:
                 event["operation_id"] = operation_id
@@ -336,8 +372,16 @@ class Sidecar:
             emit({"type": "item_start", "index": index, "total": total, "url": url})
 
         def task_update(task):
-            emit({"type": "task_update", "task_id": task.task_id, "label": task.label,
-                  "kind": task.kind, "status": task.status, "error": task.error})
+            emit(
+                {
+                    "type": "task_update",
+                    "task_id": task.task_id,
+                    "label": task.label,
+                    "kind": task.kind,
+                    "status": task.status,
+                    "error": task.error,
+                }
+            )
 
         return log, progress, item_start, task_update
 
@@ -352,9 +396,16 @@ class Sidecar:
         self._emit({"type": "item_start", "index": index, "total": total, "url": url})
 
     def _task_update_cb(self, task: Task) -> None:
-        self._emit({"type": "task_update", "task_id": task.task_id,
-                    "label": task.label, "kind": task.kind,
-                    "status": task.status, "error": task.error})
+        self._emit(
+            {
+                "type": "task_update",
+                "task_id": task.task_id,
+                "label": task.label,
+                "kind": task.kind,
+                "status": task.status,
+                "error": task.error,
+            }
+        )
 
     # ── Commands ────────────────────────────────────────────────────────────────
     def _cmd_ping(self, args: dict) -> dict:
@@ -387,23 +438,32 @@ class Sidecar:
         if args.get("require_absolute_paths"):
             self._require_native_absolute(raw_options.get("save_path"), "save path")
         # OpenAI-Codex: retain the legacy desktop cookie-only validation flag.
-        if args.get("require_absolute_paths") or args.get("require_absolute_cookie_path"):
+        if args.get("require_absolute_paths") or args.get(
+            "require_absolute_cookie_path"
+        ):
             cookie_file = raw_options.get("cookie_file")
             if cookie_file is not None and cookie_file != "":
                 self._require_native_absolute(cookie_file, "cookie file")
         opts = DownloadOptions(**raw_options)
         log_cb, progress_cb, item_start_cb, _ = self._callbacks(operation_id)
-        dl = Downloader(opts, log_cb=log_cb,
-                        progress_cb=progress_cb, item_start_cb=item_start_cb)
+        dl = Downloader(
+            opts, log_cb=log_cb, progress_cb=progress_cb, item_start_cb=item_start_cb
+        )
         self._set_active(dl)
         urls = list(args["urls"])
         results = dl.download_batch(urls)
         # Normalise (url, ok, err) tuples to JSON arrays for a stable contract.
-        fallback = {"total": len(urls), "succeeded": sum(bool(r[1]) for r in results),
-                    "failed": sum(not r[1] for r in results),
-                    "skipped": len(urls) - len(results), "cancelled": False}
-        return {"results": [list(r) for r in results],
-                "summary": getattr(dl, "last_summary", fallback)}
+        fallback = {
+            "total": len(urls),
+            "succeeded": sum(bool(r[1]) for r in results),
+            "failed": sum(not r[1] for r in results),
+            "skipped": len(urls) - len(results),
+            "cancelled": False,
+        }
+        return {
+            "results": [list(r) for r in results],
+            "summary": getattr(dl, "last_summary", fallback),
+        }
 
     def _cmd_preview_playlist(self, args: dict) -> dict:
         options = args.get("options")
@@ -438,13 +498,23 @@ class Sidecar:
             if not isinstance(task, dict) or task.get("kind") != "convert":
                 raise ValueError("preview accepts only conversion tasks")
             task_id = task.get("task_id")
-            if not isinstance(task_id, str) or not task_id.strip() or task_id in seen_ids:
+            if (
+                not isinstance(task_id, str)
+                or not task_id.strip()
+                or task_id in seen_ids
+            ):
                 raise ValueError("preview task IDs must be non-empty and unique")
             source, destination = task.get("src_path"), task.get("dst_path")
-            if any(not isinstance(path, str) or not path.strip() or "\x00" in path
-                   for path in (source, destination)):
+            if any(
+                not isinstance(path, str) or not path.strip() or "\x00" in path
+                for path in (source, destination)
+            ):
                 raise ValueError("preview requires valid source and destination paths")
-            if (task.get("conflict_policy") or "rename") not in ("rename", "skip", "overwrite"):
+            if (task.get("conflict_policy") or "rename") not in (
+                "rename",
+                "skip",
+                "overwrite",
+            ):
                 raise ValueError("invalid conflict policy")
             if args.get("require_absolute_paths"):
                 self._require_native_absolute(source, "conversion source")
@@ -453,16 +523,23 @@ class Sidecar:
             seen_ids.add(task_id)
             jobs.append(ConvertJob(src_path=source, dst_path=destination))
         previews = Converter.preview_jobs(jobs)
-        if len(previews) != len(ids) or any(not isinstance(row, dict) for row in previews):
+        if len(previews) != len(ids) or any(
+            not isinstance(row, dict) for row in previews
+        ):
             raise ValueError("invalid queue preview result")
-        return {"jobs": [{"task_id": task_id, **row} for task_id, row in zip(ids, previews)]}
+        return {
+            "jobs": [{"task_id": task_id, **row} for task_id, row in zip(ids, previews)]
+        }
 
     def _cmd_convert(self, args: dict, operation_id: Optional[str] = None) -> dict:
         # OpenAI-Codex_engine_cli: protect direct handler calls as well.
         args = dict(args)
         if isinstance(args.get("files"), list):
             args["files"] = list(args["files"])
-        if args.get("conflict_policy") == "overwrite" and args.get("overwrite_confirmed") is not True:
+        if (
+            args.get("conflict_policy") == "overwrite"
+            and args.get("overwrite_confirmed") is not True
+        ):
             raise ValueError("overwrite requires explicit confirmation")
         if args.get("require_absolute_paths"):
             self._require_native_absolute(args.get("save_path"), "save path")
@@ -470,19 +547,33 @@ class Sidecar:
                 self._require_native_absolute(source, "conversion source")
         log_cb, _, _, _ = self._callbacks(operation_id)
         conv = Converter(
-            save_path=args["save_path"], dst_fmt=args["dst_fmt"],
-            log_cb=log_cb, ffmpeg_bin=args.get("ffmpeg_bin") or DEFAULT_FFMPEG,
+            save_path=args["save_path"],
+            dst_fmt=args["dst_fmt"],
+            log_cb=log_cb,
+            ffmpeg_bin=args.get("ffmpeg_bin") or DEFAULT_FFMPEG,
             conflict_policy=args.get("conflict_policy") or "rename",
             video_encoder=args.get("video_encoder", "software"),
         )
         self._set_active(conv)
         jobs = conv.convert_batch(args["files"])
-        if not _valid_conversion_results(args["files"], jobs, getattr(conv, "last_summary", None), conv):
-            raise ValueError("Conversion result is unknown; check existing output files before trying again.")
-        return {"jobs": [
-            {"src": j.src_path, "dst": j.dst_path, "status": j.status, "error": j.error}
-            for j in jobs
-        ], "summary": conv.last_summary}
+        if not _valid_conversion_results(
+            args["files"], jobs, getattr(conv, "last_summary", None), conv
+        ):
+            raise ValueError(
+                "Conversion result is unknown; check existing output files before trying again."
+            )
+        return {
+            "jobs": [
+                {
+                    "src": j.src_path,
+                    "dst": j.dst_path,
+                    "status": j.status,
+                    "error": j.error,
+                }
+                for j in jobs
+            ],
+            "summary": conv.last_summary,
+        }
 
     def _cmd_run_queue(self, args: dict, operation_id: Optional[str] = None) -> dict:
         # OpenAI-Codex_engine_cli: protect direct handler calls as well.
@@ -496,22 +587,38 @@ class Sidecar:
                     if cookie_file is not None and cookie_file != "":
                         self._require_native_absolute(cookie_file, "cookie file")
                 elif task.get("kind") == "convert":
-                    self._require_native_absolute(task.get("src_path"), "conversion source")
-                    self._require_native_absolute(task.get("dst_path"), "conversion destination")
+                    self._require_native_absolute(
+                        task.get("src_path"), "conversion source"
+                    )
+                    self._require_native_absolute(
+                        task.get("dst_path"), "conversion destination"
+                    )
         tasks = [self._task_from_dict(t) for t in args["tasks"]]
         task_ids = [task.task_id for task in tasks]
         if len(task_ids) != len(set(task_ids)):
             raise ValueError("task IDs must be unique")
         log_cb, _, _, task_update_cb = self._callbacks(operation_id)
-        tq = TaskQueue(log_cb=log_cb, task_update_cb=task_update_cb,
-                       ffmpeg_bin=args.get("ffmpeg_bin") or DEFAULT_FFMPEG)
+        tq = TaskQueue(
+            log_cb=log_cb,
+            task_update_cb=task_update_cb,
+            ffmpeg_bin=args.get("ffmpeg_bin") or DEFAULT_FFMPEG,
+        )
         self._set_active(tq)
         tq.run(tasks)
-        return {"tasks": [
-            {"task_id": t.task_id, "kind": t.kind, "label": t.label,
-             "status": t.status, "error": t.error, "dst_path": t.dst_path}
-            for t in tasks
-        ], "summary": tq.last_summary}
+        return {
+            "tasks": [
+                {
+                    "task_id": t.task_id,
+                    "kind": t.kind,
+                    "label": t.label,
+                    "status": t.status,
+                    "error": t.error,
+                    "dst_path": t.dst_path,
+                }
+                for t in tasks
+            ],
+            "summary": tq.last_summary,
+        }
 
     def _cmd_ai_plan(self, args: dict) -> dict:
         orch = Orchestrator(args["api_key"], log_cb=self._log_cb)
@@ -539,16 +646,28 @@ class Sidecar:
                 raise _BusyError("another operation is already running or reserved")
             for _ in range(8):
                 self._operation_sequence += 1
-                operation_id = f"{self._instance_id}:{self._operation_sequence}:{uuid4()}"
-                if operation_id not in self._completed and operation_id not in self._released:
+                operation_id = (
+                    f"{self._instance_id}:{self._operation_sequence}:{uuid4()}"
+                )
+                if (
+                    operation_id not in self._completed
+                    and operation_id not in self._released
+                ):
                     break
             else:
                 raise RuntimeError("could not allocate a unique operation ID")
-            self._reservation = {"operation_id": operation_id, "command": command,
-                                 "expires_at": time.monotonic() + self._RESERVATION_TTL,
-                                 "cancelled": False}
-        return {"operation_id": operation_id, "instance_id": self._instance_id,
-                "command": command, "expires_in": self._RESERVATION_TTL}
+            self._reservation = {
+                "operation_id": operation_id,
+                "command": command,
+                "expires_at": time.monotonic() + self._RESERVATION_TTL,
+                "cancelled": False,
+            }
+        return {
+            "operation_id": operation_id,
+            "instance_id": self._instance_id,
+            "command": command,
+            "expires_in": self._RESERVATION_TTL,
+        }
 
     def _cmd_release(self, args: dict) -> dict:
         operation_id = args.get("operation_id")
@@ -566,15 +685,22 @@ class Sidecar:
         operation_id = args.get("operation_id")
         with self._state_lock:
             self._expire_reservation_locked()
+
             def snapshot(state):
-                return {"state": state, "instance_id": self._instance_id,
-                        "idle": self._current_command is None and self._reservation is None}
+                return {
+                    "state": state,
+                    "instance_id": self._instance_id,
+                    "idle": self._current_command is None and self._reservation is None,
+                }
 
             if not isinstance(operation_id, str) or not operation_id:
                 return snapshot("unknown")
             if self._reservation and self._reservation["operation_id"] == operation_id:
                 return snapshot("reserved")
-            if self._current_operation_id == operation_id and self._current_command is not None:
+            if (
+                self._current_operation_id == operation_id
+                and self._current_command is not None
+            ):
                 return snapshot("running")
             if operation_id in self._completed:
                 return snapshot("completed")
@@ -587,11 +713,17 @@ class Sidecar:
             self._expire_reservation_locked()
             if "operation_id" in args:
                 operation_id = args.get("operation_id")
-                if self._reservation and self._reservation["operation_id"] == operation_id:
+                if (
+                    self._reservation
+                    and self._reservation["operation_id"] == operation_id
+                ):
                     self._reservation["cancelled"] = True
                     return {"stopping": True}
-                if (not isinstance(operation_id, str) or not operation_id
-                        or operation_id != self._current_operation_id):
+                if (
+                    not isinstance(operation_id, str)
+                    or not operation_id
+                    or operation_id != self._current_operation_id
+                ):
                     return {"stopping": False}
             elif self._current_operation_id is not None:
                 return {"stopping": False}
@@ -615,8 +747,14 @@ class Sidecar:
     #: reported as a server fault. It also made the accepted surface implicit,
     #: which is the wrong default for a field that arrives over the network.
     _DOWNLOAD_OPTION_KEYS = (
-        "save_path", "mode", "video_fmt", "audio_fmt", "quality",
-        "cookie_file", "browser", "bitrate",
+        "save_path",
+        "mode",
+        "video_fmt",
+        "audio_fmt",
+        "quality",
+        "cookie_file",
+        "browser",
+        "bitrate",
         # OpenAI-Codex_Fork_Source_Code: preserve single-entry playlist selection.
         "noplaylist",
     )
@@ -631,13 +769,23 @@ class Sidecar:
             if type(raw.get("noplaylist", False)) is not bool:
                 raise ValueError("noplaylist must be a boolean")
             opts = {k: raw[k] for k in cls._DOWNLOAD_OPTION_KEYS if k in raw}
-            return Task(kind="download", label=d.get("label", ""),
-                        url=d.get("url"), options=DownloadOptions(**opts), **task_args)
+            return Task(
+                kind="download",
+                label=d.get("label", ""),
+                url=d.get("url"),
+                options=DownloadOptions(**opts),
+                **task_args,
+            )
         if kind == "convert":
-            return Task(kind="convert", label=d.get("label", ""),
-                        src_path=d.get("src_path"), dst_path=d.get("dst_path"),
-                        conflict_policy=d.get("conflict_policy") or "rename",
-                        video_encoder=d.get("video_encoder", "software"), **task_args)
+            return Task(
+                kind="convert",
+                label=d.get("label", ""),
+                src_path=d.get("src_path"),
+                dst_path=d.get("dst_path"),
+                conflict_policy=d.get("conflict_policy") or "rename",
+                video_encoder=d.get("video_encoder", "software"),
+                **task_args,
+            )
         return Task(kind=kind or "?", label=d.get("label", ""), **task_args)
 
 
@@ -675,8 +823,9 @@ def main(inp=None, out=None) -> None:
 
         # Long-running commands run on a worker thread; response emitted when done.
         started = threading.Event()
-        t = threading.Thread(target=lambda r=req, s=started: emit(sidecar.dispatch(r, s)),
-                             daemon=True)
+        t = threading.Thread(
+            target=lambda r=req, s=started: emit(sidecar.dispatch(r, s)), daemon=True
+        )
         t.start()
         # Claim the operation before reading a following stop request.
         started.wait()

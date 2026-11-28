@@ -47,17 +47,18 @@ class Task:
     * ``"download"`` uses ``url`` + ``options``
     * ``"convert"``  uses ``src_path`` + ``dst_path``
     """
-    kind:     str
-    label:    str = ""
-    status:   str = "pending"   # pending | running | done | error | skipped
-    error:    str = ""
+
+    kind: str
+    label: str = ""
+    status: str = "pending"  # pending | running | done | error | skipped
+    error: str = ""
     #: str value of an :class:`engine.errors.ErrorKind`; "" while not failed.
     #: Named error_kind, not kind -- ``kind`` above already means the task type
     #: ("download"/"convert") and crosses the IPC boundary under that name.
     error_kind: str = ""
     # download
-    url:      Optional[str] = None
-    options:  Optional[DownloadOptions] = None
+    url: Optional[str] = None
+    options: Optional[DownloadOptions] = None
     # convert
     src_path: Optional[str] = None
     dst_path: Optional[str] = None
@@ -71,10 +72,15 @@ class Task:
             raise ValueError("task_id must be a non-empty string")
         if self.conflict_policy not in ("rename", "skip", "overwrite"):
             raise ValueError("conflict_policy must be rename, skip, or overwrite")
-        self.video_encoder = ensure_known(self.video_encoder, VIDEO_ENCODERS, "video encoder")
+        self.video_encoder = ensure_known(
+            self.video_encoder, VIDEO_ENCODERS, "video encoder"
+        )
         if self.video_encoder != "software":
-            extension = (os.path.splitext(self.dst_path)[1].lstrip(".").lower()
-                         if isinstance(self.dst_path, str) else "")
+            extension = (
+                os.path.splitext(self.dst_path)[1].lstrip(".").lower()
+                if isinstance(self.dst_path, str)
+                else ""
+            )
             if extension not in HARDWARE_VIDEO_FORMATS:
                 raise ValueError(
                     f"{self.video_encoder} supports only {', '.join(HARDWARE_VIDEO_FORMATS)} output"
@@ -83,16 +89,26 @@ class Task:
 
 # ── Task factories — the clean way for a planner to build a plan ──────────────
 
+
 def download_task(url: str, options: DownloadOptions, label: str = "") -> Task:
-    return Task(kind=DOWNLOAD, url=url, options=options,
-                label=label or url)
+    return Task(kind=DOWNLOAD, url=url, options=options, label=label or url)
 
 
-def convert_task(src_path: str, dst_path: str, label: str = "",
-                 conflict_policy: str = "rename", video_encoder: str = "software") -> Task:
-    return Task(kind=CONVERT, src_path=src_path, dst_path=dst_path,
-                label=label or os.path.basename(src_path), conflict_policy=conflict_policy,
-                video_encoder=video_encoder)
+def convert_task(
+    src_path: str,
+    dst_path: str,
+    label: str = "",
+    conflict_policy: str = "rename",
+    video_encoder: str = "software",
+) -> Task:
+    return Task(
+        kind=CONVERT,
+        src_path=src_path,
+        dst_path=dst_path,
+        label=label or os.path.basename(src_path),
+        conflict_policy=conflict_policy,
+        video_encoder=video_encoder,
+    )
 
 
 # OpenAI-Codex_engine_cli: reject concurrent and callback-reentrant queue runs.
@@ -124,6 +140,7 @@ def _exclusive_queue_run(method):
             # OpenAI-Codex: consume this run's cancellation after recording its summary.
             self._stop = False
             self._run_lock.release()
+
     return guarded
 
 
@@ -141,20 +158,20 @@ class TaskQueue:
 
     def __init__(
         self,
-        log_cb:         Optional[LogCallback]        = None,
+        log_cb: Optional[LogCallback] = None,
         task_update_cb: Optional[TaskUpdateCallback] = None,
-        ffmpeg_bin:     str = "ffmpeg",
+        ffmpeg_bin: str = "ffmpeg",
     ) -> None:
-        self.log_cb         = log_cb
+        self.log_cb = log_cb
         self.task_update_cb = task_update_cb
         # OpenAI-Codex_engine_cli: track the precise callback exception.
         self._task_update_error = None
         # OpenAI-Codex_engine_cli: preflight is outside the task iteration.
         self._task_loop_started = False
-        self.ffmpeg_bin     = ffmpeg_bin
+        self.ffmpeg_bin = ffmpeg_bin
         # OpenAI-Codex_engine_cli: share one nonblocking guard per queue.
         self._run_lock = Lock()
-        self._stop          = False
+        self._stop = False
         self._active: Optional[Downloader | Converter] = None
         self._protected_paths: list[str] = []
         self.last_summary = batch_summary(0, 0, 0, False)
@@ -178,8 +195,9 @@ class TaskQueue:
             raise ValueError("task_id values must be unique within a queue")
         if not self._stop:
             self._validate_plan(tasks)
-        self._protected_paths = [task.src_path for task in tasks
-                                 if task.kind == CONVERT and task.src_path]
+        self._protected_paths = [
+            task.src_path for task in tasks if task.kind == CONVERT and task.src_path
+        ]
         total = len(tasks)
         self._log("info", "log_queue_start", n=total)
 
@@ -189,7 +207,7 @@ class TaskQueue:
             # OpenAI-Codex_engine_cli: reconcile only after an item iteration begins.
             self._task_loop_started = True
             if self._stop:
-                for rest in tasks[i - 1:]:
+                for rest in tasks[i - 1 :]:
                     if rest.status == "pending":
                         self._set_status(rest, "skipped")
                 self._log("warn", "log_queue_stopped")
@@ -197,10 +215,16 @@ class TaskQueue:
                 break
 
             planned_destination = task.dst_path if task.kind == CONVERT else None
-            if (task.kind == CONVERT and task.src_path
-                    and not Converter._identities(task.src_path).isdisjoint(ambiguous_outputs)):
+            if (
+                task.kind == CONVERT
+                and task.src_path
+                and not Converter._identities(task.src_path).isdisjoint(
+                    ambiguous_outputs
+                )
+            ):
                 self._set_status(
-                    task, "skipped",
+                    task,
+                    "skipped",
                     "ambiguous dependency: an earlier conversion did not produce the planned input",
                 )
             else:
@@ -208,8 +232,13 @@ class TaskQueue:
 
             if planned_destination:
                 planned_identities = Converter._identities(planned_destination)
-                if (task.status == "done" and task.dst_path
-                        and not Converter._identities(task.dst_path).isdisjoint(planned_identities)):
+                if (
+                    task.status == "done"
+                    and task.dst_path
+                    and not Converter._identities(task.dst_path).isdisjoint(
+                        planned_identities
+                    )
+                ):
                     ambiguous_outputs.difference_update(planned_identities)
                 else:
                     ambiguous_outputs.update(planned_identities)
@@ -234,10 +263,18 @@ class TaskQueue:
             if candidate_task.src_path:
                 for prior_destination in prior_conversion_destinations:
                     try:
-                        same_file = os.path.samefile(candidate_task.src_path, prior_destination)
+                        same_file = os.path.samefile(
+                            candidate_task.src_path, prior_destination
+                        )
                     except FileNotFoundError:
                         continue
-                    except (OSError, TypeError, ValueError, AttributeError, NotImplementedError):
+                    except (
+                        OSError,
+                        TypeError,
+                        ValueError,
+                        AttributeError,
+                        NotImplementedError,
+                    ):
                         raise ValueError(
                             "cannot safely determine existing conversion dependencies; "
                             "run conversions separately"
@@ -259,18 +296,25 @@ class TaskQueue:
             if task.kind != CONVERT:
                 continue
             if task.src_path:
-                if any(TaskQueue._download_may_contain_source(directory, task.src_path)
-                       for directory in download_directories):
+                if any(
+                    TaskQueue._download_may_contain_source(directory, task.src_path)
+                    for directory in download_directories
+                ):
                     raise ValueError(
                         "ambiguous dependency: a prior download may produce this source; "
                         "run downloads and conversions separately"
                     )
-                producers = [entry for source_id in Converter._identities(task.src_path)
-                             for entry in destinations.get(source_id, [])]
+                producers = [
+                    entry
+                    for source_id in Converter._identities(task.src_path)
+                    for entry in destinations.get(source_id, [])
+                ]
                 # OpenAI-Codex_engine_cli: a folded alias is not a declared dependency.
                 source_exact = Converter._exact_identities(task.src_path)
-                if any(Converter._exact_identities(path).isdisjoint(source_exact)
-                       for path, _, _ in producers):
+                if any(
+                    Converter._exact_identities(path).isdisjoint(source_exact)
+                    for path, _, _ in producers
+                ):
                     raise ValueError(
                         "ambiguous dependency: source and destination may be aliases"
                     )
@@ -286,8 +330,10 @@ class TaskQueue:
                 destination_ids = Converter._identities(task.dst_path)
                 for destination_id in destination_ids:
                     previous = destinations.get(destination_id, [])
-                    if previous and (task.conflict_policy == "overwrite"
-                                     or any(policy == "overwrite" for _, policy, _ in previous)):
+                    if previous and (
+                        task.conflict_policy == "overwrite"
+                        or any(policy == "overwrite" for _, policy, _ in previous)
+                    ):
                         raise ValueError(
                             "overwrite cannot target the same destination for multiple tasks"
                         )
@@ -300,6 +346,7 @@ class TaskQueue:
     def _download_may_contain_source(directory: Optional[str], source: str) -> bool:
         """Check lexical and resolved paths without assuming a download output name."""
         try:
+
             def audited_realpath(absolute: str) -> str:
                 resolved = os.path.normcase(os.path.abspath(os.path.realpath(absolute)))
                 if not os.path.isabs(resolved):
@@ -326,13 +373,17 @@ class TaskQueue:
                             break
                         if index == 0 and not stat.S_ISDIR(info.st_mode):
                             raise ValueError("path root is not a directory")
-                        is_link = (stat.S_ISLNK(info.st_mode)
-                                   or bool(getattr(info, "st_file_attributes", 0) & 0x400))
+                        is_link = stat.S_ISLNK(info.st_mode) or bool(
+                            getattr(info, "st_file_attributes", 0) & 0x400
+                        )
                         if is_link:
                             os.stat(prefix)
-                            link_target = os.path.normcase(os.path.abspath(os.path.realpath(prefix)))
-                            if (link_target == os.path.normcase(os.path.abspath(prefix))
-                                    or not os.path.samefile(prefix, link_target)):
+                            link_target = os.path.normcase(
+                                os.path.abspath(os.path.realpath(prefix))
+                            )
+                            if link_target == os.path.normcase(
+                                os.path.abspath(prefix)
+                            ) or not os.path.samefile(prefix, link_target):
                                 raise ValueError("link target cannot be verified")
 
                 audit(absolute)
@@ -371,8 +422,13 @@ class TaskQueue:
                     raise ValueError("path drive cannot be determined")
                 # OpenAI-Codex_engine_cli: POSIX volumes may ignore path case.
                 for folded_root in Converter._conservative_spellings(root):
-                    for folded_candidate in Converter._conservative_spellings(candidate):
-                        if os.path.commonpath([folded_root, folded_candidate]) == folded_root:
+                    for folded_candidate in Converter._conservative_spellings(
+                        candidate
+                    ):
+                        if (
+                            os.path.commonpath([folded_root, folded_candidate])
+                            == folded_root
+                        ):
                             return True
                 if os.path.commonpath([root, candidate]) == root:
                     return True
@@ -476,8 +532,9 @@ class TaskQueue:
         failed = sum(1 for task in tasks if task.status == "error")
         self.last_summary = batch_summary(len(tasks), succeeded, failed, self._stop)
 
-    def _set_status(self, task: Task, status: str, error: str = "",
-                    kind: ErrorKind | None = None) -> None:
+    def _set_status(
+        self, task: Task, status: str, error: str = "", kind: ErrorKind | None = None
+    ) -> None:
         task.status = status
         if error:
             task.error = redact_sensitive_urls(error)
@@ -495,6 +552,8 @@ class TaskQueue:
 
     def _log(self, level: str, key: str, **fmt) -> None:
         if self.log_cb:
-            safe = {name: redact_sensitive_urls(value) if isinstance(value, str) else value
-                    for name, value in fmt.items()}
+            safe = {
+                name: redact_sensitive_urls(value) if isinstance(value, str) else value
+                for name, value in fmt.items()
+            }
             self.log_cb(level, key, **safe)

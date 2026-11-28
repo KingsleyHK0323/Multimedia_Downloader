@@ -18,11 +18,13 @@ def _load_queue():
     path = Path(__file__).absolute().parent.parent / "engine" / "queue.py"
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     helper = [
-        node for node in tree.body
+        node
+        for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name == "_exclusive_queue_run"
     ]
     queue_class = [
-        node for node in tree.body
+        node
+        for node in tree.body
         if isinstance(node, ast.ClassDef) and node.name == "TaskQueue"
     ]
     if len(helper) != 1 or len(queue_class) != 1:
@@ -230,12 +232,13 @@ class QueueOperationGuardTests(unittest.TestCase):
                     queue.run([later])
                     self.assertEqual(later.status, "done")
 
-
     # OpenAI-Codex_engine_cli: callback failures clean up without calling back again.
     def test_running_callback_failure_marks_error_and_skips_pending(self):
         for error_type in (RuntimeError, SyntheticCancelled, ControlSignal):
             with self.subTest(error_type=error_type):
-                first, current, pending = (_download_task(name) for name in ("first", "current", "pending"))
+                first, current, pending = (
+                    _download_task(name) for name in ("first", "current", "pending")
+                )
                 failure = error_type("synthetic-private-marker")
                 events = []
 
@@ -249,13 +252,29 @@ class QueueOperationGuardTests(unittest.TestCase):
                 with self.assertRaises(error_type) as caught:
                     queue.run([first, current, pending])
                 self.assertIs(caught.exception, failure)
-                self.assertEqual([first.status, current.status, pending.status], ["done", "error", "skipped"])
-                self.assertEqual(current.error, "Task update callback failed; the task outcome is unknown.")
+                self.assertEqual(
+                    [first.status, current.status, pending.status],
+                    ["done", "error", "skipped"],
+                )
+                self.assertEqual(
+                    current.error,
+                    "Task update callback failed; the task outcome is unknown.",
+                )
                 self.assertEqual(current.error_kind, "unknown")
-                self.assertEqual(queue.last_summary, {
-                    "total": 3, "succeeded": 1, "failed": 1, "skipped": 1, "cancelled": False,
-                })
-                self.assertEqual(events, [("first", "running"), ("first", "done"), ("current", "running")])
+                self.assertEqual(
+                    queue.last_summary,
+                    {
+                        "total": 3,
+                        "succeeded": 1,
+                        "failed": 1,
+                        "skipped": 1,
+                        "cancelled": False,
+                    },
+                )
+                self.assertEqual(
+                    events,
+                    [("first", "running"), ("first", "done"), ("current", "running")],
+                )
                 self.assertIsNone(queue._active)
                 queue.task_update_cb = None
                 later = _download_task("later")
@@ -265,7 +284,9 @@ class QueueOperationGuardTests(unittest.TestCase):
     def test_done_callback_failure_keeps_terminal_result_and_skips_pending(self):
         for error_type in (RuntimeError, SyntheticCancelled, ControlSignal):
             with self.subTest(error_type=error_type):
-                first, current, pending = (_download_task(name) for name in ("first", "current", "pending"))
+                first, current, pending = (
+                    _download_task(name) for name in ("first", "current", "pending")
+                )
                 failure = error_type("synthetic-private-marker")
                 events = []
 
@@ -279,33 +300,50 @@ class QueueOperationGuardTests(unittest.TestCase):
                 with self.assertRaises(error_type) as caught:
                     queue.run([first, current, pending])
                 self.assertIs(caught.exception, failure)
-                self.assertEqual([first.status, current.status, pending.status], ["done", "done", "skipped"])
+                self.assertEqual(
+                    [first.status, current.status, pending.status],
+                    ["done", "done", "skipped"],
+                )
                 self.assertEqual(current.error, "")
-                self.assertEqual(queue.last_summary, {
-                    "total": 3, "succeeded": 2, "failed": 0, "skipped": 1, "cancelled": False,
-                })
-                self.assertEqual(events, [
-                    ("first", "running"), ("first", "done"),
-                    ("current", "running"), ("current", "done"),
-                ])
+                self.assertEqual(
+                    queue.last_summary,
+                    {
+                        "total": 3,
+                        "succeeded": 2,
+                        "failed": 0,
+                        "skipped": 1,
+                        "cancelled": False,
+                    },
+                )
+                self.assertEqual(
+                    events,
+                    [
+                        ("first", "running"),
+                        ("first", "done"),
+                        ("current", "running"),
+                        ("current", "done"),
+                    ],
+                )
                 self.assertIsNone(queue._active)
                 queue.task_update_cb = None
                 later = _download_task("later")
                 queue.run([later])
                 self.assertEqual(later.status, "done")
 
-
     # OpenAI-Codex_engine_cli: reconcile non-callback exceptions after work begins.
     def test_non_callback_exception_reconciles_started_queue(self):
         for error_type in (ValueError, ControlSignal):
             with self.subTest(error_type=error_type):
                 done, failed, skipped, active, pending = [
-                    _task(name) for name in ("done", "failed", "skipped", "active", "pending")
+                    _task(name)
+                    for name in ("done", "failed", "skipped", "active", "pending")
                 ]
                 failure = error_type("synthetic-private-marker")
                 events = []
                 queue = self._queue()
-                queue.task_update_cb = lambda task: events.append((task.task_id, task.status))
+                queue.task_update_cb = lambda task: events.append(
+                    (task.task_id, task.status)
+                )
 
                 def run_task(task, _index, _total):
                     queue._set_status(task, "running")
@@ -327,18 +365,34 @@ class QueueOperationGuardTests(unittest.TestCase):
                     ["done", "error", "skipped", "error", "skipped"],
                 )
                 self.assertEqual(failed.error, "earlier synthetic failure")
-                self.assertEqual(active.error, "Task execution interrupted; the task outcome is unknown.")
+                self.assertEqual(
+                    active.error,
+                    "Task execution interrupted; the task outcome is unknown.",
+                )
                 self.assertEqual(active.error_kind, "unknown")
-                self.assertEqual(queue.last_summary, {
-                    "total": 5, "succeeded": 1, "failed": 2, "skipped": 2, "cancelled": False,
-                })
+                self.assertEqual(
+                    queue.last_summary,
+                    {
+                        "total": 5,
+                        "succeeded": 1,
+                        "failed": 2,
+                        "skipped": 2,
+                        "cancelled": False,
+                    },
+                )
                 self.assertFalse(queue._stop)
-                self.assertEqual(events, [
-                    ("done", "running"), ("done", "done"),
-                    ("failed", "running"), ("failed", "error"),
-                    ("skipped", "running"), ("skipped", "skipped"),
-                    ("active", "running"),
-                ])
+                self.assertEqual(
+                    events,
+                    [
+                        ("done", "running"),
+                        ("done", "done"),
+                        ("failed", "running"),
+                        ("failed", "error"),
+                        ("skipped", "running"),
+                        ("skipped", "skipped"),
+                        ("active", "running"),
+                    ],
+                )
 
     def test_non_callback_preflight_exception_keeps_original_state(self):
         queue = self._queue()
@@ -367,15 +421,25 @@ class QueueOperationGuardTests(unittest.TestCase):
             if key == "log_queue_stopped":
                 raise failure
 
-        queue = self.Queue(log_cb=log, task_update_cb=lambda task: events.append((task.task_id, task.status)))
+        queue = self.Queue(
+            log_cb=log,
+            task_update_cb=lambda task: events.append((task.task_id, task.status)),
+        )
         queue.stop()
         with self.assertRaises(RuntimeError) as caught:
             queue.run([first, second])
         self.assertIs(caught.exception, failure)
         self.assertEqual([first.status, second.status], ["skipped", "skipped"])
-        self.assertEqual(queue.last_summary, {
-            "total": 2, "succeeded": 0, "failed": 0, "skipped": 2, "cancelled": True,
-        })
+        self.assertEqual(
+            queue.last_summary,
+            {
+                "total": 2,
+                "succeeded": 0,
+                "failed": 0,
+                "skipped": 2,
+                "cancelled": True,
+            },
+        )
         self.assertEqual(events, [("first", "skipped"), ("second", "skipped")])
         self.assertFalse(queue._stop)
 
@@ -394,12 +458,18 @@ class QueueOperationGuardTests(unittest.TestCase):
     def test_downloader_constructor_error_reconciles_real_task_path(self):
         for error_type in (RuntimeError, ControlSignal):
             with self.subTest(error_type=error_type):
-                first, active, pending = (_download_task(name) for name in ("first", "active", "pending"))
+                first, active, pending = (
+                    _download_task(name) for name in ("first", "active", "pending")
+                )
                 trigger = object()
                 active.options = trigger
                 failure = error_type("synthetic-private-marker")
                 events = []
-                queue = self.Queue(task_update_cb=lambda task: events.append((task.task_id, task.status)))
+                queue = self.Queue(
+                    task_update_cb=lambda task: events.append(
+                        (task.task_id, task.status)
+                    )
+                )
                 queue._validate_plan = lambda _tasks: None
                 namespace = self.Queue._run_task.__globals__
                 old_downloader = namespace["Downloader"]
@@ -417,13 +487,30 @@ class QueueOperationGuardTests(unittest.TestCase):
                 finally:
                     namespace["Downloader"] = old_downloader
                 self.assertIs(caught.exception, failure)
-                self.assertEqual([first.status, active.status, pending.status], ["done", "error", "skipped"])
-                self.assertEqual(active.error, "Task execution interrupted; the task outcome is unknown.")
-                self.assertEqual(queue.last_summary, {
-                    "total": 3, "succeeded": 1, "failed": 1, "skipped": 1, "cancelled": False,
-                })
-                self.assertEqual(events, [("first", "running"), ("first", "done"), ("active", "running")])
+                self.assertEqual(
+                    [first.status, active.status, pending.status],
+                    ["done", "error", "skipped"],
+                )
+                self.assertEqual(
+                    active.error,
+                    "Task execution interrupted; the task outcome is unknown.",
+                )
+                self.assertEqual(
+                    queue.last_summary,
+                    {
+                        "total": 3,
+                        "succeeded": 1,
+                        "failed": 1,
+                        "skipped": 1,
+                        "cancelled": False,
+                    },
+                )
+                self.assertEqual(
+                    events,
+                    [("first", "running"), ("first", "done"), ("active", "running")],
+                )
                 self.assertIsNone(queue._active)
+
 
 if __name__ == "__main__":
     unittest.main()

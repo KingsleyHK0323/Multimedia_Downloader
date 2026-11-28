@@ -69,14 +69,23 @@ class PosixPaths:
 
     def __getattr__(self, name):
         if name not in {
-            "normcase", "normpath", "isabs", "join", "basename", "dirname",
-            "splitext", "splitdrive", "commonpath",
+            "normcase",
+            "normpath",
+            "isabs",
+            "join",
+            "basename",
+            "dirname",
+            "splitext",
+            "splitdrive",
+            "commonpath",
         }:
             raise AssertionError(f"unmodeled path operation: {name}")
         return getattr(posixpath, name)
 
     def abspath(self, path):
-        return posixpath.normpath(path if posixpath.isabs(path) else posixpath.join("/work", path))
+        return posixpath.normpath(
+            path if posixpath.isabs(path) else posixpath.join("/work", path)
+        )
 
     def realpath(self, path, *, strict=False):
         path = self.abspath(path)
@@ -99,8 +108,13 @@ class PosixPaths:
 def setup(*, insensitive=True):
     files = PosixFiles(insensitive=insensitive)
     fake_os = SimpleNamespace(
-        path=PosixPaths(files), close=files.close, link=files.link,
-        replace=files.replace, unlink=files.unlink, lstat=files.info, stat=files.info,
+        path=PosixPaths(files),
+        close=files.close,
+        link=files.link,
+        replace=files.replace,
+        unlink=files.unlink,
+        lstat=files.info,
+        stat=files.info,
     )
     converter_module.os = fake_os
     converter_module.tempfile = SimpleNamespace(mkstemp=files.mkstemp)
@@ -141,30 +155,38 @@ def overwrite_batch_case_alias_rejected():
     files._put("/in/Clip.wav", b"one")
     files._put("/in/clip.mkv", b"two")
     converter = Converter(save_path="/out", dst_fmt="mp3", conflict_policy="overwrite")
-    raises_value_error(lambda: converter.convert_batch(["/in/Clip.wav", "/in/clip.mkv"]))
+    raises_value_error(
+        lambda: converter.convert_batch(["/in/Clip.wav", "/in/clip.mkv"])
+    )
     assert not files.publications and not files.reads
 
 
 def queue_differently_cased_dependency_is_rejected():
     files = setup()
-    tasks = [convert_task(files.source, "/out/clip.mp3"),
-             convert_task("/out/CLIP.mp3", "/out/final.wav")]
+    tasks = [
+        convert_task(files.source, "/out/clip.mp3"),
+        convert_task("/out/CLIP.mp3", "/out/final.wav"),
+    ]
     raises_value_error(lambda: TaskQueue().run(tasks))
     assert not files.publications and not files.reads
 
 
 def queue_overwrite_case_alias_rejected():
     files = setup()
-    tasks = [convert_task(files.source, "/out/Clip.mp3"),
-             convert_task(files.source, "/out/clip.mp3", conflict_policy="overwrite")]
+    tasks = [
+        convert_task(files.source, "/out/Clip.mp3"),
+        convert_task(files.source, "/out/clip.mp3", conflict_policy="overwrite"),
+    ]
     raises_value_error(lambda: TaskQueue().run(tasks))
     assert not files.publications and not files.reads
 
 
 def queue_exact_intermediate_remains_supported():
     files = setup()
-    tasks = [convert_task(files.source, "/out/middle.mp3"),
-             convert_task("/out/middle.mp3", "/out/final.wav")]
+    tasks = [
+        convert_task(files.source, "/out/middle.mp3"),
+        convert_task("/out/middle.mp3", "/out/final.wav"),
+    ]
     done = TaskQueue().run(tasks)
     assert [task.status for task in done] == ["done", "done"], done
     assert files.exists("/out/final.wav")
@@ -174,8 +196,10 @@ def preview_marks_case_aliases():
     files = setup()
     files._put("/in/other.wav", b"other")
     converter = Converter(save_path="/out", dst_fmt="mp3")
-    jobs = [ConvertJob(files.source, "/out/clip.mp3"),
-            ConvertJob("/in/other.wav", "/out/CLIP.mp3")]
+    jobs = [
+        ConvertJob(files.source, "/out/clip.mp3"),
+        ConvertJob("/in/other.wav", "/out/CLIP.mp3"),
+    ]
     rows = converter.preview_jobs(jobs)
     assert [row["batch_duplicate"] for row in rows] == [True, True], rows
 
@@ -191,9 +215,15 @@ def preview_uncertain_source_is_not_reported_as_no():
 
 def queue_download_root_case_alias_is_rejected():
     setup()
-    assert TaskQueue._download_may_contain_source("/Downloads", "/downloads/nested/clip.mp3")
-    assert not TaskQueue._download_may_contain_source("/Downloads", "/downloads2/clip.mp3")
-    assert not TaskQueue._download_may_contain_source("/Downloads", "/elsewhere/clip.mp3")
+    assert TaskQueue._download_may_contain_source(
+        "/Downloads", "/downloads/nested/clip.mp3"
+    )
+    assert not TaskQueue._download_may_contain_source(
+        "/Downloads", "/downloads2/clip.mp3"
+    )
+    assert not TaskQueue._download_may_contain_source(
+        "/Downloads", "/elsewhere/clip.mp3"
+    )
 
 
 def concurrent_entry_is_rejected_before_batch_guard():
@@ -330,7 +360,9 @@ def canonical_order_missing_input_is_protected():
     missing = "/out/" + second + ".mp3"
     files._put(source, b"canonical source")
     jobs = Converter(save_path="/out", dst_fmt="mp3").convert_batch([source, missing])
-    assert jobs[0].status == "done" and jobs[0].dst_path == "/out/" + first + " (1).mp3", jobs
+    assert (
+        jobs[0].status == "done" and jobs[0].dst_path == "/out/" + first + " (1).mp3"
+    ), jobs
     assert jobs[1].status == "error", jobs[1]
     assert not files.exists(missing)
 
@@ -349,8 +381,10 @@ def canonical_order_overwrite_batch_rejected():
 def canonical_order_queue_dependency_rejected():
     files = setup()
     first, second = canonical_order_names()
-    tasks = [convert_task(files.source, "/out/" + first + ".mp3"),
-             convert_task("/out/" + second + ".mp3", "/out/final.wav")]
+    tasks = [
+        convert_task(files.source, "/out/" + first + ".mp3"),
+        convert_task("/out/" + second + ".mp3", "/out/final.wav"),
+    ]
     raises_value_error(lambda: TaskQueue().run(tasks))
     assert not files.publications and not files.reads
 
@@ -358,8 +392,12 @@ def canonical_order_queue_dependency_rejected():
 def canonical_order_queue_overwrite_rejected():
     files = setup()
     first, second = canonical_order_names()
-    tasks = [convert_task(files.source, "/out/" + first + ".mp3"),
-             convert_task(files.source, "/out/" + second + ".mp3", conflict_policy="overwrite")]
+    tasks = [
+        convert_task(files.source, "/out/" + first + ".mp3"),
+        convert_task(
+            files.source, "/out/" + second + ".mp3", conflict_policy="overwrite"
+        ),
+    ]
     raises_value_error(lambda: TaskQueue().run(tasks))
     assert not files.publications and not files.reads
 
@@ -369,8 +407,10 @@ def canonical_order_preview_reports_possible_alias():
     first, second = canonical_order_names()
     source = "/out/" + second + ".mp3"
     files._put(source, b"source")
-    jobs = [ConvertJob(source, "/out/" + first + ".mp3"),
-            ConvertJob(source, "/out/" + second + ".mp3")]
+    jobs = [
+        ConvertJob(source, "/out/" + first + ".mp3"),
+        ConvertJob(source, "/out/" + second + ".mp3"),
+    ]
     rows = Converter(save_path="/out", dst_fmt="mp3").preview_jobs(jobs)
     assert rows[0]["source_matches"] == "unknown", rows
     assert [row["batch_duplicate"] for row in rows] == [True, True], rows

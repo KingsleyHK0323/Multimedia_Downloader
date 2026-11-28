@@ -32,34 +32,46 @@ def encoded(data):
 
 
 def post(service, url, value):
-    return service.request({
-        "url": url,
-        "method": "POST",
-        "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(value),
-    })
+    return service.request(
+        {
+            "url": url,
+            "method": "POST",
+            "headers": {"Content-Type": "application/json"},
+            "body": json.dumps(value),
+        }
+    )
 
 
 def send_chunk(service, upload_id, offset, data_base64):
-    return post(service, "/api/uploads/chunk", {
-        "upload_id": upload_id,
-        "offset": offset,
-        "data_base64": data_base64,
-    })
+    return post(
+        service,
+        "/api/uploads/chunk",
+        {
+            "upload_id": upload_id,
+            "offset": offset,
+            "data_base64": data_base64,
+        },
+    )
 
 
 def convert(service, source):
-    return post(service, "/api/convert", {
-        "operation_id": "synthetic-negative-check",
-        "files": [source],
-        "dst_fmt": "mp4",
-        "save_path": "",
-    })
+    return post(
+        service,
+        "/api/convert",
+        {
+            "operation_id": "synthetic-negative-check",
+            "files": [source],
+            "dst_fmt": "mp4",
+            "save_path": "",
+        },
+    )
 
 
 def main():
     service = bridge.FakeWeb(SETTINGS)
-    created = post(service, "/api/uploads", {"name": "synthetic.mp4", "size": CHUNK + 3})
+    created = post(
+        service, "/api/uploads", {"name": "synthetic.mp4", "size": CHUNK + 3}
+    )
     assert created["status"] == 200
     upload_id = created["body"]["upload_id"]
     source = ".mmdl-uploads-v1/slot-00/payload.mp4"
@@ -86,7 +98,9 @@ def main():
     assert send_chunk(service, upload_id, 0, encoded(b"y" * CHUNK))["status"] == 409
     assert send_chunk(service, upload_id, CHUNK + 1, encoded(b"end"))["status"] == 409
     assert send_chunk(service, upload_id, CHUNK, encoded(b"long"))["status"] == 400
-    assert post(service, "/api/uploads/finish", {"upload_id": upload_id})["status"] == 409
+    assert (
+        post(service, "/api/uploads/finish", {"upload_id": upload_id})["status"] == 409
+    )
     assert service.files.snapshot(upload_id) == first_snapshot
 
     assert send_chunk(service, upload_id, CHUNK, encoded(b"end")) == {
@@ -127,7 +141,9 @@ def main():
     assert not damaged.files.snapshot(damaged_id)["completed"]
     assert convert(damaged, source)["status"] == 403
     assert damaged.convert_calls == 0
-    print("Memory-only malformed, replay, premature-finish, and damaged-payload checks passed.")
+    print(
+        "Memory-only malformed, replay, premature-finish, and damaged-payload checks passed."
+    )
 
 
 if __name__ == "__main__":

@@ -44,7 +44,8 @@ def _pick_function(tree, name):
     node = next(
         item
         for item in tree.body
-        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name == name
+        if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and item.name == name
     )
     node.decorator_list = []
     return node
@@ -251,7 +252,17 @@ class FakeOS:
     def __init__(self, files):
         self.path = FakePath(files)
         self.environ = {}
-        for name in ("lstat", "open", "fstat", "read", "write", "lseek", "close", "mkdir", "makedirs"):
+        for name in (
+            "lstat",
+            "open",
+            "fstat",
+            "read",
+            "write",
+            "lseek",
+            "close",
+            "mkdir",
+            "makedirs",
+        ):
             setattr(self, name, getattr(files, name))
         self.fsync = lambda _handle: None
         self.getcwd = lambda: files.cwd
@@ -285,7 +296,9 @@ class FakeRequest:
         self.path = message["url"]
         self.headers = message.get("headers", {})
         self.host_url = "http://localhost:8080/"
-        self.is_json = self.headers.get("Content-Type", "").startswith("application/json")
+        self.is_json = self.headers.get("Content-Type", "").startswith(
+            "application/json"
+        )
         self.body = message.get("body", "").encode("utf-8")
         self.stream = io.BytesIO(self.body)
         self.environ = {"HTTP_HOST": message.get("host", "localhost:8080")}
@@ -324,69 +337,131 @@ class FakeWeb:
             "_ambiguous_windows_alias": lambda _path, _root: False,
         }
         constant_names = {
-            "CHUNK_BYTES", "_ROOT_NAME", "_ROOT_RESERVE", "_SLOT_RESERVE",
-            "_MAX_SLOTS", "_MAX_INTEGER", "_RECORD", "_ID", "_SLOT",
-            "_PAYLOAD", "_EXT", "_BINARY", "_NOFOLLOW", "_REPARSE", "_ERRORS",
+            "CHUNK_BYTES",
+            "_ROOT_NAME",
+            "_ROOT_RESERVE",
+            "_SLOT_RESERVE",
+            "_MAX_SLOTS",
+            "_MAX_INTEGER",
+            "_RECORD",
+            "_ID",
+            "_SLOT",
+            "_PAYLOAD",
+            "_EXT",
+            "_BINARY",
+            "_NOFOLLOW",
+            "_REPARSE",
+            "_ERRORS",
         }
         constants = [
             node
             for node in CORE.body
             if isinstance(node, ast.Assign)
-            and any(isinstance(target, ast.Name) and target.id in constant_names for target in node.targets)
+            and any(
+                isinstance(target, ast.Name) and target.id in constant_names
+                for target in node.targets
+            )
         ]
         core_names = (
             "_preserve_cleanup_control",
-            "_is_reparse", "_directory", "_open_regular", "_write_all",
-            "_read_exact", "_create_file", "_read_json", "_json_bytes", "_within",
-            "_namespace_roots", "_windows_external_path", "_reserved_hint",
+            "_is_reparse",
+            "_directory",
+            "_open_regular",
+            "_write_all",
+            "_read_exact",
+            "_create_file",
+            "_read_json",
+            "_json_bytes",
+            "_within",
+            "_namespace_roots",
+            "_windows_external_path",
+            "_reserved_hint",
         )
         upload_error = next(
-            node for node in CORE.body if isinstance(node, ast.ClassDef) and node.name == "UploadError"
+            node
+            for node in CORE.body
+            if isinstance(node, ast.ClassDef) and node.name == "UploadError"
         )
         upload_store = next(
-            node for node in CORE.body if isinstance(node, ast.ClassDef) and node.name == "UploadStore"
+            node
+            for node in CORE.body
+            if isinstance(node, ast.ClassDef) and node.name == "UploadStore"
         )
         core_nodes = [_future(), *constants, upload_error]
         core_nodes.extend(_pick_function(CORE, name) for name in core_names)
         core_nodes.append(upload_store)
-        core_module = ast.fix_missing_locations(ast.Module(body=core_nodes, type_ignores=[]))
+        core_module = ast.fix_missing_locations(
+            ast.Module(body=core_nodes, type_ignores=[])
+        )
         # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
-        compiled = compile(core_module, "<upload core extracted from current source>", "exec")
+        compiled = compile(
+            core_module, "<upload core extracted from current source>", "exec"
+        )
         exec(compiled, self.ns)  # noqa: S102
-        self.ns.update({
-            "ipaddress": ipaddress,
-            "urlsplit": urlsplit,
-            "jsonify": lambda value: value,
-            "app": SimpleNamespace(config={
-                "MMDL_TRUSTED_HOSTS": ["localhost", "127.0.0.1", "[::1]"],
-                "MMDL_TRUSTED_ORIGINS": set(),
-            }),
-            "UnsafePath": type("UnsafePath", (ValueError,), {}),
-            "DOWNLOADS_DIR": "C:\\virtual\\downloads",
-            "FRONTEND_DIST": "C:\\virtual\\frontend",
-            "ALLOW_ABSOLUTE_PATHS": False,
-            "_UPLOAD_CONTROL_BODY_LIMIT": 16 * 1024,
-            "_UPLOAD_CHUNK_BODY_LIMIT": 4 * ((262144 + 2) // 3) + 8192,
-            "VIDEO_FORMATS": ("mp4", "mkv"),
-            # OpenAI-Codex_web_check: provide the encoder inputs used by the extracted route.
-            "VIDEO_ENCODERS": ("software", "h264_nvenc", "h264_qsv", "h264_amf", "h264_videotoolbox"),
-            "HARDWARE_VIDEO_FORMATS": ("mp4", "mkv", "mov"),
-            "AUDIO_FORMATS": ("mp3",),
-            "_dispatch": self.dispatch,
-        })
+        self.ns.update(
+            {
+                "ipaddress": ipaddress,
+                "urlsplit": urlsplit,
+                "jsonify": lambda value: value,
+                "app": SimpleNamespace(
+                    config={
+                        "MMDL_TRUSTED_HOSTS": ["localhost", "127.0.0.1", "[::1]"],
+                        "MMDL_TRUSTED_ORIGINS": set(),
+                    }
+                ),
+                "UnsafePath": type("UnsafePath", (ValueError,), {}),
+                "DOWNLOADS_DIR": "C:\\virtual\\downloads",
+                "FRONTEND_DIST": "C:\\virtual\\frontend",
+                "ALLOW_ABSOLUTE_PATHS": False,
+                "_UPLOAD_CONTROL_BODY_LIMIT": 16 * 1024,
+                "_UPLOAD_CHUNK_BODY_LIMIT": 4 * ((262144 + 2) // 3) + 8192,
+                "VIDEO_FORMATS": ("mp4", "mkv"),
+                # OpenAI-Codex_web_check: provide the encoder inputs used by the extracted route.
+                "VIDEO_ENCODERS": (
+                    "software",
+                    "h264_nvenc",
+                    "h264_qsv",
+                    "h264_amf",
+                    "h264_videotoolbox",
+                ),
+                "HARDWARE_VIDEO_FORMATS": ("mp4", "mkv", "mov"),
+                "AUDIO_FORMATS": ("mp3",),
+                "_dispatch": self.dispatch,
+            }
+        )
         names = (
-            "_hostname", "_is_trusted_host", "_protect_browser_post",
-            "_is_unc_or_device_path", "_deny_named_remote_upload_path",
-            "_guard_upload_path", "_upload_client_path", "_confine", "_save_path",
-            "_prepare_downloads_dir", "_operation_id", "_choice", "_policy", "_video_encoder_choice",
-            "_confine_all", "_read_upload_json", "_upload_json_call",
-            "api_upload_config", "api_upload_create", "api_upload_chunk",
-            "api_upload_finish", "api_convert",
+            "_hostname",
+            "_is_trusted_host",
+            "_protect_browser_post",
+            "_is_unc_or_device_path",
+            "_deny_named_remote_upload_path",
+            "_guard_upload_path",
+            "_upload_client_path",
+            "_confine",
+            "_save_path",
+            "_prepare_downloads_dir",
+            "_operation_id",
+            "_choice",
+            "_policy",
+            "_video_encoder_choice",
+            "_confine_all",
+            "_read_upload_json",
+            "_upload_json_call",
+            "api_upload_config",
+            "api_upload_create",
+            "api_upload_chunk",
+            "api_upload_finish",
+            "api_convert",
         )
         web_module = ast.fix_missing_locations(
-            ast.Module(body=[_future(), *(_pick_function(WEB, name) for name in names)], type_ignores=[])
+            ast.Module(
+                body=[_future(), *(_pick_function(WEB, name) for name in names)],
+                type_ignores=[],
+            )
         )
-        compiled = compile(web_module, "<web routes extracted from current source>", "exec")
+        compiled = compile(
+            web_module, "<web routes extracted from current source>", "exec"
+        )
         exec(compiled, self.ns)  # noqa: S102
         self.ns["_upload_store"] = self.ns["UploadStore"](
             self.ns["DOWNLOADS_DIR"], self.ns["FRONTEND_DIST"], settings
@@ -399,7 +474,9 @@ class FakeWeb:
         return {"cmd": cmd, "files": args["files"], "operation_id": operation_id}
 
     def request(self, message):
-        self.calls.append({"url": message["url"], "method": message.get("method", "GET")})
+        self.calls.append(
+            {"url": message["url"], "method": message.get("method", "GET")}
+        )
         self.ns["request"] = FakeRequest(message)
         denied = self.ns["_protect_browser_post"]()
         if denied is not None:
@@ -427,10 +504,12 @@ class FakeWeb:
 def main():
     services = {
         "disabled": FakeWeb({}),
-        "enabled": FakeWeb({
-            "MMDL_UPLOAD_MAX_FILE_BYTES": str(524288),
-            "MMDL_UPLOAD_MAX_TOTAL_BYTES": str(3000000),
-        }),
+        "enabled": FakeWeb(
+            {
+                "MMDL_UPLOAD_MAX_FILE_BYTES": str(524288),
+                "MMDL_UPLOAD_MAX_TOTAL_BYTES": str(3000000),
+            }
+        ),
     }
     for line in sys.stdin:
         message = json.loads(line)

@@ -59,13 +59,23 @@ class ConvertTab(VerticalScroll):
 
         yield Label(tr.t("cv_format"), classes="section-title")
         with Horizontal(classes="field-row"):
-            yield Select(((f, f) for f in all_formats), value=all_formats[0], id="dst-fmt", allow_blank=False)
+            yield Select(
+                ((f, f) for f in all_formats),
+                value=all_formats[0],
+                id="dst-fmt",
+                allow_blank=False,
+            )
 
         yield Label(tr.t("conflict_label"), classes="section-title")
         yield Select(
-            [(tr.t("conflict_rename"), "rename"), (tr.t("conflict_skip"), "skip"),
-             (tr.t("conflict_overwrite"), "overwrite")],
-            value="rename", id="conflict-policy", allow_blank=False,
+            [
+                (tr.t("conflict_rename"), "rename"),
+                (tr.t("conflict_skip"), "skip"),
+                (tr.t("conflict_overwrite"), "overwrite"),
+            ],
+            value="rename",
+            id="conflict-policy",
+            allow_blank=False,
         )
 
         yield Label(tr.t("adv_options"), classes="section-title")
@@ -88,15 +98,25 @@ class ConvertTab(VerticalScroll):
     def on_mount(self) -> None:
         self._preview_watch_ready = False
         try:
-            for selector, widget_type in (("#save-path", Input), ("#ffmpeg-bin", Input),
-                                          ("#dst-fmt", Select), ("#conflict-policy", Select)):
-                self.watch(self.query_one(selector, widget_type), "value", self._invalidate_preview, init=False)
+            for selector, widget_type in (
+                ("#save-path", Input),
+                ("#ffmpeg-bin", Input),
+                ("#dst-fmt", Select),
+                ("#conflict-policy", Select),
+            ):
+                self.watch(
+                    self.query_one(selector, widget_type),
+                    "value",
+                    self._invalidate_preview,
+                    init=False,
+                )
             self._preview_watch_ready = True
         except Exception:
             self._preview_watch_ready = False
             return
         try:
             from importlib.metadata import version
+
             # Callback ordering has only been reviewed for this Textual version.
             self._preview_watch_ready = version("textual") == "8.2.8"
         except Exception:
@@ -115,24 +135,37 @@ class ConvertTab(VerticalScroll):
             self._stop()
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if (self._preview_watch_ready and event is not None
-                and getattr(getattr(event, "input", None), "id", None) in ("save-path", "ffmpeg-bin")):
+        if (
+            self._preview_watch_ready
+            and event is not None
+            and getattr(getattr(event, "input", None), "id", None)
+            in ("save-path", "ffmpeg-bin")
+        ):
             return
         self._invalidate_preview()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        if (self._preview_watch_ready and event is not None
-                and getattr(getattr(event, "select", None), "id", None) in ("dst-fmt", "conflict-policy")):
+        if (
+            self._preview_watch_ready
+            and event is not None
+            and getattr(getattr(event, "select", None), "id", None)
+            in ("dst-fmt", "conflict-policy")
+        ):
             return
         self._invalidate_preview()
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         # OpenAI-Codex_app_ui: retain an unchanged snapshot for a delayed file-paths event.
         try:
-            if (self._preview_watch_ready and self.is_mounted and not self._conversion_running
-                    and self._preview_snapshot is not None
-                    and getattr(getattr(event, "text_area", None), "id", None) == "file-paths"
-                    and self._preview_snapshot == self._preview_inputs()):
+            if (
+                self._preview_watch_ready
+                and self.is_mounted
+                and not self._conversion_running
+                and self._preview_snapshot is not None
+                and getattr(getattr(event, "text_area", None), "id", None)
+                == "file-paths"
+                and self._preview_snapshot == self._preview_inputs()
+            ):
                 return
         except Exception:
             self._invalidate_preview()
@@ -196,17 +229,27 @@ class ConvertTab(VerticalScroll):
         self._run_preview(generation, list(files), save_path, dst_fmt, conflict_policy)
 
     @work(thread=True, group="convert-preview")
-    def _run_preview(self, generation: int, files: list[str], save_path: str,
-                     dst_fmt: str, conflict_policy: str) -> None:
+    def _run_preview(
+        self,
+        generation: int,
+        files: list[str],
+        save_path: str,
+        dst_fmt: str,
+        conflict_policy: str,
+    ) -> None:
         try:
-            converter = Converter(save_path=save_path, dst_fmt=dst_fmt, conflict_policy=conflict_policy)
+            converter = Converter(
+                save_path=save_path, dst_fmt=dst_fmt, conflict_policy=conflict_policy
+            )
             rows = converter.preview_batch(files)
         except Exception as exc:
             self.app.call_from_thread(self._preview_done, generation, None, str(exc))
         else:
             self.app.call_from_thread(self._preview_done, generation, rows, None)
 
-    def _preview_done(self, generation: int, rows: list[dict] | None, error: str | None) -> None:
+    def _preview_done(
+        self, generation: int, rows: list[dict] | None, error: str | None
+    ) -> None:
         self._preview_inflight = False
         if not self.is_mounted:
             return
@@ -222,8 +265,12 @@ class ConvertTab(VerticalScroll):
         lines = [self.tr.t("preview_title"), self.tr.t("preview_snapshot_hint")]
         for row in rows or []:
             lines.append(redact_sensitive_urls(f"{row['src']} -> {row['dst']}"))
-            lines.append(f"  {self.tr.t('preview_existing')}: {self.tr.t('preview_' + row['existing'])}")
-            lines.append(f"  {self.tr.t('preview_source_matches')}: {self.tr.t('preview_' + row['source_matches'])}")
+            lines.append(
+                f"  {self.tr.t('preview_existing')}: {self.tr.t('preview_' + row['existing'])}"
+            )
+            lines.append(
+                f"  {self.tr.t('preview_source_matches')}: {self.tr.t('preview_' + row['source_matches'])}"
+            )
             if row["batch_duplicate"]:
                 lines.append(f"  {self.tr.t('preview_batch_duplicate')}")
         self.query_one("#preview-results", Static).update("\n".join(lines))
@@ -246,6 +293,7 @@ class ConvertTab(VerticalScroll):
         files = list(self._files)
 
         if conflict_policy == "overwrite":
+
             def handle(confirmed: bool | None) -> None:
                 # OpenAI-Codex_app_ui: consume each current response only once.
                 if confirmation_generation != self._confirmation_generation:
@@ -256,16 +304,26 @@ class ConvertTab(VerticalScroll):
                 if confirmed:
                     self._begin(files, save_path, dst_fmt, ffmpeg_bin, conflict_policy)
 
-            self.app.push_screen(ConfirmDialog(
-                self.tr.t("conflict_overwrite_title"),
-                self.tr.t("conflict_overwrite_confirm"),
-                self.tr.t("btn_confirm"), self.tr.t("btn_cancel"),
-            ), handle)
+            self.app.push_screen(
+                ConfirmDialog(
+                    self.tr.t("conflict_overwrite_title"),
+                    self.tr.t("conflict_overwrite_confirm"),
+                    self.tr.t("btn_confirm"),
+                    self.tr.t("btn_cancel"),
+                ),
+                handle,
+            )
             return
         self._begin(files, save_path, dst_fmt, ffmpeg_bin, conflict_policy)
 
-    def _begin(self, files: list[str], save_path: str, dst_fmt: str,
-               ffmpeg_bin: str, conflict_policy: str) -> None:
+    def _begin(
+        self,
+        files: list[str],
+        save_path: str,
+        dst_fmt: str,
+        ffmpeg_bin: str,
+        conflict_policy: str,
+    ) -> None:
         # OpenAI-Codex_app_ui: guard callbacks and invalidate older dialogs.
         if self._conversion_running:
             return
@@ -298,8 +356,14 @@ class ConvertTab(VerticalScroll):
         self.query_one("#stop", Button).disabled = True
 
     @work(thread=True, exclusive=True)
-    def _run_convert(self, files: list[str], save_path: str, dst_fmt: str,
-                     ffmpeg_bin: str, conflict_policy: str) -> None:
+    def _run_convert(
+        self,
+        files: list[str],
+        save_path: str,
+        dst_fmt: str,
+        ffmpeg_bin: str,
+        conflict_policy: str,
+    ) -> None:
         def log_cb(level: str, key: str, **fmt) -> None:
             self.app.call_from_thread(self.app.log_line, level, key, **fmt)
 
@@ -314,9 +378,14 @@ class ConvertTab(VerticalScroll):
 
         # OpenAI-Codex_app_ui: finish once if converter initialization fails.
         try:
-            converter = Converter(save_path=save_path, dst_fmt=dst_fmt, log_cb=log_cb,
-                                   job_update_cb=job_update_cb, ffmpeg_bin=ffmpeg_bin,
-                                   conflict_policy=conflict_policy)
+            converter = Converter(
+                save_path=save_path,
+                dst_fmt=dst_fmt,
+                log_cb=log_cb,
+                job_update_cb=job_update_cb,
+                ffmpeg_bin=ffmpeg_bin,
+                conflict_policy=conflict_policy,
+            )
             self._converter = converter
             if self._cancel_requested.is_set():
                 converter.stop()

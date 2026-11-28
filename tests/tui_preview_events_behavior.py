@@ -97,27 +97,58 @@ class ConfirmDialog:
 def load_convert_tab():
     source = Path(__file__).resolve().parents[1] / "tui" / "convert_tab.py"
     tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
-    tab = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "ConvertTab")
+    tab = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "ConvertTab"
+    )
     names = {
-        "__init__", "on_mount", "on_input_changed", "on_select_changed", "on_text_area_changed",
-        "_invalidate_preview", "_preview_inputs", "_add_files", "_remove_selected", "_preview",
-        "_preview_done", "_start", "_begin", "_finish",
+        "__init__",
+        "on_mount",
+        "on_input_changed",
+        "on_select_changed",
+        "on_text_area_changed",
+        "_invalidate_preview",
+        "_preview_inputs",
+        "_add_files",
+        "_remove_selected",
+        "_preview",
+        "_preview_done",
+        "_start",
+        "_begin",
+        "_finish",
     }
-    methods = [node for node in tab.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    methods = [
+        node
+        for node in tab.body
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    ]
     assert {node.name for node in methods} == names
     tab.body = methods
     tab.bases = [ast.Name(id="FakeBase", ctx=ast.Load())]
     tab.keywords = []
     tab.decorator_list = []
     module = ast.Module(
-        body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), tab],
+        body=[
+            ast.ImportFrom(
+                module="__future__", names=[ast.alias(name="annotations")], level=0
+            ),
+            tab,
+        ],
         type_ignores=[],
     )
     ast.fix_missing_locations(module)
     namespace = {
-        "FakeBase": FakeBase, "Input": Input, "Select": Select, "TextArea": TextArea,
-        "Static": Static, "Button": Button, "ListItem": ListItem, "ListView": ListView,
-        "ConfirmDialog": ConfirmDialog, "threading": threading,
+        "FakeBase": FakeBase,
+        "Input": Input,
+        "Select": Select,
+        "TextArea": TextArea,
+        "Static": Static,
+        "Button": Button,
+        "ListItem": ListItem,
+        "ListView": ListView,
+        "ConfirmDialog": ConfirmDialog,
+        "threading": threading,
         "redact_sensitive_urls": lambda text: text,
     }
     # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
@@ -147,8 +178,13 @@ def make_tab(version="8.2.8"):
         "#ffmpeg-bin": Input("ffmpeg", "ffmpeg-bin"),
         "#dst-fmt": Select("mp4", "dst-fmt"),
         "#conflict-policy": Select("rename", "conflict-policy"),
-        "#file-paths": TextArea(), "#files-list": ListView(), "#preview-results": Static(),
-        **{f"#{name}": Button() for name in ("start", "stop", "add-file", "remove-file", "preview")},
+        "#file-paths": TextArea(),
+        "#files-list": ListView(),
+        "#preview-results": Static(),
+        **{
+            f"#{name}": Button()
+            for name in ("start", "stop", "add-file", "remove-file", "preview")
+        },
     }
     tab.widgets["#files-list"].append(ListItem(tab._item_widgets[0]))
     tab.widgets["#files-list"].index = 0
@@ -161,10 +197,20 @@ def make_tab(version="8.2.8"):
 
 
 ROWS = {
-    "synthetic-a.mkv": {"src": "synthetic-a.mkv", "dst": "synthetic-output/a.mp4", "existing": "missing",
-                        "batch_duplicate": False, "source_matches": "no"},
-    "synthetic-b.mov": {"src": "synthetic-b.mov", "dst": "synthetic-output/b.mp4", "existing": "missing",
-                        "batch_duplicate": False, "source_matches": "no"},
+    "synthetic-a.mkv": {
+        "src": "synthetic-a.mkv",
+        "dst": "synthetic-output/a.mp4",
+        "existing": "missing",
+        "batch_duplicate": False,
+        "source_matches": "no",
+    },
+    "synthetic-b.mov": {
+        "src": "synthetic-b.mov",
+        "dst": "synthetic-output/b.mp4",
+        "existing": "missing",
+        "batch_duplicate": False,
+        "source_matches": "no",
+    },
 }
 
 
@@ -191,7 +237,9 @@ def test_delayed_text_events_do_not_discard_new_file_list():
     assert tab.preview_calls[-1][1] == ["synthetic-a.mkv", "synthetic-b.mov"]
     for event in area.events:
         tab.on_text_area_changed(event)
-    assert tab._preview_generation == generation, "old text events invalidated a current preview"
+    assert (
+        tab._preview_generation == generation
+    ), "old text events invalidated a current preview"
     finish_preview(tab, generation)
     assert "synthetic-a.mkv" in tab.widgets["#preview-results"].text
     assert "synthetic-b.mov" in tab.widgets["#preview-results"].text
@@ -254,8 +302,12 @@ def test_running_still_invalidates():
 
 
 def test_input_and_select_aba_invalidates_via_synchronous_fake_watchers():
-    for selector, alternate in (("#save-path", "other-output"), ("#ffmpeg-bin", "other-ffmpeg"),
-                                ("#dst-fmt", "mkv"), ("#conflict-policy", "skip")):
+    for selector, alternate in (
+        ("#save-path", "other-output"),
+        ("#ffmpeg-bin", "other-ffmpeg"),
+        ("#dst-fmt", "mkv"),
+        ("#conflict-policy", "skip"),
+    ):
         tab = make_tab()
         generation = preview(tab)
         field = tab.widgets[selector]
@@ -286,12 +338,18 @@ def test_unverified_watcher_retains_existing_fallback():
 
 
 def test_unknown_none_or_other_textarea_retains_fallback():
-    for event in (None, SimpleNamespace(), SimpleNamespace(text_area=SimpleNamespace(id="other"))):
+    for event in (
+        None,
+        SimpleNamespace(),
+        SimpleNamespace(text_area=SimpleNamespace(id="other")),
+    ):
         tab = make_tab()
         generation = preview(tab)
         tab.on_text_area_changed(event)
         finish_preview(tab, generation)
-        assert not tab.widgets["#preview-results"].text and tab._preview_snapshot is None
+        assert (
+            not tab.widgets["#preview-results"].text and tab._preview_snapshot is None
+        )
 
 
 def test_unmounted_retains_fallback():

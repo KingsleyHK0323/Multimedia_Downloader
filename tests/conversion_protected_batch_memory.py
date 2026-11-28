@@ -39,14 +39,23 @@ class MemoryPaths:
 
     def __getattr__(self, name):
         if name not in {
-            "normcase", "normpath", "isabs", "join", "basename", "dirname",
-            "splitext", "splitdrive", "commonpath",
+            "normcase",
+            "normpath",
+            "isabs",
+            "join",
+            "basename",
+            "dirname",
+            "splitext",
+            "splitdrive",
+            "commonpath",
         }:
             raise AssertionError(f"unmodeled path operation: {name}")
         return getattr(ntpath, name)
 
     def abspath(self, path):
-        return ntpath.normpath(path if ntpath.isabs(path) else ntpath.join("C:\\virtual", path))
+        return ntpath.normpath(
+            path if ntpath.isabs(path) else ntpath.join("C:\\virtual", path)
+        )
 
     def realpath(self, path):
         return self.abspath(path)
@@ -58,7 +67,6 @@ class MemoryPaths:
         if self.files.is_dangling(path):
             return True
         return self.files.exists(path)
-
 
     # OpenAI-Codex_engine_cli: simulate same-file checks without real files.
     def samefile(self, first, second):
@@ -115,7 +123,9 @@ class MemoryFiles:
         source, temporary = args[3], args[-1]
         self.reads.append(source)
         if not self.exists(source):
-            return SimpleNamespace(returncode=1, stderr=["synthetic source is missing"], wait=lambda: 1)
+            return SimpleNamespace(
+                returncode=1, stderr=["synthetic source is missing"], wait=lambda: 1
+            )
         self._put(temporary, b"converted:" + self.content(source))
         return SimpleNamespace(returncode=0, stderr=(), wait=lambda: 0)
 
@@ -156,15 +166,20 @@ def setup():
 
 def direct_rename_protects_missing_later_input():
     files = setup()
-    converter = Converter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="rename")
+    converter = Converter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="rename"
+    )
     jobs = converter.convert_batch([files.source, files.later_source])
     assert jobs[0].status == "done", (jobs[0].status, jobs[0].error)
-    assert converter_module.os.path.normcase(jobs[0].dst_path) != converter_module.os.path.normcase(
+    assert converter_module.os.path.normcase(
+        jobs[0].dst_path
+    ) != converter_module.os.path.normcase(
         files.later_source
     ), f"first job used the protected later source: {jobs[0].dst_path}"
     assert not files.exists(files.later_source), "the missing later source was created"
     assert all(
-        converter_module.os.path.normcase(path) != converter_module.os.path.normcase(files.later_source)
+        converter_module.os.path.normcase(path)
+        != converter_module.os.path.normcase(files.later_source)
         for _, path in files.publications
     ), f"protected later source was published: {files.publications}"
     assert jobs[1].status == "error", (jobs[1].status, jobs[1].error)
@@ -172,7 +187,9 @@ def direct_rename_protects_missing_later_input():
 
 def direct_skip_protects_missing_later_input():
     files = setup()
-    converter = Converter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip")
+    converter = Converter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip"
+    )
     jobs = converter.convert_batch([files.source, files.later_source])
     assert jobs[0].status == "skipped", (
         f"first job should skip the protected later source; got {jobs[0].status}, "
@@ -180,14 +197,17 @@ def direct_skip_protects_missing_later_input():
     )
     assert not files.exists(files.later_source), "the missing later source was created"
     assert all(
-        converter_module.os.path.normcase(path) != converter_module.os.path.normcase(files.later_source)
+        converter_module.os.path.normcase(path)
+        != converter_module.os.path.normcase(files.later_source)
         for _, path in files.publications
     )
 
 
 def direct_overwrite_rejected_before_execution():
     files = setup()
-    converter = Converter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="overwrite")
+    converter = Converter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="overwrite"
+    )
     try:
         converter.convert_batch([files.source, files.later_source])
     except ValueError as exc:
@@ -216,19 +236,25 @@ def direct_overwrite_rejects_external_protected_missing_destination():
             f"protected missing destination should be rejected; got {jobs[0].status}, "
             f"publications={files.publications}"
         )
-    assert not files.exists(files.later_source), "the externally protected path was created"
+    assert not files.exists(
+        files.later_source
+    ), "the externally protected path was created"
 
 
 def reused_converter_does_not_protect_a_previous_missing_source():
     files = setup()
-    converter = Converter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="rename")
+    converter = Converter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="rename"
+    )
     previous_source = "C:\\virtual\\clip (1).mp3"
     first = converter.convert_batch([previous_source])
     assert first[0].status == "error" and not files.exists(previous_source)
     files._put(files.later_source, b"preexisting")
     second = converter.convert_batch([files.source])
     assert second[0].status == "done", (second[0].status, second[0].error)
-    assert converter_module.os.path.normcase(second[0].dst_path) == converter_module.os.path.normcase(
+    assert converter_module.os.path.normcase(
+        second[0].dst_path
+    ) == converter_module.os.path.normcase(
         previous_source
     ), f"an earlier batch incorrectly reserved a free name: {second[0].dst_path}"
     assert files.content(files.later_source) == b"preexisting"
@@ -241,7 +267,9 @@ def callback_exception_restores_batch_guard():
         raise RuntimeError("synthetic callback failure")
 
     converter = Converter(
-        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="rename",
+        save_path="C:\\virtual",
+        dst_fmt="mp3",
+        conflict_policy="rename",
         job_update_cb=raise_callback,
     )
     try:
@@ -268,17 +296,24 @@ def queue_declared_dependency_remains_supported():
         queue = TaskQueue()
         queue.run(tasks)
         assert [task.status for task in tasks] == ["done", "done"], (
-            policy, [(task.status, task.error) for task in tasks]
+            policy,
+            [(task.status, task.error) for task in tasks],
         )
         assert files.content(final) == b"converted:converted:synthetic source", policy
         assert queue.last_summary == {
-            "total": 2, "succeeded": 2, "failed": 0, "skipped": 0, "cancelled": False,
+            "total": 2,
+            "succeeded": 2,
+            "failed": 0,
+            "skipped": 0,
+            "cancelled": False,
         }
 
 
 def direct_skip_missing_later_source_reports_error():
     files = setup()
-    converter = Converter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip")
+    converter = Converter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip"
+    )
     jobs = converter.convert_batch([files.source, files.later_source])
     assert jobs[1].status == "error", (
         f"the originally missing later source must report error; got {jobs[1].status}, "
@@ -288,11 +323,13 @@ def direct_skip_missing_later_source_reports_error():
 
 def direct_skip_missing_same_format_source_reports_error():
     files = setup()
-    converter = Converter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip")
-    jobs = converter.convert_batch([files.later_source])
-    assert jobs[0].status == "error", (
-        f"a missing same-format source must report error; got {jobs[0].status}"
+    converter = Converter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip"
     )
+    jobs = converter.convert_batch([files.later_source])
+    assert (
+        jobs[0].status == "error"
+    ), f"a missing same-format source must report error; got {jobs[0].status}"
     assert not files.exists(files.later_source)
 
 
@@ -300,7 +337,9 @@ def direct_skip_missing_source_and_missing_protected_destination_reports_error()
     files = setup()
     source = "C:\\virtual\\missing.wav"
     protected_source = "C:\\virtual\\missing.mp3"
-    converter = Converter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip")
+    converter = Converter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip"
+    )
     jobs = converter.convert_batch([source, protected_source])
     assert jobs[0].status == "error", (
         f"the missing first source must report error, not {jobs[0].status}; "
@@ -313,7 +352,9 @@ def direct_skip_missing_source_and_missing_protected_destination_reports_error()
 def callback_reentry_is_rejected(kind):
     files = setup()
     state = {"attempted": False, "error": None}
-    converter = Converter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="rename")
+    converter = Converter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="rename"
+    )
 
     def callback(job):
         if state["attempted"] or job.status != "converting":
@@ -323,7 +364,9 @@ def callback_reentry_is_rejected(kind):
             if kind == "nested_batch":
                 converter.convert_batch([files.source])
             elif kind == "different_job":
-                converter.convert_one(ConvertJob(src_path=files.source, dst_path=files.later_source))
+                converter.convert_one(
+                    ConvertJob(src_path=files.source, dst_path=files.later_source)
+                )
             elif kind == "same_job":
                 converter.convert_one(job)
             else:
@@ -338,9 +381,12 @@ def callback_reentry_is_rejected(kind):
         f"{kind} reentry did not raise a descriptive RuntimeError; "
         f"protected_created={files.exists(files.later_source)}, publications={files.publications}"
     )
-    assert not files.exists(files.later_source), f"{kind} created the outer protected input"
+    assert not files.exists(
+        files.later_source
+    ), f"{kind} created the outer protected input"
     assert all(
-        converter_module.os.path.normcase(path) != converter_module.os.path.normcase(files.later_source)
+        converter_module.os.path.normcase(path)
+        != converter_module.os.path.normcase(files.later_source)
         for _, path in files.publications
     ), f"{kind} published the outer protected input"
 
@@ -352,14 +398,16 @@ def legacy_publish_override_delegating_to_super_preserves_batch_guard():
         def _publish(self, temporary, desired, protected):
             return super()._publish(temporary, desired, protected)
 
-    converter = LegacyConverter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="rename")
+    converter = LegacyConverter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="rename"
+    )
     jobs = converter.convert_batch([files.source, files.later_source])
-    assert jobs[0].status == "done", (
-        f"legacy three-argument override should remain usable: {jobs[0].status}, {jobs[0].error}"
-    )
-    assert converter_module.os.path.normcase(jobs[0].dst_path) != converter_module.os.path.normcase(
-        files.later_source
-    )
+    assert (
+        jobs[0].status == "done"
+    ), f"legacy three-argument override should remain usable: {jobs[0].status}, {jobs[0].error}"
+    assert converter_module.os.path.normcase(
+        jobs[0].dst_path
+    ) != converter_module.os.path.normcase(files.later_source)
     assert not files.exists(files.later_source)
     assert jobs[1].status == "error", (jobs[1].status, jobs[1].error)
 
@@ -371,7 +419,9 @@ def direct_skip_dangling_source_reports_error():
     files.add_dangling(source)
     assert converter_module.os.path.lexists(source)
     assert not converter_module.os.path.exists(source)
-    converter = Converter(save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip")
+    converter = Converter(
+        save_path="C:\\virtual", dst_fmt="mp3", conflict_policy="skip"
+    )
     jobs = converter.convert_batch([source, protected_source])
     assert jobs[0].status == "error", (
         f"a dangling source must report error, not {jobs[0].status}; "
@@ -466,8 +516,14 @@ def queue_distinct_existing_paths_remain_supported():
 
 
 def queue_alias_query_errors_fail_closed():
-    for error_type in (PermissionError, OSError, ValueError, TypeError,
-                       AttributeError, NotImplementedError):
+    for error_type in (
+        PermissionError,
+        OSError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        NotImplementedError,
+    ):
         files = setup()
         tasks = [
             convert_task(files.source, "C:\\virtual\\middle.mp3"),
@@ -496,29 +552,79 @@ def queue_alias_query_errors_fail_closed():
 
 def main():
     checks = (
-        ("queue existing aliases reject before work", queue_existing_file_aliases_rejected_before_work),
-        ("queue missing intermediate remains supported", queue_missing_intermediate_remains_supported),
-        ("queue distinct existing paths remain supported", queue_distinct_existing_paths_remain_supported),
+        (
+            "queue existing aliases reject before work",
+            queue_existing_file_aliases_rejected_before_work,
+        ),
+        (
+            "queue missing intermediate remains supported",
+            queue_missing_intermediate_remains_supported,
+        ),
+        (
+            "queue distinct existing paths remain supported",
+            queue_distinct_existing_paths_remain_supported,
+        ),
         ("queue alias query errors fail closed", queue_alias_query_errors_fail_closed),
-        ("direct rename protects missing later input", direct_rename_protects_missing_later_input),
-        ("direct skip protects missing later input", direct_skip_protects_missing_later_input),
-        ("direct skip reports missing later source", direct_skip_missing_later_source_reports_error),
-        ("direct skip reports missing same-format source", direct_skip_missing_same_format_source_reports_error),
-        ("direct skip reports missing first and protected sources",
-         direct_skip_missing_source_and_missing_protected_destination_reports_error),
-        ("direct skip reports dangling source", direct_skip_dangling_source_reports_error),
-        ("direct overwrite rejects duplicates", direct_overwrite_rejected_before_execution),
-        ("direct overwrite rejects external protected input",
-         direct_overwrite_rejects_external_protected_missing_destination),
-        ("reused converter forgets previous batch inputs",
-         reused_converter_does_not_protect_a_previous_missing_source),
-        ("callback exception restores batch guard", callback_exception_restores_batch_guard),
-        ("callback rejects nested batch", lambda: callback_reentry_is_rejected("nested_batch")),
-        ("callback rejects a different job", lambda: callback_reentry_is_rejected("different_job")),
-        ("callback rejects the same job", lambda: callback_reentry_is_rejected("same_job")),
-        ("legacy publish override delegates safely",
-         legacy_publish_override_delegating_to_super_preserves_batch_guard),
-        ("queue preserves declared dependencies", queue_declared_dependency_remains_supported),
+        (
+            "direct rename protects missing later input",
+            direct_rename_protects_missing_later_input,
+        ),
+        (
+            "direct skip protects missing later input",
+            direct_skip_protects_missing_later_input,
+        ),
+        (
+            "direct skip reports missing later source",
+            direct_skip_missing_later_source_reports_error,
+        ),
+        (
+            "direct skip reports missing same-format source",
+            direct_skip_missing_same_format_source_reports_error,
+        ),
+        (
+            "direct skip reports missing first and protected sources",
+            direct_skip_missing_source_and_missing_protected_destination_reports_error,
+        ),
+        (
+            "direct skip reports dangling source",
+            direct_skip_dangling_source_reports_error,
+        ),
+        (
+            "direct overwrite rejects duplicates",
+            direct_overwrite_rejected_before_execution,
+        ),
+        (
+            "direct overwrite rejects external protected input",
+            direct_overwrite_rejects_external_protected_missing_destination,
+        ),
+        (
+            "reused converter forgets previous batch inputs",
+            reused_converter_does_not_protect_a_previous_missing_source,
+        ),
+        (
+            "callback exception restores batch guard",
+            callback_exception_restores_batch_guard,
+        ),
+        (
+            "callback rejects nested batch",
+            lambda: callback_reentry_is_rejected("nested_batch"),
+        ),
+        (
+            "callback rejects a different job",
+            lambda: callback_reentry_is_rejected("different_job"),
+        ),
+        (
+            "callback rejects the same job",
+            lambda: callback_reentry_is_rejected("same_job"),
+        ),
+        (
+            "legacy publish override delegates safely",
+            legacy_publish_override_delegating_to_super_preserves_batch_guard,
+        ),
+        (
+            "queue preserves declared dependencies",
+            queue_declared_dependency_remains_supported,
+        ),
     )
     failures = []
     for name, check in checks:

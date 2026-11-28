@@ -1,4 +1,5 @@
 """Smoke tests for the Textual terminal UI (tui/). Headless via App.run_test()."""
+
 import _path  # noqa: F401  (sys.path shim)
 
 import os
@@ -90,8 +91,15 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
             cv = app.query_one(ConvertTab)
             cv.query_one("#file-paths").text = "clip [HD].mkv"
             cv._add_files()
-            rows = [{"src": "clip [HD].mkv", "dst": "out/clip.mp4", "existing": "unknown",
-                     "batch_duplicate": True, "source_matches": "unknown"}]
+            rows = [
+                {
+                    "src": "clip [HD].mkv",
+                    "dst": "out/clip.mp4",
+                    "existing": "unknown",
+                    "batch_duplicate": True,
+                    "source_matches": "unknown",
+                }
+            ]
             with patch.object(ConvertTab, "_run_preview"):
                 cv._preview()
                 stale = cv._preview_generation
@@ -118,8 +126,15 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
             cv = app.query_one(ConvertTab)
             cv.query_one("#file-paths").text = "clip.mkv"
             cv._add_files()
-            rows = [{"src": "clip.mkv", "dst": "out/clip.mp4", "existing": "missing",
-                     "batch_duplicate": False, "source_matches": "no"}]
+            rows = [
+                {
+                    "src": "clip.mkv",
+                    "dst": "out/clip.mp4",
+                    "existing": "missing",
+                    "batch_duplicate": False,
+                    "source_matches": "no",
+                }
+            ]
             with patch.object(ConvertTab, "_run_preview"):
                 cv._preview()
                 generation = cv._preview_generation
@@ -127,10 +142,14 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
                 display = cv.query_one("#preview-results")
                 with patch.object(display, "update") as update:
                     cv._preview_done(generation, rows, None)
-                self.assertTrue(all(call.args[0] == "" for call in update.call_args_list))
+                self.assertTrue(
+                    all(call.args[0] == "" for call in update.call_args_list)
+                )
                 self.assertGreater(cv._preview_generation, generation)
 
-    async def test_convert_preview_generation_changes_on_list_and_operation_boundaries(self):
+    async def test_convert_preview_generation_changes_on_list_and_operation_boundaries(
+        self,
+    ):
         app = MultimediaDownloaderApp(i18n.Translator("en"))
         async with app.run_test():
             cv = app.query_one(ConvertTab)
@@ -170,10 +189,21 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
         app = MultimediaDownloaderApp(i18n.Translator("en"))
         async with app.run_test() as pilot:
             lg = app.query_one(LogTab)
-            app.log_line("err", "log_item_error", i=1, t=1,
-                         err="[youtube] dQw4w9WgXcQ: Sign in to confirm your age")
-            app.log_line("info", "log_convert_start", i=1, t=1,
-                         src="Song [HD].mkv", dst="Song [HD] [/].mp4")
+            app.log_line(
+                "err",
+                "log_item_error",
+                i=1,
+                t=1,
+                err="[youtube] dQw4w9WgXcQ: Sign in to confirm your age",
+            )
+            app.log_line(
+                "info",
+                "log_convert_start",
+                i=1,
+                t=1,
+                src="Song [HD].mkv",
+                dst="Song [HD] [/].mp4",
+            )
             await pilot.pause()
             self.assertIn("[youtube]", lg._entries[0][2])
             self.assertIn("[/]", lg._entries[1][2])
@@ -222,7 +252,10 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
         app = MultimediaDownloaderApp(i18n.Translator("en"))
         async with app.run_test():
             lg = app.query_one(LogTab)
-            lg.append_entry("info", "https://user:secret@example.invalid/video?token=private#fragment")
+            lg.append_entry(
+                "info",
+                "https://user:secret@example.invalid/video?token=private#fragment",
+            )
             text = lg._entries[-1][2]
             self.assertIn("example.invalid/video", text)
             for secret in ("user", "secret", "private", "fragment"):
@@ -242,7 +275,9 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
                         lg._export()
                         lg.append_entry("info", "second entry")
                         lg._export()
-                    files = sorted(f for f in os.listdir(tmp) if f.startswith("mmdl_log_"))
+                    files = sorted(
+                        f for f in os.listdir(tmp) if f.startswith("mmdl_log_")
+                    )
                     self.assertEqual(len(files), 2)
                     with open(files[0], encoding="utf-8") as first:
                         self.assertNotIn("second entry", first.read())
@@ -348,7 +383,6 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     release.set()
 
-
     # OpenAI-Codex_engine_cli: cover reactive A-B-A before Changed is dispatched.
     async def test_convert_preview_rejects_undispatched_reactive_aba(self):
         app = MultimediaDownloaderApp(i18n.Translator("en"))
@@ -356,17 +390,31 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
             cv = app.query_one(ConvertTab)
             try:
                 from importlib.metadata import version
+
                 supported = version("textual") == "8.2.8"
             except Exception:
                 supported = False
             if not supported:
-                self.skipTest("synchronous watcher timing has only been reviewed for Textual 8.2.8")
+                self.skipTest(
+                    "synchronous watcher timing has only been reviewed for Textual 8.2.8"
+                )
             self.assertTrue(cv._preview_watch_ready)
             cv._files = ["clip.mkv"]
-            rows = [{"src": "clip.mkv", "dst": "out/clip.mp4", "existing": "missing",
-                     "batch_duplicate": False, "source_matches": "no"}]
-            fields = (("#save-path", "other"), ("#ffmpeg-bin", "other-ffmpeg"),
-                      ("#dst-fmt", "mkv"), ("#conflict-policy", "skip"))
+            rows = [
+                {
+                    "src": "clip.mkv",
+                    "dst": "out/clip.mp4",
+                    "existing": "missing",
+                    "batch_duplicate": False,
+                    "source_matches": "no",
+                }
+            ]
+            fields = (
+                ("#save-path", "other"),
+                ("#ffmpeg-bin", "other-ffmpeg"),
+                ("#dst-fmt", "mkv"),
+                ("#conflict-policy", "skip"),
+            )
             with patch.object(ConvertTab, "_run_preview"):
                 for selector, alternate in fields:
                     with self.subTest(selector=selector):
@@ -377,7 +425,9 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
                         field.value = alternate
                         field.value = original
                         self.assertGreater(cv._preview_generation, generation)
-                        with patch.object(cv.query_one("#preview-results"), "update") as update:
+                        with patch.object(
+                            cv.query_one("#preview-results"), "update"
+                        ) as update:
                             cv._preview_done(generation, rows, None)
                             update.assert_not_called()
 
@@ -404,7 +454,9 @@ class TuiTests(unittest.IsolatedAsyncioTestCase):
                         generation = cv._preview_generation
                         handler(SimpleNamespace(**{attribute: field}))
                         handler(SimpleNamespace(**{attribute: field}))
-                        with patch.object(cv.query_one("#preview-results"), "update") as update:
+                        with patch.object(
+                            cv.query_one("#preview-results"), "update"
+                        ) as update:
                             cv._preview_done(generation, rows, None)
                             update.assert_called_once()
 
@@ -418,7 +470,10 @@ class ConvertPreviewWatcherFallbackTests(unittest.TestCase):
     @staticmethod
     def _fake_tab():
         selectors = ("#save-path", "#ffmpeg-bin", "#dst-fmt", "#conflict-policy")
-        widgets = {selector: SimpleNamespace(id=selector[1:], callbacks=[]) for selector in selectors}
+        widgets = {
+            selector: SimpleNamespace(id=selector[1:], callbacks=[])
+            for selector in selectors
+        }
         state = SimpleNamespace(_preview_watch_ready=False, generation=0, fail_on=None)
         state.query_one = lambda selector, *_: widgets[selector]
 
@@ -438,13 +493,21 @@ class ConvertPreviewWatcherFallbackTests(unittest.TestCase):
         return state, widgets
 
     def test_unverified_or_unavailable_versions_preserve_changed_fallback(self):
-        for value, error in (("8.2.9", None), ("", None), (None, RuntimeError("missing metadata"))):
+        for value, error in (
+            ("8.2.9", None),
+            ("", None),
+            (None, RuntimeError("missing metadata")),
+        ):
             with self.subTest(value=value, error=error):
                 tab, widgets = self._fake_tab()
-                with patch("importlib.metadata.version", return_value=value, side_effect=error):
+                with patch(
+                    "importlib.metadata.version", return_value=value, side_effect=error
+                ):
                     ConvertTab.on_mount(tab)
                 self.assertFalse(tab._preview_watch_ready)
-                ConvertTab.on_input_changed(tab, SimpleNamespace(input=widgets["#save-path"]))
+                ConvertTab.on_input_changed(
+                    tab, SimpleNamespace(input=widgets["#save-path"])
+                )
                 self.assertEqual(tab.generation, 1)
 
     def test_partial_registration_is_safe_and_reentry_completes_once(self):
@@ -453,7 +516,9 @@ class ConvertPreviewWatcherFallbackTests(unittest.TestCase):
         with patch("importlib.metadata.version", return_value="8.2.8"):
             ConvertTab.on_mount(tab)
             self.assertFalse(tab._preview_watch_ready)
-            ConvertTab.on_select_changed(tab, SimpleNamespace(select=widgets["#dst-fmt"]))
+            ConvertTab.on_select_changed(
+                tab, SimpleNamespace(select=widgets["#dst-fmt"])
+            )
             self.assertEqual(tab.generation, 1)
             tab.fail_on = None
             ConvertTab.on_mount(tab)
