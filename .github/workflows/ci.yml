@@ -301,17 +301,14 @@ jobs:
       - name: svelte-check
         run: npm run check --prefix frontend
 
-      # OpenAI-Codex_Fork_GitHub_REPO: check persistence hints with in-memory fakes.
-      - name: Check key storage behavior
-        run: node --experimental-strip-types frontend/src/lib/keyStorage.behavior.mjs
-
-      # OpenAI-Codex_Fork_GitHub_REPO: classify incomplete replies conservatively.
-      - name: Check download outcome behavior
-        run: node --experimental-strip-types frontend/src/lib/downloadOutcome.behavior.mjs
-
-      # OpenAI-Codex: conversion success requires confirmed terminal results.
-      - name: Check conversion outcome behavior
-        run: node --experimental-strip-types frontend/src/lib/convertOutcome.behavior.mjs
+      # OpenAI-Codex: run each interface contract in its own process.
+      - name: Check frontend behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          for suite in frontend/src/lib/*.behavior.mjs; do
+            node --experimental-strip-types --experimental-vm-modules "$suite"
+          done
 
   rust-check:
     runs-on: ubuntu-latest
