@@ -1,3 +1,4 @@
+# OpenAI-Codex_artifact_fix: pin reviewed artifact action upgrades.
 # OpenAI-Codex_format_architecture: calculate one independent, read-only formatting plan.
 name: Formatter plan
 on:
@@ -202,7 +203,7 @@ jobs:
       - name: Retain formatting plan as data
         if: inputs.include_service == true
         id: retained
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: format-plan-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.replica }}
           path: ${{ runner.temp }}/format-plan-${{ inputs.replica }}/

@@ -1,3 +1,4 @@
+# OpenAI-Codex_artifact_fix: pin reviewed artifact action upgrades.
 # OpenAI-Codex: validate an installable web package before any GitHub Packages publication.
 name: npm web package
 
@@ -244,7 +245,7 @@ jobs:
           grep -qi '<html' "$RUNNER_TEMP/mmdl-page.html"
           curl --fail --silent --show-error http://127.0.0.1:18517/api/locales > "$RUNNER_TEMP/mmdl-locales.json"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-web-package-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/mmdl-package/*.tgz
@@ -293,7 +294,7 @@ jobs:
           node-version: '22'
           registry-url: 'https://npm.pkg.github.com'
           scope: '@kingsleyhk0323'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: npm-web-package-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/npm-delivery

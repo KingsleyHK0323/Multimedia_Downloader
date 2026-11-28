@@ -1,3 +1,4 @@
+// OpenAI-Codex_artifact_fix: pin reviewed artifact action upgrades.
 // OpenAI-Codex_health_release_architecture: reconstruct a merged patch candidate before tag or release decisions.
 import { createHash } from 'node:crypto';
 import { ANCHOR_PATH, ANCHOR_CONTENT, currentPatchLabel, labelAtMerge, utcSecond } from './patch-source-authorization.mjs';
@@ -146,7 +147,7 @@ export async function inspectMergedPatch({ github, context, workflowSha, anchorP
   // These exact trusted release files verify staged artifacts and published asset digests.
   const trustedFiles = new Map([
     ['.github/workflows/release.yml', '0080bc40cd8ca29941874c25893f5aa24d121d81'],
-    ['.github/workflows/release-build.yml', '27f65bfb9426e86216ffc4ea89e248ea5ac14025'],
+    ['.github/workflows/release-build.yml', '31ffddae74a463787901b1318375949d3feabe00'],
     ['.github/scripts/upload-release-assets.mjs', 'dfc8465957eedc56448bc1fe71fc086acaad509c'],
     ['.github/scripts/verify-tag-protection.mjs', '12d61171e87bec08779e52648a77a7d7d5ac62ea'],
     ['.github/scripts/select-release-artifacts.mjs', 'c7fd3a52e296ef311e230a13d9a8d96039bad621'],
