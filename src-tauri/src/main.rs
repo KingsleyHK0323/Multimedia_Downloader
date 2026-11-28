@@ -497,7 +497,7 @@ async fn start_download(app: tauri::AppHandle, args: Value) -> Result<Value, Str
             "cookie_file": args.get("cookie_file"),
             "bitrate": args.get("bitrate").and_then(Value::as_str).unwrap_or("192"),
             // OpenAI-Codex_Fork_Source_Code: selected playlist entries stay individual.
-            "noplaylist": args.get("noplaylist").cloned().unwrap_or_else(|| json!(false)),
+            "noplaylist": args.get("noplaylist").cloned().unwrap_or(Value::Bool(false)),
         });
         streaming(&app, &engine, "download",
             json!({ "urls": args.get("urls"), "options": options, "require_absolute_paths": true }),
