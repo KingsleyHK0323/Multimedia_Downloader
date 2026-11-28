@@ -12,6 +12,8 @@
 
 ### Unreleased
 
+- Fixed formatter recovery when GitHub returns stale pull request metadata and preserved existing Ruff annotations during formatting. (OpenAI-Codex_restore127)
+
 - Automate checked, same-major action-pin updates for the container login and stale issue workflows. (OpenAI-Codex_automerge_fix)
 
 ### [4.3.25] — 2026-11-28 (Public Beta)
