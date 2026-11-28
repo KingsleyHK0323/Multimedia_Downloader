@@ -145,9 +145,9 @@ export async function inspectMergedPatch({ github, context, workflowSha, anchorP
   // OpenAI-Codex: pin the currently verified release workflow and asset uploader.
   // These exact trusted release files verify staged artifacts and published asset digests.
   const trustedFiles = new Map([
-    ['.github/workflows/release.yml', 'bdf64c9746c8cf3dc948220e314d4d4c570ce57d'],
+    ['.github/workflows/release.yml', '0080bc40cd8ca29941874c25893f5aa24d121d81'],
     ['.github/workflows/release-build.yml', '27f65bfb9426e86216ffc4ea89e248ea5ac14025'],
-    ['.github/scripts/upload-release-assets.mjs', '300a8e3513bfbf5fc2b5d60becf2a11ba887ca6d'],
+    ['.github/scripts/upload-release-assets.mjs', 'dfc8465957eedc56448bc1fe71fc086acaad509c'],
     ['.github/scripts/verify-tag-protection.mjs', '12d61171e87bec08779e52648a77a7d7d5ac62ea'],
     ['.github/scripts/select-release-artifacts.mjs', 'c7fd3a52e296ef311e230a13d9a8d96039bad621'],
     ['.github/scripts/download-release-artifacts.py', 'dc8ca25a9548af1098ec63bb4e6a95f27114826e'],

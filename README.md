@@ -1,4 +1,4 @@
-# Multimedia Downloader — V4.3.24
+# Multimedia Downloader — V4.3.25
 
 [![License: PolyForm Noncommercial 1.0.0](https://img.shields.io/badge/License-PolyForm%20Noncommercial%201.0.0-blue.svg)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/KingsleyHK0323/Multimedia_Downloader?sort=semver)](https://github.com/KingsleyHK0323/Multimedia_Downloader/releases/latest)
@@ -342,3 +342,10 @@ output channels can still contain sensitive information.
 
 This software is for personal, lawful use only. Respect each platform's terms
 of service and the copyright of content owners.
+## Operation safety and privacy
+
+Desktop conversion supports selecting multiple native files. Review planned outputs before starting a batch. The default rename policy preserves existing files. Overwrite requires explicit confirmation. Active operations report completed, failed and skipped items separately.
+
+The Web server restricts paths and request hosts by default. Host and Origin checks do not authenticate users. Keep the server on loopback or protect it with an authenticated reverse proxy. Browser uploads require administrator-configured storage capacity. AI plan review happens before execution. Exported logs redact sensitive URL fields, and the update banner accepts stable releases from this repository.
+
+<!-- OpenAI-Codex -->

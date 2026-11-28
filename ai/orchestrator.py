@@ -16,13 +16,14 @@ Flow (see Obsidian `System_Architecture/V4.0 System Architecture.md` §4):
 runs ffmpeg — it only talks to OpenRouter and returns a plan for the caller to
 show the user. Execution happens separately, only after explicit confirmation.
 
-The user's OpenRouter API key is supplied at call time (from the Tauri secure
-layer); it is never persisted by this module.
+The user's OpenRouter API key is supplied by the caller at request time; this
+module does not persist it. The caller is responsible for secure key storage.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import urllib.error
 import urllib.request
 from typing import Callable, Optional
@@ -59,6 +60,12 @@ class OrchestratorError(RuntimeError):
     """Raised for any failure talking to OpenRouter or parsing its replies."""
 
 
+
+# OpenAI-Codex_web_ai: do not pass control characters into HTTP headers.
+def _reject_key_controls(api_key: str) -> None:
+    if isinstance(api_key, str) and any(ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in api_key):
+        raise OrchestratorError("OpenRouter API key contains control characters")
+
 #: ``(url, payload, api_key) -> parsed_json_response`` — injectable for tests.
 Transport = Callable[[str, dict, str], dict]
 
@@ -80,29 +87,148 @@ def _default_transport(url: str, payload: dict, api_key: str) -> dict:
         with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as e:
+        # OpenAI-Codex_web_ai: bound provider reads and expose only fixed retry markers.
+        marker = ""
+        try:
+            prefix = bytearray()
+            while len(prefix) < 1200:
+                chunk = e.read(1200 - len(prefix))
+                if not chunk:
+                    break
+                prefix.extend(chunk[:1200 - len(prefix)])
+            preview = prefix.decode("utf-8", "replace")[:300]
+            marker = next((item for item in _DEAD_MODEL_MARKERS if item in preview), "")
+        except Exception:  # noqa: S110 - Do not expose response read errors.
+            pass  # noqa: S110
+        finally:
+            try:
+                e.close()
+            except Exception:  # noqa: S110 - Keep close failures out of diagnostics.
+                pass  # noqa: S110
+        status = int(e.code) if isinstance(e.code, int) and 100 <= e.code <= 999 else "unknown"
+        raise OrchestratorError(f"OpenRouter HTTP {status}: {marker}") from None
         body = e.read().decode("utf-8", "replace")
         raise OrchestratorError(f"OpenRouter HTTP {e.code}: {body[:300]}") from e
     except urllib.error.URLError as e:
+        # OpenAI-Codex_web_ai: preserve only fixed fallback markers, not the reason.
+        try:
+            reason = f"{e.reason}"
+            marker = next((item for item in _DEAD_MODEL_MARKERS if item in reason), "")
+        except Exception:
+            marker = ""
+        raise OrchestratorError(f"OpenRouter request failed: {marker}") from None
         raise OrchestratorError(f"OpenRouter request failed: {e.reason}") from e
+    except TimeoutError:
+        # OpenAI-Codex_web_ai: do not expose timeout details or the exception chain.
+        raise OrchestratorError("OpenRouter request timed out") from None
+
+
+# OpenAI-Codex_web_ai: bound unexpected default-transport errors at the outer edge.
+_unchecked_default_transport = _default_transport
+
+
+def _safe_default_transport(url: str, payload: dict, api_key: str) -> dict:
+    _reject_key_controls(api_key)
+    try:
+        return _unchecked_default_transport(url, payload, api_key)
+    except OrchestratorError:
+        raise
+    except Exception:
+        # This hides internal diagnostics; the original remains in exception context.
+        raise OrchestratorError("OpenRouter request failed unexpectedly") from None
+
+
+_default_transport = _safe_default_transport
+
+
+# OpenAI-Codex_web_ai: reject duplicate keys rather than silently overwriting them.
+def _unique_json_pairs(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise OrchestratorError("model reply contains duplicate JSON keys")
+        result[key] = value
+    return result
+
+
+# OpenAI-Codex_web_ai: JSON constants must not contain non-finite values.
+def _reject_json_constant(_constant):
+    raise OrchestratorError("model reply contains a nonstandard JSON constant")
+
+
+# OpenAI-Codex_web_ai: reject JSON numbers that overflow Python floats.
+def _finite_json_float(number):
+    value = float(number)
+    if not math.isfinite(value):
+        raise OrchestratorError("model reply contains a non-finite JSON number")
+    return value
 
 
 def _extract_json(text: str) -> dict:
-    """Pull the first balanced top-level ``{...}`` object out of a model reply."""
+    """Decode the first top-level object without counting braces in strings."""
+    # OpenAI-Codex_web_ai: JSONDecoder handles quoted and escaped characters.
+    if not isinstance(text, str):
+        raise OrchestratorError("model reply was not text")
     start = text.find("{")
     if start == -1:
         raise OrchestratorError("model reply had no JSON object")
-    depth = 0
-    for i, ch in enumerate(text[start:], start):
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                try:
-                    return json.loads(text[start:i + 1])
-                except json.JSONDecodeError as e:
-                    raise OrchestratorError(f"model reply had invalid JSON: {e}") from e
-    raise OrchestratorError("model reply had unbalanced JSON")
+    # OpenAI-Codex_web_ai: avoid extracting an object from a surrounding array or string.
+    array_depth = 0
+    in_string = False
+    escaped = False
+    for character in text[:start]:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+        elif character == '"':
+            in_string = True
+        elif character == "[":
+            array_depth += 1
+        elif character == "]":
+            if array_depth == 0:
+                raise OrchestratorError("model reply has ambiguous prefix framing")
+            array_depth -= 1
+    if in_string or array_depth:
+        raise OrchestratorError("model reply has ambiguous prefix framing")
+    try:
+        obj, _ = json.JSONDecoder().raw_decode(text, start)
+        json.JSONDecoder(object_pairs_hook=_unique_json_pairs).raw_decode(text, start)
+        json.JSONDecoder(parse_constant=_reject_json_constant).raw_decode(text, start)
+        json.JSONDecoder(parse_float=_finite_json_float).raw_decode(text, start)
+        if "{" in text[_:] or "}" in text[_:]:
+            raise OrchestratorError("model reply has ambiguous trailing object content")
+        # OpenAI-Codex_web_ai: reject unmatched closing brackets after the JSON object.
+        suffix = text[_:]
+        suffix_depth = 0
+        suffix_in_string = False
+        suffix_escaped = False
+        quote_start = 0
+        for index, character in enumerate(suffix):
+            if suffix_in_string:
+                if suffix_escaped:
+                    suffix_escaped = False
+                elif character == "\\":
+                    suffix_escaped = True
+                elif character == '"':
+                    suffix_in_string = False
+            elif character == '"':
+                suffix_in_string = True
+                quote_start = index
+            elif character == "[":
+                suffix_depth += 1
+            elif character == "]":
+                if suffix_depth == 0:
+                    raise OrchestratorError("model reply has ambiguous trailing array framing")
+                suffix_depth -= 1
+        if suffix_in_string and "]" in suffix[quote_start:]:
+            raise OrchestratorError("model reply has ambiguous trailing array framing")
+    except json.JSONDecodeError as e:
+        raise OrchestratorError(f"model reply had invalid JSON: {e}") from e
+    return obj
 
 
 _TASK_SCHEMA_HINT = """Return ONLY a JSON object (no prose, no markdown fences) shaped like:
@@ -111,8 +237,9 @@ _TASK_SCHEMA_HINT = """Return ONLY a JSON object (no prose, no markdown fences) 
   "tasks": [
     {"kind": "download", "label": "...", "url": "...",
      "options": {"save_path": "...", "mode": "video", "video_fmt": "mp4",
-                 "audio_fmt": "mp3", "quality": "best", "browser": "none", "bitrate": "192"}},
-    {"kind": "convert", "label": "...", "src_path": "...", "dst_path": "..."}
+                 "audio_fmt": "mp3", "quality": "best", "bitrate": "192", "browser": "none"}},
+    {"kind": "convert", "label": "...", "src_path": "...", "dst_path": "...",
+     "conflict_policy": "rename"}
   ]
 }
 Every task is either kind "download" (needs url + options) or kind "convert"
@@ -139,18 +266,28 @@ def _validate_tasks(raw_tasks) -> tuple[list[dict], list[str]]:
         if kind == "download":
             url = t.get("url")
             options = t.get("options") if isinstance(t.get("options"), dict) else {}
-            if not url or not isinstance(url, str):
+            if not isinstance(url, str) or not url.strip():
                 warnings.append(f"{label}: skipped (missing url)")
                 continue
-            if not options.get("save_path"):
+            save_path = options.get("save_path")
+            if not isinstance(save_path, str) or not save_path.strip():
                 warnings.append(f"{label}: skipped (missing save_path)")
                 continue
-            mode = options.get("mode") if options.get("mode") in ("video", "audio") else "video"
-            video_fmt = options.get("video_fmt") if options.get("video_fmt") in VIDEO_FORMATS else "mp4"
-            audio_fmt = options.get("audio_fmt") if options.get("audio_fmt") in AUDIO_FORMATS else "mp3"
-            quality = options.get("quality") if options.get("quality") in QUALITY_PRESETS else "best"
-            browser = options.get("browser") if options.get("browser") in BROWSERS else "none"
-            # OpenAI-Codex_web_ai: normalize an audio bitrate before review.
+
+            def choice(field, allowed, default):
+                if field not in options:
+                    return default
+                value = options[field]
+                if isinstance(value, str) and value in allowed:
+                    return value
+                warnings.append(f"{label}: invalid {field}; using {default}")
+                return default
+
+            mode = choice("mode", ("video", "audio"), "video")
+            video_fmt = choice("video_fmt", VIDEO_FORMATS, "mp4")
+            audio_fmt = choice("audio_fmt", AUDIO_FORMATS, "mp3")
+            quality = choice("quality", QUALITY_PRESETS, "best")
+            browser = choice("browser", BROWSERS, "none")
             bitrate = options.get("bitrate", "192")
             if isinstance(bitrate, str):
                 bitrate = bitrate.strip()
@@ -164,23 +301,43 @@ def _validate_tasks(raw_tasks) -> tuple[list[dict], list[str]]:
             clean.append({
                 "kind": "download", "label": label, "url": url,
                 "options": {
-                    "save_path": options["save_path"], "mode": mode,
+                    "save_path": save_path, "mode": mode,
                     "video_fmt": video_fmt, "audio_fmt": audio_fmt,
-                    "quality": quality, "browser": browser, "bitrate": bitrate,
+                    "quality": quality, "bitrate": bitrate, "browser": browser,
                 },
             })
 
         elif kind == "convert":
             src = t.get("src_path")
             dst = t.get("dst_path")
-            if not src or not dst:
+            if (not isinstance(src, str) or not src.strip()
+                    or not isinstance(dst, str) or not dst.strip()):
                 warnings.append(f"{label}: skipped (missing src_path/dst_path)")
                 continue
-            clean.append({"kind": "convert", "label": label, "src_path": src, "dst_path": dst})
+            policy = t.get("conflict_policy", "rename")
+            if policy == "overwrite":
+                warnings.append(f"{label}: overwrite requires explicit confirmation; using rename")
+                policy = "rename"
+            elif policy not in ("rename", "skip"):
+                warnings.append(f"{label}: invalid conflict_policy; using rename")
+                policy = "rename"
+            clean.append({"kind": "convert", "label": label, "src_path": src, "dst_path": dst,
+                          "conflict_policy": policy})
 
         else:
             warnings.append(f"{label}: skipped (unknown task kind {kind!r})")
 
+    # OpenAI-Codex_web_ai: do not infer dependencies from task order or paths.
+    seen_download = False
+    for task in clean:
+        if task["kind"] == "download":
+            seen_download = True
+        elif task["kind"] == "convert" and seen_download:
+            warnings.append(
+                "Download outputs are not tracked. A later conversion may read an existing file "
+                "even if an earlier download fails; check each conversion source separately."
+            )
+            break
     return clean, warnings
 
 
@@ -194,6 +351,7 @@ class Orchestrator:
         log_cb: Optional[LogCallback] = None,
         catalog_fetch: Optional[CatalogFetch] = None,
     ) -> None:
+        _reject_key_controls(api_key)
         if not api_key or not api_key.strip():
             raise OrchestratorError("missing OpenRouter API key")
         self._api_key = api_key
@@ -236,9 +394,14 @@ class Orchestrator:
         }
         resp = self._transport(f"{OPENROUTER_BASE_URL}/chat/completions", payload, self._api_key)
         try:
-            return resp["choices"][0]["message"]["content"]
+            content = resp["choices"][0]["message"]["content"]
         except (KeyError, IndexError, TypeError) as e:
-            raise OrchestratorError(f"unexpected response from {model.slug}: {resp}") from e
+            # OpenAI-Codex_engine_cli: suppress custom response details in formatted tracebacks.
+            raise OrchestratorError(f"unexpected response shape from {model.slug}") from None
+            raise OrchestratorError(f"unexpected response shape from {model.slug}") from e
+        if not isinstance(content, str):
+            raise OrchestratorError(f"non-text response from {model.slug}")
+        return content
 
     def _call(self, preferred: Model, system: str, user: str) -> str:
         """
@@ -266,9 +429,10 @@ class Orchestrator:
         return (
             f"Known video formats: {VIDEO_FORMATS}\n"
             f"Known audio formats: {AUDIO_FORMATS}\n"
-            "Audio bitrate: decimal kbps from 1 to 9999, default 192.\n"
             f"Known quality presets: {QUALITY_PRESETS}\n"
             f"Known browsers: {BROWSERS}\n"
+            "Audio bitrate: a decimal string from 1 to 9999 kbps; default '192'.\n"
+            "Convert conflict_policy: 'rename' or 'skip'; overwrite requires separate confirmation.\n"
             f"Default save_path if the user didn't specify one: {context.get('save_path', '')!r}\n"
             f"Default browser if the user didn't specify one: {context.get('browser', 'none')!r}\n"
         )
@@ -294,6 +458,11 @@ class Orchestrator:
             user_request,
         )
         draft = _extract_json(draft_raw)
+        # OpenAI-Codex_web_ai: reject provider errors and malformed task lists.
+        if "error" in draft:
+            raise OrchestratorError("AI planner reported an error")
+        if not isinstance(draft.get("tasks"), list):
+            raise OrchestratorError("AI planner returned a missing or invalid task list")
 
         self._log("info", "log_ai_executing")
         exec_raw = self._call(
@@ -305,6 +474,13 @@ class Orchestrator:
             json.dumps(draft),
         )
         refined = _extract_json(exec_raw)
+        if "error" in refined:
+            raise OrchestratorError("AI executor reported an error")
+        if not isinstance(refined.get("tasks"), list):
+            raise OrchestratorError("AI executor returned a missing or invalid task list")
+        # OpenAI-Codex_web_ai: an executor cannot invent tasks for an empty draft.
+        if not draft["tasks"] and refined["tasks"]:
+            raise OrchestratorError("AI executor returned tasks for an empty planner draft")
 
         tasks, warnings = _validate_tasks(refined.get("tasks", []))
         # The AI panel already renders `warnings`, so surfacing substitutions
@@ -323,9 +499,20 @@ class Orchestrator:
                     f"User request: {user_request}\nFinal tasks: {json.dumps(tasks)}",
                 )
                 verdict = _extract_json(check_raw)
-                warnings.extend(str(w) for w in verdict.get("warnings", []))
-            except OrchestratorError:
-                pass  # the checker is advisory only; a bad reply just skips extra warnings
+                if "error" in verdict:
+                    raise OrchestratorError("AI checker reported an error")
+                if verdict.get("ok") is False:
+                    warnings.append("AI checker reported that the plan needs review")
+                elif verdict.get("ok") is not True:
+                    warnings.append("AI checker did not return a valid verdict")
+                checker_warnings = verdict.get("warnings", [])
+                if isinstance(checker_warnings, list):
+                    warnings.extend(str(w) for w in checker_warnings)
+                else:
+                    warnings.append("AI checker returned invalid warnings")
+            except Exception:
+                # The checker is advisory. Do not expose provider response data.
+                warnings.append("AI checker could not review this plan; inspect every task")
 
         self._log("ok", "log_ai_plan_ready", n=len(tasks))
         return {

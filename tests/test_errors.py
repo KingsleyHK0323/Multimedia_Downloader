@@ -96,5 +96,119 @@ class EnumTests(unittest.TestCase):
         )
 
 
+# OpenAI-Codex_engine_cli: timeout type must precede message markers.
+class TimeoutMarkerTests(unittest.TestCase):
+    def test_message_markers_do_not_override_timeout_type(self):
+        class DerivedTimeout(TimeoutError):
+            pass
+
+        for message in (
+            "timed out: https://example.invalid/403",
+            "timed out after HTTP Error 503",
+            "timed out while receiving Forbidden",
+        ):
+            for error_type in (TimeoutError, DerivedTimeout):
+                with self.subTest(message=message, error_type=error_type):
+                    error = error_type(message)
+                    self.assertIs(classify(error), ErrorKind.UNKNOWN)
+                    self.assertFalse(is_stale_tool(error))
+
+    def test_retry_loop_uses_error_type_with_fake_io(self):
+        from unittest.mock import patch
+
+        from engine.downloader import Downloader
+
+        # OpenAI-Codex_engine_cli: isolate retry globals from the shared clock.
+        from types import FunctionType, SimpleNamespace
+
+        # OpenAI-Codex: isolate the function that executes the retry loop.
+        real_retry = Downloader._download_one_with_retry_impl
+        real_time = real_retry.__globals__["time"]
+        real_sleep = real_time.sleep
+        fake_time = SimpleNamespace(sleep=None)
+        retry_globals = dict(real_retry.__globals__)
+        retry_globals["time"] = fake_time
+        fake_retry = FunctionType(
+            real_retry.__code__,
+            retry_globals,
+            real_retry.__name__,
+            real_retry.__defaults__,
+            real_retry.__closure__,
+        )
+        self.assertIs(fake_retry.__code__, real_retry.__code__)
+        self.assertIsNot(fake_retry.__globals__, real_retry.__globals__)
+        self.assertIs(fake_retry.__globals__["time"], fake_time)
+        self.assertIs(
+            fake_retry.__globals__["classify"], real_retry.__globals__["classify"]
+        )
+        Downloader = SimpleNamespace(_download_one_with_retry=fake_retry)
+        patch_object = patch.object
+
+        def patch(target):
+            if target != "engine.downloader.time.sleep":
+                raise AssertionError("unexpected patch target")
+            return patch_object(fake_time, "sleep")
+
+        class FakeDownloader:
+            def __init__(self, error):
+                self._stop = False
+                self.error = error
+                self.attempts = 0
+                self.log_keys = []
+
+            def download_one(self, _url):
+                self.attempts += 1
+                raise self.error
+
+            def _log(self, _level, key, **_kwargs):
+                self.log_keys.append(key)
+
+        scenarios = (
+            (TimeoutError("timed out: 403"), 1, False),
+            (TimeoutError("timed out: HTTP Error 503"), 1, False),
+            (RuntimeError("HTTP Error 403: Forbidden"), 3, True),
+            (RuntimeError("HTTP Error 503"), 3, False),
+            (RuntimeError("HTTP Error 404: Not Found https://example.invalid/403"), 1, False),
+            (RuntimeError("HTTP Error 429: Too Many Requests https://example.invalid/403"), 1, False),
+            (RuntimeError("HTTP Error 429"), 1, False),
+            (FileNotFoundError("403 while finding ffmpeg"), 1, False),
+        )
+        for error, expected_attempts, expect_hint in scenarios:
+            with self.subTest(error=str(error)):
+                fake = FakeDownloader(error)
+                with patch("engine.downloader.time.sleep") as delay:
+                    self.assertIs(real_retry.__globals__["time"], real_time)
+                    self.assertIs(real_time.sleep, real_sleep)
+                    with self.assertRaises(type(error)) as caught:
+                        Downloader._download_one_with_retry(fake, "synthetic", 1, 1)
+                self.assertIsNone(fake_time.sleep)
+                self.assertIs(real_retry.__globals__["time"], real_time)
+                self.assertIs(real_time.sleep, real_sleep)
+                self.assertIs(caught.exception, error)
+                self.assertEqual(fake.attempts, expected_attempts)
+                self.assertEqual(delay.call_count, expected_attempts - 1)
+                self.assertEqual(
+                    fake.log_keys.count("log_hint_outdated"), int(expect_hint)
+                )
+
+# OpenAI-Codex_engine_cli: explicit 404/429 prefixes outrank later markers.
+class ExplicitNonTransientStatusTests(unittest.TestCase):
+    def test_non_transient_prefixes_ignore_later_markers(self):
+        for status in (404, 429):
+            for marker in ("403", "Forbidden", "HTTP Error 503"):
+                with self.subTest(status=status, marker=marker):
+                    error = RuntimeError(f"HTTP Error {status}: {marker}")
+                    self.assertIs(classify(error), ErrorKind.UNKNOWN)
+                    self.assertFalse(is_stale_tool(error))
+
+    def test_other_primary_statuses_keep_existing_rules(self):
+        forbidden = RuntimeError("HTTP Error 403: Forbidden; URL /429")
+        server_error = RuntimeError("HTTP Error 503: Service Unavailable; URL /404")
+        self.assertIs(classify(forbidden), ErrorKind.TRANSIENT)
+        self.assertTrue(is_stale_tool(forbidden))
+        self.assertIs(classify(server_error), ErrorKind.TRANSIENT)
+        self.assertFalse(is_stale_tool(server_error))
+
+
 if __name__ == "__main__":
     unittest.main()

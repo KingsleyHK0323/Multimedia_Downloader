@@ -11,6 +11,7 @@ on:
       - package.json
       - requirements-web.txt
       - web_app.py
+      - web_upload.py
       - engine_sidecar.py
       - 'ai/**'
       - 'engine/**'

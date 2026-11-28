@@ -1,3 +1,4 @@
+# OpenAI-Codex_engine_cli
 """
 Error classification for the engine.
 
@@ -21,6 +22,10 @@ know which library raised.
 from __future__ import annotations
 
 from enum import Enum
+
+
+class OperationCancelled(Exception):
+    """An operation was stopped before the current item started."""
 
 
 class ErrorKind(str, Enum):
@@ -71,7 +76,13 @@ def classify(exc: BaseException) -> ErrorKind:
     if isinstance(exc, FileNotFoundError):
         return ErrorKind.NO_FFMPEG
 
+    # OpenAI-Codex_engine_cli: respect the timeout type before message text.
+    if isinstance(exc, TimeoutError):
+        return ErrorKind.UNKNOWN
     message = str(exc)
+    # OpenAI-Codex_engine_cli: preserve explicit non-transient HTTP status.
+    if message.startswith(("HTTP Error 404:", "HTTP Error 429:")):
+        return ErrorKind.UNKNOWN
     if any(marker in message for marker in _TRANSIENT_MARKERS):
         return ErrorKind.TRANSIENT
 

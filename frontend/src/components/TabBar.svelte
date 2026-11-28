@@ -41,7 +41,7 @@
 <nav class="justify-center px-4 pt-4 {IS_TAURI ? 'flex' : 'hidden lg:flex'}" aria-label={tr("sections_label")}>
   <div
     class="flex gap-1 rounded-xl border border-zinc-200 bg-white p-1 dark:border-zinc-800 dark:bg-zinc-900"
-    role="tablist"
+    role="tablist" aria-label={tr("sections_label")}
   >
     {#each tabs as tab, index}
       <button
@@ -72,7 +72,8 @@
            backdrop-blur lg:hidden dark:border-zinc-800 dark:bg-zinc-950/95"
     aria-label={tr("sections_label")}
   >
-    <div class="grid grid-cols-4" role="tablist">
+    <!-- OpenAI-Codex_ai_ui_check: name the mobile tab list for assistive technology. -->
+    <div class="grid grid-cols-4" role="tablist" aria-label={tr("sections_label")}>
       {#each tabs as tab, index}
         <button
           role="tab"

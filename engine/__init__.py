@@ -21,13 +21,14 @@ The names below form the stable public API; import from ``engine`` directly:
 
 from __future__ import annotations
 
-# OpenAI-Codex: align the engine version with this beta candidate.
-__version__ = "4.3.24"
+__version__ = "4.3.25"
 
 from .formats import (
     AUDIO_FORMATS,
     BROWSERS,
+    HARDWARE_VIDEO_FORMATS,
     QUALITY_PRESETS,
+    VIDEO_ENCODERS,
     VIDEO_FORMATS,
     build_ydl_format_string,
     format_filesize,
@@ -59,35 +60,18 @@ from .queue import (
 __all__ = [
     "__version__",
     # formats
-    "VIDEO_FORMATS",
-    "AUDIO_FORMATS",
-    "QUALITY_PRESETS",
-    "BROWSERS",
-    "format_filesize",
-    "build_ydl_format_string",
-    "is_douyin",
-    "is_tiktok",
-    "platform_headers",
+    "VIDEO_FORMATS", "AUDIO_FORMATS", "QUALITY_PRESETS", "BROWSERS",
+    "VIDEO_ENCODERS", "HARDWARE_VIDEO_FORMATS",  # OpenAI-Codex_Fork_Source_Code
+    "format_filesize", "build_ydl_format_string",
+    "is_douyin", "is_tiktok", "platform_headers",
     # options / types
-    "DownloadOptions",
-    "ConvertJob",
-    "LogCallback",
-    "ProgressCallback",
-    "ItemStartCallback",
-    "JobUpdateCallback",
+    "DownloadOptions", "ConvertJob",
+    "LogCallback", "ProgressCallback", "ItemStartCallback", "JobUpdateCallback",
     # errors
-    "ErrorKind",
-    "classify",
-    "is_stale_tool",
+    "ErrorKind", "classify", "is_stale_tool",
     # engine classes
-    "Downloader",
-    "Converter",
+    "Downloader", "Converter",
     # queue
-    "Task",
-    "TaskQueue",
-    "TaskUpdateCallback",
-    "download_task",
-    "convert_task",
-    "DOWNLOAD",
-    "CONVERT",
+    "Task", "TaskQueue", "TaskUpdateCallback",
+    "download_task", "convert_task", "DOWNLOAD", "CONVERT",
 ]

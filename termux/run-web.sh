@@ -38,6 +38,14 @@ case "$display_host" in
 esac
 echo "──────────────────────────────────────────────"
 echo " Open  http://$display_host:$PORT  in your phone browser"
+# OpenAI-Codex_engine_cli: wildcard bind addresses are not client addresses.
+case "$HOST" in
+  0.0.0.0|::)
+    echo " The wildcard bind address above is not a usable LAN URL." || :
+    echo " For LAN access use a reachable address accepted by MMDL_TRUSTED_HOSTS." || :
+    echo " Host and Origin checks do not authenticate clients." || :
+    ;;
+esac
 echo " Downloads → $MMDL_DOWNLOADS"
 echo "──────────────────────────────────────────────"
 exec python web_app.py
