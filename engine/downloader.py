@@ -248,6 +248,9 @@ class Downloader:
                 lowered = message.lower()
                 if "could not copy chrome cookie database" in lowered:
                     self._log("warn", "log_hint_cookie_database")
+                elif _bilibili_url(url) and "http error 412" in lowered:
+                    # OpenAI-Codex_site_error: keep the original failure and explain the site response.
+                    self._log("warn", "log_hint_bilibili_412")
                 elif "http error 567" in lowered:
                     self._log("warn", "log_hint_http_567")
                 elif "bytes read" in lowered and "more expected" in lowered:

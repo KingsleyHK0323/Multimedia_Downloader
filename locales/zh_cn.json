@@ -96,6 +96,7 @@
   "log_item_error": "[{i}/{t}]  ✗  错误：{err}",
   "stop_requested": "已请求停止，正在等待当前任务结束。",
   "log_hint_cookie_database": "无法复制 Chrome 的 Cookie 数据库。请完全关闭 Chrome 后重试，或选择已导出的 Cookie 文件；不要分享 Cookie。",
+  "log_hint_bilibili_412": "BiliBili 拒绝了请求（HTTP 412）。请在 BiliBili 打开视频确认能否观看，稍后再试。",
   "log_hint_http_567": "网站返回 HTTP 567。请稍后重试，或检查视频是否需要登录；重试仍可能失败。",
   "log_hint_incomplete_download": "传输在接收完整数据前中断。请检查网络并重试；服务器可能不支持续传。",
   "log_all_done": "✓  全部 {t} 个任务完成。",

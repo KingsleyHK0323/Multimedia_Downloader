@@ -39,6 +39,11 @@ export function clearLogs(): void {
 
 export type Progress = { pct: number; speed: string; eta: string };
 export const progress = writable<Progress | null>(null);
+// OpenAI-Codex_ui_fix: retain the result and its owning tab across component remounts.
+export const downloadDisplay = writable<{
+  mode: "video" | "audio";
+  terminal: { key: string; params?: Record<string, unknown>; httpStatus?: string } | null;
+} | null>(null);
 
 /** True while an engine operation (download/convert) is running. */
 export const busy = writable(false);
