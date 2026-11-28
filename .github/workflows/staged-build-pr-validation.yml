@@ -81,8 +81,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fL --retry 3 --max-time 300 -o ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-          xz -t ffmpeg.tar.xz
+          sources=(
+            https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+            https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+          )
+          for url in "${sources[@]}"; do
+            if curl -fL --connect-timeout 10 --retry 1 --max-time 300 -o ffmpeg.tar.xz "$url" && xz -t ffmpeg.tar.xz; then
+              break
+            fi
+            if [[ "$url" == "${sources[-1]}" ]]; then exit 1; fi
+          done
           mkdir ffmpeg-dl
           tar -xf ffmpeg.tar.xz -C ffmpeg-dl
           bin="$(find ffmpeg-dl -name ffmpeg -type f | head -1)"
