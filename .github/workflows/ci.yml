@@ -293,7 +293,8 @@ jobs:
 
       # OpenAI-Codex: test Dependabot file-list guard with mocked metadata.
       - name: Test Dependabot file-list guard
-        run: node --test .github/scripts/dependabot-workflow-guard.test.mjs .github/scripts/dependabot-retry.test.mjs
+        # OpenAI-Codex_automerge_fix: exercise the immutable action-pin policy alongside the manifest guard.
+        run: node --test .github/scripts/dependabot-workflow-guard.test.mjs .github/scripts/dependabot-retry.test.mjs .github/scripts/dependabot-action-pins.test.mjs
 
       - name: Install frontend dependencies
         run: npm ci --no-audit --no-fund --prefix frontend

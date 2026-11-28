@@ -64,7 +64,8 @@ jobs:
           curl --fail --silent --show-error --retry 15 --retry-all-errors --retry-delay 2 http://127.0.0.1:18500/ -o /tmp/mmdl-index.html
           grep -qi '<html' /tmp/mmdl-index.html
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        # OpenAI-Codex_automerge_fix: track immutable upstream releases.
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
