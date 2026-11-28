@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Play, Square, Link2, Clock, Loader2, CheckCircle2, XCircle } from "lucide-svelte";
+  import { Square, Link2, Clock, Loader2, CheckCircle2, XCircle } from "lucide-svelte";
   import Card from "../components/Card.svelte";
   import ProgressBar from "../components/ProgressBar.svelte";
   import { api, IS_TAURI, type Formats } from "../api";
@@ -164,7 +164,8 @@
       onclick={start}
       disabled={$busy || urlList.length === 0}
     >
-      <Play class="size-4" aria-hidden="true" />{tr("btn_start_download")}
+      <!-- OpenAI-Codex: use the dedicated download-action artwork. -->
+      <img src="/icons/download-action.png" class="size-5" alt="" aria-hidden="true" />{tr("btn_start_download")}
     </button>
     <button
       class="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-zinc-300
