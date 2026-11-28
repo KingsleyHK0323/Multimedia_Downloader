@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 import os
 import re
+import shutil
 import time
 from typing import Iterable, Optional
 from urllib.parse import urlsplit
@@ -222,6 +223,15 @@ class Downloader:
         results: list[tuple[str, bool, str]] = []
         self._stop = False
 
+        if urls:
+            try:
+                free_bytes = shutil.disk_usage(self.opts.save_path).free
+            except OSError as exc:
+                self._log("warn", "log_disk_check_failed", err=str(exc))
+            else:
+                if free_bytes < 100 * 1024 * 1024:
+                    raise ValueError("Less than 100 MiB available at the download destination")
+
         self._log("info", "log_start_batch", n=total)
 
         for i, url in enumerate(urls, start=1):
@@ -338,6 +348,10 @@ class Downloader:
             "quiet": True,
             # OpenAI-Codex: keep terminal output out of the sidecar JSON stream.
             "noprogress": True,
+            # OpenAI-Codex: parallelize native fragments and keep partial files resumable.
+            "concurrent_fragment_downloads": 4,
+            "continuedl": True,
+            "nopart": False,
             "no_warnings": True,
             "progress_hooks": [self._ydl_hook],
         }

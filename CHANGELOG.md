@@ -12,6 +12,8 @@
 
 ### Unreleased
 
+- Download up to four native HLS/DASH fragments concurrently, check the destination's free space, and preserve pre-start cancellation without cancelling the following queue run. (OpenAI-Codex)
+
 - Show the final download result and available HTTP status in the progress panel, and round live percentages to one decimal place. (OpenAI-Codex_ui_fix)
 
 ### [4.3.24] — 2026-11-28 (Public Beta)

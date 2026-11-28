@@ -97,7 +97,13 @@ class TaskQueue:
 
     def run(self, tasks: list[Task]) -> list[Task]:
         """Execute every task in order. Returns the same list with final status."""
-        self._stop = False
+        # OpenAI-Codex: consume cancellation after this run, including exceptional exits.
+        try:
+            return self._run(tasks)
+        finally:
+            self._stop = False
+
+    def _run(self, tasks: list[Task]) -> list[Task]:
         total = len(tasks)
         self._log("info", "log_queue_start", n=total)
 

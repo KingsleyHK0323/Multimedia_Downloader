@@ -1,4 +1,5 @@
 {
+  "log_disk_check_failed": "無法檢查可用磁碟空間：{err}",
   "_meta": {
     "lang": "zh_tw",
     "name": "繁體中文",
