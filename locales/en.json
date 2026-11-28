@@ -1,4 +1,5 @@
 {
+  "log_disk_check_failed": "Unable to check available disk space: {err}",
   "_meta": {
     "lang": "en",
     "name": "English",

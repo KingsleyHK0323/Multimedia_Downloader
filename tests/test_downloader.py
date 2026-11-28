@@ -26,6 +26,30 @@ def _make_downloader(**cbs) -> Downloader:
     return Downloader(opts, **cbs)
 
 
+# OpenAI-Codex: cover both public download paths without touching the network.
+class DownloadPreflightTests(unittest.TestCase):
+    def test_queue_and_batch_reject_low_space(self):
+        dl = _make_downloader()
+        with patch("engine.downloader.shutil.disk_usage") as usage, patch.object(dl, "download_one") as transfer:
+            usage.return_value.free = 1
+            with self.assertRaises(ValueError):
+                dl.download_one_with_retry("mock")
+            with self.assertRaises(ValueError):
+                dl.download_batch(["mock"])
+            transfer.assert_not_called()
+
+    def test_prestart_stop_applies_only_to_first_batch(self):
+        dl = _make_downloader()
+        dl.stop()
+        with patch("engine.downloader.shutil.disk_usage") as usage, patch.object(dl, "download_one") as transfer:
+            self.assertEqual(dl.download_batch(["first"]), [])
+            usage.assert_not_called()
+            transfer.assert_not_called()
+            usage.return_value.free = 100 * 1024 * 1024
+            self.assertEqual(dl.download_batch(["second"]), [("second", True, "")])
+            transfer.assert_called_once_with("second")
+
+
 class PlaylistLogTests(unittest.TestCase):
     """`_ydl_hook` should log a playlist-position line once per NEW entry,
     never for a single (non-playlist) download, and never repeatedly for the

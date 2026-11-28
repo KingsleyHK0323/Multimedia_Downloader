@@ -12,6 +12,7 @@ from __future__ import annotations
 import math
 import os
 import re
+import shutil
 import time
 from typing import Iterable, Optional
 from urllib.parse import urlsplit
@@ -217,10 +218,27 @@ class Downloader:
 
         Returns a list of ``(url, success, error_message)`` triples.
         """
+        # OpenAI-Codex: preserve a stop requested before entry; consume it after reporting.
+        try:
+            return self._run_batch(urls)
+        finally:
+            self._stop = False
+
+    def _check_destination_space(self) -> None:
+        try:
+            free_bytes = shutil.disk_usage(self.opts.save_path).free
+        except OSError as exc:
+            self._log("warn", "log_disk_check_failed", err=str(exc))
+            return
+        if free_bytes < 100 * 1024 * 1024:
+            raise ValueError("Less than 100 MiB available at the download destination")
+
+    def _run_batch(self, urls: Iterable[str]) -> list[tuple[str, bool, str]]:
         urls = list(urls)
         total = len(urls)
         results: list[tuple[str, bool, str]] = []
-        self._stop = False
+        if urls and not self._stop:
+            self._check_destination_space()
 
         self._log("info", "log_start_batch", n=total)
 
@@ -286,6 +304,7 @@ class Downloader:
     # OpenAI-Codex_engine_cli: expose the same retry policy to queue downloads.
     def download_one_with_retry(self, url: str, index: int = 1, total: int = 1) -> None:
         """Apply the batch retry policy to one queue item."""
+        self._check_destination_space()
         self._download_one_with_retry(url, index, total)
 
     def _download_one_with_retry(self, url: str, i: int, total: int) -> None:
@@ -338,6 +357,10 @@ class Downloader:
             "quiet": True,
             # OpenAI-Codex: keep terminal output out of the sidecar JSON stream.
             "noprogress": True,
+            # OpenAI-Codex: parallelize native fragments and keep partial files resumable.
+            "concurrent_fragment_downloads": 4,
+            "continuedl": True,
+            "nopart": False,
             "no_warnings": True,
             "progress_hooks": [self._ydl_hook],
         }
