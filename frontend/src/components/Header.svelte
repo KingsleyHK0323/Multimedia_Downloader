@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Download, Sun, Moon, Monitor, Sparkles, BookOpen, Languages } from "lucide-svelte";
+  import { Sun, Moon, Monitor, Sparkles, BookOpen, Languages } from "lucide-svelte";
   import { lang, t } from "../store";
   import { theme, cycleTheme } from "../lib/theme";
   import { SUPPORTED, type Lang } from "../i18n";
@@ -28,9 +28,8 @@
   <div class="mx-auto flex h-14 max-w-[clamp(64rem,90vw,100rem)] items-center gap-3 px-4">
     <!-- Brand -->
     <div class="flex min-w-0 items-center gap-2.5">
-      <div class="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-sm">
-        <Download class="size-4.5" aria-hidden="true" />
-      </div>
+      <!-- OpenAI-Codex: use the application artwork consistently in the header. -->
+      <img src="/icons/128.png" class="size-8 shrink-0 rounded-lg shadow-sm" alt="" aria-hidden="true" />
       <div class="min-w-0 leading-tight">
         <h1 class="truncate text-sm font-semibold">{tr("app_title")}</h1>
         <p class="hidden truncate text-[10px] text-zinc-500 sm:block dark:text-zinc-400">

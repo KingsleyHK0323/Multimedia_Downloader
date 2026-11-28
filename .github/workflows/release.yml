@@ -484,7 +484,7 @@ jobs:
             }
             if (object?.type !== 'commit' || object.sha !== target) throw new Error('Tag target changed.');
             // OpenAI-Codex: only explicitly approved tags use the Public Beta path.
-            const beta = tag === 'v4.3.22' || tag === 'v4.3.23';
+            const beta = tag === 'v4.3.22' || tag === 'v4.3.23' || tag === 'v4.3.24';
             // OpenAI-Codex: list releases because getReleaseByTag excludes drafts.
             const findRelease = async () => {
               const releases = await github.paginate(github.rest.repos.listReleases, { ...params, per_page: 100 });
@@ -503,6 +503,9 @@ jobs:
               let body = notes;
               if (tag === 'v4.3.23') {
                 body = 'Public Beta: automated checks pass, but the reported Windows progress and BiliBili download scenarios have not been verified in real use. Some build dependencies are not fully pinned.\n\n' + body;
+              }
+              if (tag === 'v4.3.24') {
+                body = 'Public Beta: desktop download, conversion and new icons have not been verified in real use. Some build dependencies are not fully pinned.\n\n' + body;
               }
               if (!legacyBeta) {
                 const previous = process.env.PREVIOUS_TAG || '';
@@ -548,7 +551,7 @@ jobs:
     permissions:
       contents: write
       actions: read
-    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && (needs.metadata.outputs.tag == 'v4.3.22' || needs.metadata.outputs.tag == 'v4.3.23')
+    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && (needs.metadata.outputs.tag == 'v4.3.22' || needs.metadata.outputs.tag == 'v4.3.23' || needs.metadata.outputs.tag == 'v4.3.24')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -567,7 +570,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="$RELEASE_TAG"
-          [[ "$TAG" == v4.3.22 || "$TAG" == v4.3.23 ]] || exit 1
+          [[ "$TAG" == v4.3.22 || "$TAG" == v4.3.23 || "$TAG" == v4.3.24 ]] || exit 1
           node automation/.github/scripts/upload-release-assets.mjs "$TAG" --verify-inventory
           gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets,isDraft,isPrerelease > "$RUNNER_TEMP/beta-release.json"
           jq -e '.isDraft == true and .isPrerelease == true' "$RUNNER_TEMP/beta-release.json" >/dev/null
@@ -626,7 +629,7 @@ jobs:
     permissions:
       contents: write
       actions: read
-    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && needs.metadata.outputs.tag != 'v4.3.22' && needs.metadata.outputs.tag != 'v4.3.23' && needs.metadata.outputs.tag != 'v4.3.3'
+    if: github.event_name != 'pull_request' && needs.metadata.outputs.verify_only != 'true' && (inputs.only || github.event.inputs.only || 'all') == 'all' && needs.metadata.outputs.tag != 'v4.3.22' && needs.metadata.outputs.tag != 'v4.3.23' && needs.metadata.outputs.tag != 'v4.3.24' && needs.metadata.outputs.tag != 'v4.3.3'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

@@ -12,7 +12,12 @@
 
 ### Unreleased
 
+### [4.3.24] — 2026-11-28 (Public Beta)
+
+> Download progress, conversion, and the new icons have not yet been verified in real desktop use. Some build dependencies remain unpinned. (OpenAI-Codex)
+
 #### Application improvements
+- Update desktop, web, Android, and iOS application icons and use the new artwork in the header and download button. (OpenAI-Codex)
 - Keep yt-dlp terminal output out of the desktop event stream so download progress and speed update correctly. (OpenAI-Codex)
 - Prevent conversion from replacing existing files, use native file paths, and report conversion outcomes accurately. Keep downloads busy until the operation finishes. (OpenAI-Codex)
 

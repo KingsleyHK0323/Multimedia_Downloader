@@ -98,7 +98,7 @@ function scenario(options = {}) {
       assert.equal(method, api.rest.repos.listReleases);
       reads++;
       if (!options.exists && !(options.race && reads > 1)) return [];
-      return [{ tag_name: 'v4.3.24', draft: options.published ? false : true, prerelease: false }];
+      return [{ tag_name: 'v4.3.25', draft: options.published ? false : true, prerelease: false }];
     },
     rest: {
       git: {
@@ -115,7 +115,7 @@ function scenario(options = {}) {
       },
     },
   };
-  const env = { RELEASE_TAG: options.tag || 'v4.3.24', TARGET_SHA: target,
+  const env = { RELEASE_TAG: options.tag || 'v4.3.25', TARGET_SHA: target,
     PREVIOUS_TAG: 'v4.3.22', RELEASE_ONLY: options.only || 'all', RUNNER_TEMP: '/tmp' };
   return { calls, api, env };
 }
@@ -153,7 +153,7 @@ test('creates a draft from the exact tag with both commit and generated notes', 
   const state = await executeCreation();
   assert.deepEqual(state.calls.map(item => item[0]), ['notes', 'create']);
   const options = state.calls[1][1];
-  assert.equal(options.tag_name, 'v4.3.24');
+  assert.equal(options.tag_name, 'v4.3.25');
   assert.equal(options.target_commitish, target);
   assert.equal(options.draft, true);
   assert.equal(options.prerelease, false);
