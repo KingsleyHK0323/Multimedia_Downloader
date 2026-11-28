@@ -1,0 +1,67 @@
+# OpenAI-Codex_automerge_fix: evaluate only trusted base code and exact Dependabot pins.
+name: Reconcile reviewed action pins
+on:
+  schedule:
+    - cron: '21 */3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Inspect eligible pull requests without writing
+        type: boolean
+        default: true
+permissions:
+  actions: read
+  contents: read
+  pull-requests: read
+jobs:
+  reconcile:
+    if: >-
+      github.repository_id == '1251103365' &&
+      github.ref == 'refs/heads/Source_Code' &&
+      vars.AUTOMATION_DEPENDABOT_CAS == 'enabled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: reconcile-dependabot-action-pins
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ job.workflow_sha }}
+          persist-credentials: false
+      - name: Inspect eligible pull requests
+        id: inspect
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+        with:
+          script: |
+            const { reconcile } = await import(require('node:url').pathToFileURL(
+              process.env.GITHUB_WORKSPACE + '/.github/scripts/dependabot-action-pins.mjs').href);
+            await reconcile({ github, core, workflowSha: process.env.WORKFLOW_SHA });
+      - name: Create a scoped token for the verified candidate
+        if: steps.inspect.outputs.number != '' && (github.event_name == 'schedule' || !inputs.dry_run)
+        id: app
+        uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3
+        with:
+          owner: KingsleyHK0323
+          repositories: Multimedia_Downloader
+          client-id: ${{ vars.AUTOMATION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.AUTOMATION_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - name: Recheck and apply
+        if: steps.app.outcome == 'success'
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          WORKFLOW_SHA: ${{ job.workflow_sha }}
+          APP_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
+          PR_NUMBER: ${{ steps.inspect.outputs.number }}
+        with:
+          script: |
+            if (process.env.APP_SLUG !== 'kingsley-multimedia-automation') throw Error('Unexpected App.');
+            const { reconcile } = await import(require('node:url').pathToFileURL(
+              process.env.GITHUB_WORKSPACE + '/.github/scripts/dependabot-action-pins.mjs').href);
+            await reconcile({ github, core, workflowSha: process.env.WORKFLOW_SHA,
+              app: getOctokit(process.env.APP_TOKEN), number: Number(process.env.PR_NUMBER) });

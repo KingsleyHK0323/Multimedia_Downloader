@@ -120,7 +120,10 @@ def load_convert_tab():
         "ConfirmDialog": ConfirmDialog, "threading": threading,
         "redact_sensitive_urls": lambda text: text,
     }
-    exec(compile(module, str(source), "exec"), namespace)  # noqa: S102 - Extract local methods without Textual.
+    # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
+    # Extract local methods without Textual.
+    compiled = compile(module, str(source), "exec")
+    exec(compiled, namespace)  # noqa: S102
     return namespace["ConvertTab"]
 
 

@@ -68,7 +68,9 @@ def scenario(kind, failure=None):
         return SimpleNamespace(stop=stop, download_batch=download_batch)
 
     namespace = {"Downloader": make_downloader}
-    exec(CODE, namespace)  # noqa: S102 - Execute the selected worker with a fake downloader.
+    # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
+    # Execute the selected worker with a fake downloader.
+    exec(CODE, namespace)  # noqa: S102
     caught = None
     try:
         namespace["_run_download"](tab, urls, options)
@@ -127,7 +129,8 @@ def check_finish_dispatch_failure_keeps_both_errors():
 
     tab.app.call_from_thread = dispatch
     namespace = {"Downloader": fail_constructor}
-    exec(CODE, namespace)  # noqa: S102 - Run the selected worker with fake components.
+    # Run the selected worker with fake components.
+    exec(CODE, namespace)  # noqa: S102
     try:
         namespace["_run_download"](tab, urls, options)
     except BaseException as error:

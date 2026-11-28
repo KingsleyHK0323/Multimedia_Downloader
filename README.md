@@ -144,8 +144,13 @@ minor and patch updates by ecosystem. Eligible pull requests merge after CI and
 the Python matrix pass for the same head, base and merge commit; a changed base
 or missing context prevents automatic merging. The merge does not trigger a
 release unless it carries the `release:patch` label. Major updates remain
-separate pull requests and follow the same checks. Pull requests changing files
-under `.github/` are left for manual review and merging. Put release notes under
+separate pull requests and follow the same checks. The scheduled action-pin
+workflow checks individual patch and minor updates for `docker/login-action`
+in the container workflow and `actions/stale` in the stale workflow. It verifies
+the full upstream release SHA, requests a Dependabot rebase if required and
+merges once both protected checks pass against the current base. Other workflow
+changes require maintainer review. <!-- OpenAI-Codex_automerge_fix -->
+Put release notes under
 `Unreleased` in `CHANGELOG.md`; the release workflow promotes them to the new
 version entry.
 

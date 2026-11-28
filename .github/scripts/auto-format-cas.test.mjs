@@ -101,7 +101,7 @@ function fixture(options = {}) {
           const pr = prs.find(item => item.number === pull_number);
           if (pr?.state === 'open') {
             pr.head.sha = refs.get(service);
-            pr.base.sha = refs.get('Source_Code');
+            pr.base.sha = options.reportedBase ?? refs.get('Source_Code');
           }
           return { data: pr };
         },
@@ -491,7 +491,9 @@ test('a closed formatter PR is not silently recreated', async () => {
   } finally { f.dispose(); }
 });
 test('a moved source uses a base-first two-parent service update', async () => {
-  const f = fixture();
+  // OpenAI-Codex_formatter_fix: The API may lag the branch while CI runs.
+  const options = { reportedBase: oid('a') };
+  const f = fixture(options);
   try {
     await reconcileFormatter(f.args);
     const nextBase = oid('e');
@@ -504,6 +506,7 @@ test('a moved source uses a base-first two-parent service update', async () => {
     assert.equal(f.state.refs.get('Source_Code'), nextBase);
     assert.equal(f.state.refs.get(service), oid('d'));
     f.writePlan(nextBase);
+    options.reportedBase = nextBase;
     const merged = await reconcileFormatter({ ...f.args, workflowSha: nextBase });
     assert.equal(merged.status, 'updated-source');
     assert.equal(f.state.refs.get('Source_Code'), oid('d'));

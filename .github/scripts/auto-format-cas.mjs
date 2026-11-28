@@ -266,11 +266,19 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
     }
     return values.sort((a, b) => b.number - a.number);
   };
-  const prInfo = async (number, expectedHead) => {
+  const isAncestor = async (older, newer) => {
+    const comparison = (await github.rest.repos.compareCommits({ owner, repo, base: older, head: newer })).data;
+    return comparison?.merge_base_commit?.sha === older && comparison.behind_by === 0 &&
+      ['ahead', 'identical'].includes(comparison.status);
+  };
+  // OpenAI-Codex_formatter_fix: GitHub can retain an older base on an open PR.
+  const prInfo = async (number, expectedHead, allowHistoricalBase = false) => {
     const pr = (await github.rest.pulls.get({ owner, repo, pull_number: number })).data;
     if (pr?.number !== number || pr.state !== 'open' || !isBot(pr.user) ||
         pr.head?.repo?.full_name !== FULL || pr.head.ref !== SERVICE || pr.head.sha !== expectedHead ||
-        pr.base?.repo?.full_name !== FULL || pr.base.ref !== SOURCE || pr.base.sha !== base ||
+        pr.base?.repo?.full_name !== FULL || pr.base.ref !== SOURCE ||
+        (pr.base.sha !== base && !(allowHistoricalBase && /^[a-f0-9]{40}$/.test(pr.base.sha) &&
+          await isAncestor(pr.base.sha, base))) ||
         pr.draft !== false || pr.auto_merge !== null || !Array.isArray(pr.labels) ||
         pr.labels.some(label => typeof label?.name !== 'string' || label.name.toLowerCase() === 'release:patch') ||
         typeof pr.body !== 'string' || !pr.body.includes(MARKER)) fail('Formatter PR is no longer safe to update.');
@@ -321,14 +329,9 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
   let pr = null;
   if (open.length) {
     if (!serviceHead) fail('Open formatter PR has no service branch.');
-    pr = await prInfo(open[0].number, serviceHead);
+    pr = await prInfo(open[0].number, serviceHead, true);
     await commitsBot(serviceHead);
   }
-  const isAncestor = async (older, newer) => {
-    const comparison = (await github.rest.repos.compareCommits({ owner, repo, base: older, head: newer })).data;
-    return comparison?.merge_base_commit?.sha === older && comparison.behind_by === 0 &&
-      ['ahead', 'identical'].includes(comparison.status);
-  };
   const verifyHistoricalProof = async () => {
     let cursor = serviceHead;
     const candidates = new Set();
@@ -439,7 +442,7 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
     }
     await requireBase();
     if (await rulesSnapshot() !== firstRules) fail('Source_Code rules changed before updating the service branch.');
-    if (pr) await prInfo(pr.number, serviceHead);
+    if (pr) await prInfo(pr.number, serviceHead, true);
     if (serviceHead) {
       const mutation = await app.graphql('mutation($input: UpdateRefsInput!) { updateRefs(input: $input) { clientMutationId } }', {
         input: { repositoryId: repository.node_id, clientMutationId: 'format-service-' + serviceHead,
@@ -463,7 +466,7 @@ export async function reconcileFormatter({ github, app, context, appSlug, workfl
       await prInfo(opened.number, serviceHead);
       return { status: 'created', pr: opened.number, head: serviceHead };
     }
-    await prInfo(pr.number, serviceHead);
+    await prInfo(pr.number, serviceHead, true);
     return { status: 'updated', pr: pr.number, head: serviceHead };
   }
 

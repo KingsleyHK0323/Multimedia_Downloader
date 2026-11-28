@@ -350,7 +350,9 @@ class FakeWeb:
         core_nodes.extend(_pick_function(CORE, name) for name in core_names)
         core_nodes.append(upload_store)
         core_module = ast.fix_missing_locations(ast.Module(body=core_nodes, type_ignores=[]))
-        exec(compile(core_module, "<upload core extracted from current source>", "exec"), self.ns)  # noqa: S102
+        # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
+        compiled = compile(core_module, "<upload core extracted from current source>", "exec")
+        exec(compiled, self.ns)  # noqa: S102
         self.ns.update({
             "ipaddress": ipaddress,
             "urlsplit": urlsplit,
@@ -384,7 +386,8 @@ class FakeWeb:
         web_module = ast.fix_missing_locations(
             ast.Module(body=[_future(), *(_pick_function(WEB, name) for name in names)], type_ignores=[])
         )
-        exec(compile(web_module, "<web routes extracted from current source>", "exec"), self.ns)  # noqa: S102
+        compiled = compile(web_module, "<web routes extracted from current source>", "exec")
+        exec(compiled, self.ns)  # noqa: S102
         self.ns["_upload_store"] = self.ns["UploadStore"](
             self.ns["DOWNLOADS_DIR"], self.ns["FRONTEND_DIST"], settings
         )

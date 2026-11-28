@@ -12,6 +12,8 @@
 
 ### Unreleased
 
+- Automate checked, same-major action-pin updates for the container login and stale issue workflows. (OpenAI-Codex_automerge_fix)
+
 ### [4.3.25] — 2026-11-28 (Public Beta)
 
 > Public Beta. Some build dependencies remain unpinned. Native file selection, screen-reader use, Android/Termux and authenticated downloads still require device testing. (OpenAI-Codex_verify_auto)

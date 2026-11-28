@@ -89,6 +89,10 @@ updates:
       actions-minor-patch:
         patterns:
           - "*"
+        # OpenAI-Codex_automerge_fix: these independently verified consumers require single-pin PRs.
+        exclude-patterns:
+          - "actions/stale"
+          - "docker/login-action"
         update-types:
           - minor
           - patch

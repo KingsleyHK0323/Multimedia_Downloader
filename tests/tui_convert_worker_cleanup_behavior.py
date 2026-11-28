@@ -68,7 +68,9 @@ def scenario(kind, failure=None):
         return SimpleNamespace(stop=stop, convert_batch=convert_batch)
 
     namespace = {"Converter": make_converter, "redact_sensitive_urls": lambda text: text}
-    exec(CODE, namespace)  # noqa: S102 - Execute the selected worker with a fake converter.
+    # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
+    # Execute the selected worker with a fake converter.
+    exec(CODE, namespace)  # noqa: S102
     caught = None
     try:
         namespace["_run_convert"](tab, *args)
@@ -135,7 +137,8 @@ def check_finish_dispatch_failure_keeps_both_errors():
 
     tab.app.call_from_thread = dispatch
     namespace = {"Converter": fail_constructor, "redact_sensitive_urls": lambda text: text}
-    exec(CODE, namespace)  # noqa: S102 - Run the selected worker with fake components.
+    # Run the selected worker with fake components.
+    exec(CODE, namespace)  # noqa: S102
     try:
         namespace["_run_convert"](tab, *args)
     except BaseException as error:

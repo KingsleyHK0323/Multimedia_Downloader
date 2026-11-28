@@ -156,7 +156,9 @@ class FakeStore:
 
 def setup(original=b"end", payload=None):
     probe = {}
-    exec(compile(ast.Module(body=constants, type_ignores=[]), str(SOURCE), "exec"), probe)  # noqa: S102
+    # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
+    compiled = compile(ast.Module(body=constants, type_ignores=[]), str(SOURCE), "exec")
+    exec(compiled, probe)  # noqa: S102
     chunk_bytes = probe["CHUNK_BYTES"]
     store = FakeStore(chunk_bytes, original, original if payload is None else payload)
     fake = store.fake
@@ -165,7 +167,8 @@ def setup(original=b"end", payload=None):
         "hashlib": hashlib, "os": fake, "secrets": secrets, "struct": struct,
         "_open_regular": fake.open_regular,
     }
-    exec(CODE, namespace)  # noqa: S102 - Execute selected production code with fake handles.
+    # Execute selected production code with fake handles.
+    exec(CODE, namespace)  # noqa: S102
     return store, namespace["write_chunk"], namespace["UploadError"]
 
 
@@ -297,7 +300,8 @@ def oversized_input_is_rejected_before_lock():
 # OpenAI-Codex_web_ai: exercise the maximum final segment without real files.
 def full_sized_final_chunk_replays_once():
     probe = {}
-    exec(compile(ast.Module(body=constants, type_ignores=[]), str(SOURCE), "exec"), probe)  # noqa: S102
+    compiled = compile(ast.Module(body=constants, type_ignores=[]), str(SOURCE), "exec")
+    exec(compiled, probe)  # noqa: S102
     chunk_bytes = probe["CHUNK_BYTES"]
     assert chunk_bytes == 262144
     final_chunk = b"z" * chunk_bytes
@@ -373,7 +377,8 @@ def replay_filesystem_calls_stay_within_slot_lock():
 
         namespace = write.__globals__
         namespace.update({"stat": stat, "_REPARSE": 0x400, "_BINARY": 0, "_NOFOLLOW": 0})
-        exec(helper_code, namespace)  # noqa: S102 - Run the real helper against fake OS methods.
+        # Run the real helper against fake OS methods.
+        exec(helper_code, namespace)  # noqa: S102
         if mode == "success":
             assert send(store, write) == {"next_offset": store.current}
         else:

@@ -40,7 +40,9 @@ def _sidecar_type():
         ast.ClassDef(name="ExtractedSidecar", bases=[], keywords=[], body=[method], decorator_list=[]),
     ], type_ignores=[])
     namespace = {"Converter": _MemoryConverter, "DEFAULT_FFMPEG": "ffmpeg", "os": os}
-    exec(compile(ast.fix_missing_locations(module), "<memory sidecar>", "exec"), namespace)  # noqa: S102
+    # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
+    compiled = compile(ast.fix_missing_locations(module), "<memory sidecar>", "exec")
+    exec(compiled, namespace)  # noqa: S102
     return namespace["ExtractedSidecar"]
 
 
