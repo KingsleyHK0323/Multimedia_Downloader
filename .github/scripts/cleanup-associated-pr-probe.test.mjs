@@ -59,7 +59,7 @@ test('rejects fork and non-owner events before using the API', async () => {
   for (const modify of [
     (pr) => { pr.user.id = 7; },
     (pr) => { pr.head.repo.id = 7; },
-    (pr) => { pr.base.ref = 'Multimedia_Downloader_Web_Preview'; },
+    (pr) => { pr.base.ref = 'Multimedia_Downloader_Website'; },
   ]) {
     const h = harness(); modify(h.context.payload.pull_request);
     await assert.rejects(h.invoke(), /identity is invalid/);

@@ -89,7 +89,7 @@ test('rejects unrelated tree changes and altered version bytes', () => {
 
 test('rejects a retargeted, relabeled, incomplete, or auto-merging version PR', () => {
   for (const mutate of [
-    x => { x.versionPr.base.ref = 'Multimedia_Downloader_Web_Preview'; },
+    x => { x.versionPr.base.ref = 'Multimedia_Downloader_Website'; },
     x => { x.versionPr.labels = [{ name: 'Release:Patch' }]; },
     x => { x.versionPr.auto_merge = {}; },
     x => { x.changedFiles.pop(); },

@@ -5,7 +5,7 @@ import test from 'node:test';
 import { reconcileWebsite } from './website-cas.mjs';
 
 const owner = 'KingsleyHK0323', repo = 'Multimedia_Downloader';
-const full = owner + '/' + repo, target = 'Multimedia_Downloader_Web_Preview';
+const full = owner + '/' + repo, target = 'Multimedia_Downloader_Website';
 const temp = 'automation/protected-workflows', marker = '<!-- automation-website-candidate:v1 -->';
 const source = 'a'.repeat(40), B = 'b'.repeat(40), H = 'c'.repeat(40);
 const bt = 'd'.repeat(40), ht = 'e'.repeat(40), gh = 'f'.repeat(40);
@@ -275,13 +275,13 @@ test('website owner preflight skips idle runs and rejects incomplete metadata be
   const repoInfo = { id: 1251103365, full_name: owner + '/' + repo };
   const valid = { number: 91, state: 'open', user: { id: 157894869, login: owner, type: 'User' },
     head: { ref: 'automation/protected-workflows', repo: repoInfo },
-    base: { ref: 'Multimedia_Downloader_Web_Preview', repo: repoInfo } };
+    base: { ref: 'Multimedia_Downloader_Website', repo: repoInfo } };
   async function execute(prs, error = null) {
     const result = [];
     const github = { rest: { pulls: { list: 'list-open-pulls' } },
       paginate: async (method, params) => {
         assert.equal(method, 'list-open-pulls');
-        assert.deepEqual(params, { owner, repo, state: 'open', base: 'Multimedia_Downloader_Web_Preview',
+        assert.deepEqual(params, { owner, repo, state: 'open', base: 'Multimedia_Downloader_Website',
           head: owner + ':automation/protected-workflows', per_page: 100 });
         if (error) throw error;
         return prs;

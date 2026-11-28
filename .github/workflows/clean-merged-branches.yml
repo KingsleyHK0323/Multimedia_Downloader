@@ -47,7 +47,7 @@ jobs:
             // OpenAI-Codex_health_release_architecture: wakeups are hints; ref deletion requires a fresh merged PR and lease.
             const { owner, repo } = context.repo;
             const full = 'KingsleyHK0323/Multimedia_Downloader';
-            const permanent = new Set(['Source_Code', 'Multimedia_Downloader_Web_Preview']);
+            const permanent = new Set(['Source_Code', 'Multimedia_Downloader_Website']);
             const oid = (value) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value);
             const positive = (value) => Number.isSafeInteger(value) && value > 0;
             const refName = (value) => typeof value === 'string' && value.length > 0 && value.length <= 250 &&
@@ -190,7 +190,7 @@ jobs:
                   run.repository?.id !== 1251103365 || run.head_repository?.id !== 1251103365 ||
                   !oid(run.head_sha) ||
                   !((run.name === 'CI' && run.head_branch === 'Source_Code' && run.path === '.github/workflows/ci.yml') ||
-                    (run.name === 'Website build check' && run.head_branch === 'Multimedia_Downloader_Web_Preview' &&
+                    (run.name === 'Website build check' && run.head_branch === 'Multimedia_Downloader_Website' &&
                      typeof run.path === 'string' && /^\.github\/workflows\/[^/]+\.ya?ml$/.test(run.path)))) {
                 core.info('Ignoring an unrelated or untrusted workflow wakeup.');
                 return;

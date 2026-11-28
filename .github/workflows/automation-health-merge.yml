@@ -194,7 +194,7 @@ jobs:
                 throw new Error('Strict required CI and matrix rules from GitHub Actions are missing.');
               }
               // The merge API binds only the PR head; an independent website restriction must block retargeting.
-              const website = 'Multimedia_Downloader_Web_Preview';
+              const website = 'Multimedia_Downloader_Website';
               const websiteRules = await app.paginate('GET /repos/{owner}/{repo}/rules/branches/{branch}', {
                 owner, repo, branch: website, per_page: 100,
               });

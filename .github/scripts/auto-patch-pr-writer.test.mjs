@@ -218,7 +218,7 @@ function setup(options = {}) {
           current_user_can_bypass: 'never', rules: [{ type: 'pull_request' }, { type: 'required_status_checks' }] } };
         if (id === 2) return { data: { id: 2, target: 'branch', enforcement: 'active', source_type: 'Repository',
           source: fullName, current_user_can_bypass: 'never', rules: [{ type: 'update' }],
-          conditions: { ref_name: { include: ['refs/heads/Multimedia_Downloader_Web_Preview'], exclude: [] } } } };
+          conditions: { ref_name: { include: ['refs/heads/Multimedia_Downloader_Website'], exclude: [] } } } };
         const rule = safeRule();
         if (options.hideBypass) delete rule.bypass_actors;
         if (options.hideCurrentBypass) delete rule.current_user_can_bypass;
@@ -236,7 +236,7 @@ function setup(options = {}) {
             { context: 'Required Python matrix', integration_id: 15368 }],
         } },
       ];
-      if (branch === 'Multimedia_Downloader_Web_Preview') {
+      if (branch === 'Multimedia_Downloader_Website') {
         return [{ ...common, ruleset_id: 2, type: 'update' }];
       }
       throw new Error('Unexpected branch rules');

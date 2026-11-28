@@ -137,7 +137,7 @@ test('refuses missing or mismatched repository IDs', async () => {
 });
 
 test('always preserves both permanent branches and every open PR head or base', async () => {
-  for (const branch of ['Source_Code', 'Multimedia_Downloader_Web_Preview']) {
+  for (const branch of ['Source_Code', 'Multimedia_Downloader_Website']) {
     const h = harness({ pr: mergedPr(branch) }); await h.invoke(); assert.deepEqual(h.state.deleted, []);
   }
   for (const item of [openPr('feature'), openPr('other', 'feature')]) {
@@ -176,7 +176,7 @@ test('schedule sweeps merged refs and preserves closed unmerged refs', async () 
 test('trusted source and website push checks can wake reconciliation; unrelated runs cannot', async () => {
   const website = { id: 101, status: 'completed', event: 'push', name: 'Website build check',
     repository: { id: repoId }, head_repository: { id: repoId }, head_sha: sha,
-    path: '.github/workflows/website.yml', head_branch: 'Multimedia_Downloader_Web_Preview' };
+    path: '.github/workflows/website.yml', head_branch: 'Multimedia_Downloader_Website' };
   for (const run of [undefined, website]) {
     const h = harness({ event: 'workflow_run', run });
     await h.invoke(); assert.deepEqual(h.state.deleted, ['feature']);

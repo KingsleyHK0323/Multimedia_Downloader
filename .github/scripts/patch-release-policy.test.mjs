@@ -74,7 +74,7 @@ test('source PR must be merged, labeled, on this repository and not App-authored
   for (const bad of [
     source({ merged: false }), source({ state: 'open' }), source({ labels: [] }),
     source({ user: { id: 359694872 } }), source({ merge_commit_sha: 'bad' }),
-    source({ base: { ref: 'Multimedia_Downloader_Web_Preview', repo: { id: 1251103365, full_name: repo } } }),
+    source({ base: { ref: 'Multimedia_Downloader_Website', repo: { id: 1251103365, full_name: repo } } }),
     source({ base: { ref: 'Source_Code', repo: { full_name: 'other/repo' } } }),
   ]) assert.throws(() => validateSourcePr(bad), /not an eligible/);
 });
@@ -86,7 +86,7 @@ test('version PR is bound to the exact source, App, repository and branch', () =
     versionPr({ body: '<!-- automatic-patch-source:42:' + sha('f') + ' -->' }),
     versionPr({ body: '<!-- automatic-patch-source:420:' + sha('a') + ' -->' }),
     versionPr({ body: '<!-- automatic-patch-source:42:' + sha('a') + ' -->\n<!-- automatic-patch-source:42:' + sha('a') + ' -->' }),
-    versionPr({ base: { ref: 'Multimedia_Downloader_Web_Preview', sha: sha('b'), repo: { id: 1251103365, full_name: repo } } }),
+    versionPr({ base: { ref: 'Multimedia_Downloader_Website', sha: sha('b'), repo: { id: 1251103365, full_name: repo } } }),
     versionPr({ head: { ref: 'automation/patch-release-pr-420', sha: sha('c'), repo: { id: 1251103365, full_name: repo } } }),
     versionPr({ merged: false }),
   ]) assert.throws(() => validateVersionPr(bad, source(), { requireMerged: true }));
