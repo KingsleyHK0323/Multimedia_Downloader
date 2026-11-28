@@ -17,7 +17,7 @@ const repoId = 1251103365;
 function fixture({behind=false, failed=false, seen=false, file=path, author=49699333, publishedPin=newPin, release=true}={}) {
   const calls = [];
   const obj = data => ({data});
-  const pr = {state:'open', draft:false, base:{ref:'Source_Code', repo:{id:repoId}, sha:base},
+  const pr = {state:'open', draft:false, base:{ref:'Source_Code', repo:{id:repoId}, sha:behind ? parent : base},
     head:{repo:{id:repoId}, ref:'dependabot/github_actions/actions/stale-11.0.1', sha:head},
     user:{id:49699333, type:'Bot', login:'dependabot[bot]'}, number:17, commits:1, changed_files:1,
     mergeable:true, mergeable_state:'clean', labels:[]};

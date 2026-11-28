@@ -52,7 +52,7 @@ function isCandidate(pr) {
 async function inspect(github, number, workflowSha) {
   const args = { owner, repo };
   const { data: pr } = await github.rest.pulls.get({ ...args, pull_number: number });
-  if (!isCandidate(pr) || pr.commits !== 1 || pr.changed_files !== 1 || pr.base.sha !== workflowSha ||
+  if (!isCandidate(pr) || pr.commits !== 1 || pr.changed_files !== 1 ||
       !Array.isArray(pr.labels) || pr.labels.some(label => label.name === 'release:patch')) return;
   const { data: head } = await github.rest.repos.getCommit({ ...args, ref: pr.head.sha });
   if (head.sha !== pr.head.sha || head.parents.length !== 1 ||
@@ -97,7 +97,7 @@ async function inspect(github, number, workflowSha) {
     if (current?.mode === '100644' && current.sha === change.before) return { ...state, operation: 'rebase' };
     return;
   }
-  if (pr.mergeable !== true || pr.mergeable_state !== 'clean') return;
+  if (pr.base.sha !== workflowSha || pr.mergeable !== true || pr.mergeable_state !== 'clean') return;
   for (const workflow_id of [318584423, 422035428]) {
     const runs = (await github.rest.actions.listWorkflowRuns({
       ...args, workflow_id, event: 'pull_request', head_sha: head.sha, per_page: 100,
@@ -140,11 +140,11 @@ export async function reconcile({ github, core, workflowSha, app, number = 0 }) 
       }
     }
     const current = (await github.rest.pulls.get({ ...args, pull_number: n })).data;
-    if (!isCandidate(current) || current.head.sha !== plan.head || current.base.sha !== plan.base ||
+    if (!isCandidate(current) || current.head.sha !== plan.head ||
         !Array.isArray(current.labels) || current.labels.some(label => label.name === 'release:patch') ||
         await tip() !== plan.base) return;
     if (plan.operation === 'merge') {
-      if (current.mergeable_state !== 'clean') return;
+      if (current.base.sha !== plan.base || current.mergeable_state !== 'clean') return;
       const result = await app.rest.pulls.merge({ ...args, pull_number: n, sha: plan.head, merge_method: 'squash' });
       if (result.data.merged !== true) throw Error('GitHub declined the checked merge.');
     } else {
