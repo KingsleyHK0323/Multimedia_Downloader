@@ -46,7 +46,10 @@ _ERRORS = {
     "quota_exhausted": (409, "No upload slot is available."),
     "not_found": (404, "The upload was not found."),
     "conflict": (409, "The upload request conflicts with its current state."),
-    "interrupted": (409, "The upload is incomplete or its recorded state is inconsistent."),
+    "interrupted": (
+        409,
+        "The upload is incomplete or its recorded state is inconsistent.",
+    ),
     "unsafe_path": (403, "The requested upload path is not available."),
     "unavailable": (503, "Upload storage is unavailable."),
 }
@@ -65,6 +68,7 @@ class UploadError(Exception):
 
 def _preserve_cleanup_control(control):
     """Preserve this scope's control exception if ordinary cleanup fails."""
+
     # OpenAI-Codex_engine_cli: a handled caller exception is not this scope's error.
     @contextmanager
     def guard():
@@ -78,7 +82,9 @@ def _preserve_cleanup_control(control):
 
 
 def _is_reparse(info: os.stat_result) -> bool:
-    return stat.S_ISLNK(info.st_mode) or bool(getattr(info, "st_file_attributes", 0) & _REPARSE)
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & _REPARSE
+    )
 
 
 def _directory(path: str) -> None:
@@ -94,7 +100,10 @@ def _open_regular(path: str, flags: int) -> int:
     fd = os.open(path, flags | _BINARY | _NOFOLLOW)
     try:
         after = os.fstat(fd)
-        if not stat.S_ISREG(after.st_mode) or (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
+        if not stat.S_ISREG(after.st_mode) or (before.st_dev, before.st_ino) != (
+            after.st_dev,
+            after.st_ino,
+        ):
             raise UploadError("unsafe_path")
         return fd
     except BaseException:
@@ -133,7 +142,9 @@ def _read_exact(fd: int, length: int) -> bytes:
 
 
 def _create_file(path: str, data: bytes = b"") -> None:
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BINARY | _NOFOLLOW, 0o600)
+    fd = os.open(
+        path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | _BINARY | _NOFOLLOW, 0o600
+    )
     _create_control = None
     try:
         _write_all(fd, data)
@@ -176,7 +187,9 @@ def _read_json(path: str, limit: int) -> dict:
 
 
 def _json_bytes(value: dict) -> bytes:
-    return json.dumps(value, ensure_ascii=True, separators=(",", ":"), sort_keys=True).encode("ascii")
+    return json.dumps(
+        value, ensure_ascii=True, separators=(",", ":"), sort_keys=True
+    ).encode("ascii")
 
 
 def _within(path: str, root: str) -> bool:
@@ -204,7 +217,13 @@ def _namespace_roots(path: str) -> list[str]:
 # OpenAI-Codex_app_ui: Windows names may alias a directory without realpath changing the spelling.
 def _windows_external_path(path: str) -> bool:
     text = path.replace("/", "\\")
-    if text.startswith("\\\\?\\") and len(text) >= 7 and text[4].isascii() and text[4].isalpha() and text[5:7] == ":\\":
+    if (
+        text.startswith("\\\\?\\")
+        and len(text) >= 7
+        and text[4].isascii()
+        and text[4].isalpha()
+        and text[5:7] == ":\\"
+    ):
         return False
     return text.startswith("\\\\") or text.startswith("\\??\\")
 
@@ -227,6 +246,7 @@ def _windows_local_root(path: str) -> bool:
     try:
         import ctypes
         from ctypes import wintypes
+
         function = ctypes.WinDLL("kernel32", use_last_error=True).GetDriveTypeW
         function.argtypes = [wintypes.LPCWSTR]
         function.restype = wintypes.UINT
@@ -237,7 +257,13 @@ def _windows_local_root(path: str) -> bool:
 
 def _windows_local_candidate(path: str) -> bool:
     text = path.replace("/", "\\")
-    if text.startswith("\\\\?\\") and len(text) >= 7 and text[4].isascii() and text[4].isalpha() and text[5:7] == ":\\":
+    if (
+        text.startswith("\\\\?\\")
+        and len(text) >= 7
+        and text[4].isascii()
+        and text[4].isalpha()
+        and text[5:7] == ":\\"
+    ):
         text = text[4:]
     return _windows_local_root(text)
 
@@ -271,6 +297,7 @@ def _plain_windows_ancestors(path: str) -> bool:
 def _windows_long_path(path: str) -> str:
     import ctypes
     from ctypes import wintypes
+
     function = ctypes.WinDLL("kernel32", use_last_error=True).GetLongPathNameW
     function.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
     function.restype = wintypes.DWORD
@@ -321,8 +348,10 @@ def _ambiguous_windows_alias(path: str, downloads_dir: str) -> bool:
     if not os.path.lexists(stage):
         return False
     _directory(stage)
-    allowed = {os.path.normcase(os.path.normpath(os.path.join(root, _ROOT_NAME)))
-               for root in (lexical_root, real_root)}
+    allowed = {
+        os.path.normcase(os.path.normpath(os.path.join(root, _ROOT_NAME)))
+        for root in (lexical_root, real_root)
+    }
     for candidate in (path, os.path.abspath(path), os.path.realpath(path)):
         current = candidate
         while True:
@@ -342,8 +371,14 @@ def _ambiguous_windows_alias(path: str, downloads_dir: str) -> bool:
 class UploadStore:
     """Append-only, quota-accounted upload slots for a trusted single user."""
 
-    def __init__(self, downloads_dir: str, frontend_dist: str,
-                 environ: Mapping[str, str] | None = None, *, restricted_paths: bool = True):
+    def __init__(
+        self,
+        downloads_dir: str,
+        frontend_dist: str,
+        environ: Mapping[str, str] | None = None,
+        *,
+        restricted_paths: bool = True,
+    ):
         self.downloads_dir = downloads_dir
         self.frontend_dist = frontend_dist
         self.environ = dict(os.environ if environ is None else environ)
@@ -379,16 +414,25 @@ class UploadStore:
         slots = min(_MAX_SLOTS, max(0, (max_total - _ROOT_RESERVE) // reservation))
         if not slots:
             return None, "insufficient_total"
-        return {"version": 1, "max_file_bytes": max_file, "max_total_bytes": max_total,
-                "chunk_bytes": CHUNK_BYTES, "slots": slots}, None
+        return {
+            "version": 1,
+            "max_file_bytes": max_file,
+            "max_total_bytes": max_total,
+            "chunk_bytes": CHUNK_BYTES,
+            "slots": slots,
+        }, None
 
     def capabilities(self) -> dict:
         """Report configuration only; never inspect or create filesystem paths."""
         plan, reason = self._configuration()
         if plan is None:
             return {"enabled": False, "reason": reason}
-        return {"enabled": True, "max_file_bytes": plan["max_file_bytes"],
-                "max_total_bytes": plan["max_total_bytes"], "chunk_bytes": CHUNK_BYTES}
+        return {
+            "enabled": True,
+            "max_file_bytes": plan["max_file_bytes"],
+            "max_total_bytes": plan["max_total_bytes"],
+            "chunk_bytes": CHUNK_BYTES,
+        }
 
     def _required_plan(self) -> dict:
         plan, _ = self._configuration()
@@ -397,7 +441,9 @@ class UploadStore:
         return plan
 
     def _paths(self) -> tuple[str, str, str]:
-        if not isinstance(self.downloads_dir, str) or not isinstance(self.frontend_dist, str):
+        if not isinstance(self.downloads_dir, str) or not isinstance(
+            self.frontend_dist, str
+        ):
             raise UploadError("unsafe_path")
         if os.name == "nt" and not _windows_local_root(self.downloads_dir):
             raise UploadError("unsafe_path")
@@ -408,7 +454,10 @@ class UploadStore:
         root = os.path.realpath(self.downloads_dir)
         if os.name == "nt" and not _windows_local_root(root):
             raise UploadError("unsafe_path")
-        if os.name == "nt" and (not _plain_windows_ancestors(root) or not _plain_windows_ancestors(self.frontend_dist)):
+        if os.name == "nt" and (
+            not _plain_windows_ancestors(root)
+            or not _plain_windows_ancestors(self.frontend_dist)
+        ):
             raise UploadError("unsafe_path")
         frontend = os.path.realpath(self.frontend_dist)
         stage = os.path.join(root, _ROOT_NAME)
@@ -419,14 +468,24 @@ class UploadStore:
     def _saved_plan(self, stage: str) -> dict:
         _directory(stage)
         plan = _read_json(os.path.join(stage, "plan.json"), _ROOT_RESERVE)
-        if (set(plan) != {"version", "max_file_bytes", "max_total_bytes", "chunk_bytes", "slots"}
-                or plan.get("version") != 1 or plan.get("chunk_bytes") != CHUNK_BYTES
-                or any(type(plan.get(k)) is not int for k in ("max_file_bytes", "max_total_bytes", "slots"))
-                or not 0 < plan["max_file_bytes"] <= _MAX_INTEGER
-                or not 0 < plan["max_total_bytes"] <= _MAX_INTEGER
-                or not 1 <= plan["slots"] <= _MAX_SLOTS):
+        if (
+            set(plan)
+            != {"version", "max_file_bytes", "max_total_bytes", "chunk_bytes", "slots"}
+            or plan.get("version") != 1
+            or plan.get("chunk_bytes") != CHUNK_BYTES
+            or any(
+                type(plan.get(k)) is not int
+                for k in ("max_file_bytes", "max_total_bytes", "slots")
+            )
+            or not 0 < plan["max_file_bytes"] <= _MAX_INTEGER
+            or not 0 < plan["max_total_bytes"] <= _MAX_INTEGER
+            or not 1 <= plan["slots"] <= _MAX_SLOTS
+        ):
             raise UploadError("interrupted")
-        if plan["max_file_bytes"] > (1 << 53) - 1 or plan["max_total_bytes"] > (1 << 53) - 1:
+        if (
+            plan["max_file_bytes"] > (1 << 53) - 1
+            or plan["max_total_bytes"] > (1 << 53) - 1
+        ):
             raise UploadError("interrupted")
         chunks = (plan["max_file_bytes"] + CHUNK_BYTES - 1) // CHUNK_BYTES
         reservation = plan["max_file_bytes"] + _SLOT_RESERVE + 2 * _RECORD.size * chunks
@@ -457,7 +516,12 @@ class UploadStore:
 
     @staticmethod
     def _name(name: object) -> tuple[str, str]:
-        if not isinstance(name, str) or not name or len(name) > 255 or name in (".", ".."):
+        if (
+            not isinstance(name, str)
+            or not name
+            or len(name) > 255
+            or name in (".", "..")
+        ):
             raise UploadError("invalid_request")
         if any(ch in "/\\" or ord(ch) < 32 or 127 <= ord(ch) <= 159 for ch in name):
             raise UploadError("invalid_request")
@@ -473,18 +537,29 @@ class UploadStore:
     def _meta(slot: str, plan: dict, upload_id: str | None = None) -> dict:
         _directory(slot)
         meta = _read_json(os.path.join(slot, "meta.json"), _SLOT_RESERVE)
-        if (set(meta) != {"version", "upload_id", "name", "size", "payload"} or meta.get("version") != 1
-                or not isinstance(meta.get("upload_id"), str) or not _ID.fullmatch(meta["upload_id"])
-                or type(meta.get("size")) is not int or not 0 <= meta["size"] <= plan["max_file_bytes"]
-                or not isinstance(meta.get("payload"), str) or not _PAYLOAD.fullmatch(meta["payload"])):
+        if (
+            set(meta) != {"version", "upload_id", "name", "size", "payload"}
+            or meta.get("version") != 1
+            or not isinstance(meta.get("upload_id"), str)
+            or not _ID.fullmatch(meta["upload_id"])
+            or type(meta.get("size")) is not int
+            or not 0 <= meta["size"] <= plan["max_file_bytes"]
+            or not isinstance(meta.get("payload"), str)
+            or not _PAYLOAD.fullmatch(meta["payload"])
+        ):
             raise UploadError("interrupted")
         try:
             _, expected = UploadStore._name(meta.get("name"))
         except UploadError:
             raise UploadError("interrupted") from None
-        if expected != meta["payload"] or os.path.basename(slot) != "slot-" + meta["upload_id"][:2]:
+        if (
+            expected != meta["payload"]
+            or os.path.basename(slot) != "slot-" + meta["upload_id"][:2]
+        ):
             raise UploadError("interrupted")
-        if upload_id is not None and not secrets.compare_digest(meta["upload_id"], upload_id):
+        if upload_id is not None and not secrets.compare_digest(
+            meta["upload_id"], upload_id
+        ):
             raise UploadError("not_found")
         if int(meta["upload_id"][:2]) >= plan["slots"]:
             raise UploadError("interrupted")
@@ -546,7 +621,9 @@ class UploadStore:
                 os.close(fd)
 
     @staticmethod
-    def _inspect(slot: str, meta: dict, *, verify: bool = False) -> tuple[int, tuple | None]:
+    def _inspect(
+        slot: str, meta: dict, *, verify: bool = False
+    ) -> tuple[int, tuple | None]:
         journal = _open_regular(os.path.join(slot, "journal.bin"), os.O_RDONLY)
         payload = None
         _inspect_control = None
@@ -562,10 +639,20 @@ class UploadStore:
                 intent = _RECORD.unpack(_read_exact(journal, _RECORD.size))
                 done = _RECORD.unpack(_read_exact(journal, _RECORD.size))
                 expected = min(CHUNK_BYTES, meta["size"] - offset)
-                if (intent[0] != b"I" or done[0] != b"C" or intent[1:] != done[1:]
-                        or intent[1] != offset or intent[2] != expected or expected <= 0):
+                if (
+                    intent[0] != b"I"
+                    or done[0] != b"C"
+                    or intent[1:] != done[1:]
+                    or intent[1] != offset
+                    or intent[2] != expected
+                    or expected <= 0
+                ):
                     raise UploadError("interrupted")
-                if verify and hashlib.sha256(_read_exact(payload, expected)).digest() != intent[3]:
+                if (
+                    verify
+                    and hashlib.sha256(_read_exact(payload, expected)).digest()
+                    != intent[3]
+                ):
                     raise UploadError("interrupted")
                 last = (offset, expected, intent[3])
                 offset += expected
@@ -587,8 +674,9 @@ class UploadStore:
                         os.close(journal)
                     except BaseException as journal_close_error:
                         # OpenAI-Codex_engine_cli: never demote a control-flow exception.
-                        if (isinstance(payload_close_error, Exception)
-                                and not isinstance(journal_close_error, Exception)):
+                        if isinstance(
+                            payload_close_error, Exception
+                        ) and not isinstance(journal_close_error, Exception):
                             raise journal_close_error from payload_close_error
                         raise payload_close_error from journal_close_error
                     raise
@@ -630,13 +718,22 @@ class UploadStore:
                 except FileExistsError:
                     continue
                 upload_id = f"{index:02d}-{secrets.token_hex(16)}"
-                meta = {"version": 1, "upload_id": upload_id, "name": label,
-                        "size": size, "payload": payload_name}
+                meta = {
+                    "version": 1,
+                    "upload_id": upload_id,
+                    "name": label,
+                    "size": size,
+                    "payload": payload_name,
+                }
                 _create_file(os.path.join(slot, "meta.json"), _json_bytes(meta))
                 _create_file(os.path.join(slot, "lock"), b"L")
                 _create_file(os.path.join(slot, "journal.bin"))
                 _create_file(os.path.join(slot, payload_name))
-                return {"upload_id": upload_id, "chunk_bytes": CHUNK_BYTES, "next_offset": 0}
+                return {
+                    "upload_id": upload_id,
+                    "chunk_bytes": CHUNK_BYTES,
+                    "next_offset": 0,
+                }
             raise UploadError("quota_exhausted")
         except UploadError:
             raise
@@ -654,9 +751,15 @@ class UploadStore:
             raise UploadError("not_found")
         return slot, plan
 
-    def write_chunk(self, upload_id: object, offset: object, data_base64: object) -> dict:
+    def write_chunk(
+        self, upload_id: object, offset: object, data_base64: object
+    ) -> dict:
         try:
-            if type(offset) is not int or offset < 0 or not isinstance(data_base64, str):
+            if (
+                type(offset) is not int
+                or offset < 0
+                or not isinstance(data_base64, str)
+            ):
                 raise UploadError("invalid_request")
             if len(data_base64) > 4 * ((CHUNK_BYTES + 2) // 3):
                 raise UploadError("too_large")
@@ -675,14 +778,18 @@ class UploadStore:
                 digest = hashlib.sha256(data).digest()
                 if last is not None and (offset, len(data), digest) == last:
                     # OpenAI-Codex_engine_cli: verify only the committed replay range.
-                    payload = _open_regular(os.path.join(slot, meta["payload"]), os.O_RDONLY)
+                    payload = _open_regular(
+                        os.path.join(slot, meta["payload"]), os.O_RDONLY
+                    )
                     _replay_control = None
                     try:
                         if os.fstat(payload).st_size != current:
                             raise UploadError("interrupted")
                         if os.lseek(payload, offset, os.SEEK_SET) != offset:
                             raise UploadError("interrupted")
-                        actual = hashlib.sha256(_read_exact(payload, len(data))).digest()
+                        actual = hashlib.sha256(
+                            _read_exact(payload, len(data))
+                        ).digest()
                         if not secrets.compare_digest(actual, digest):
                             raise UploadError("interrupted")
                     except BaseException as _control_error:
@@ -699,12 +806,16 @@ class UploadStore:
                     raise UploadError("invalid_request")
                 intent = _RECORD.pack(b"I", current, len(data), digest)
                 done = _RECORD.pack(b"C", current, len(data), digest)
-                journal = _open_regular(os.path.join(slot, "journal.bin"), os.O_WRONLY | os.O_APPEND)
+                journal = _open_regular(
+                    os.path.join(slot, "journal.bin"), os.O_WRONLY | os.O_APPEND
+                )
                 _journal_control = None
                 try:
                     _write_all(journal, intent)
                     os.fsync(journal)
-                    payload = _open_regular(os.path.join(slot, meta["payload"]), os.O_WRONLY | os.O_APPEND)
+                    payload = _open_regular(
+                        os.path.join(slot, meta["payload"]), os.O_WRONLY | os.O_APPEND
+                    )
                     _payload_control = None
                     try:
                         _write_all(payload, data)
@@ -772,18 +883,33 @@ class UploadStore:
             resolved_roots = _namespace_roots(resolved)
             if not lexical_roots and not resolved_roots:
                 return
-            if len(lexical_roots) > 1 or len(resolved_roots) > 1 or (lexical_roots and not resolved_roots):
+            if (
+                len(lexical_roots) > 1
+                or len(resolved_roots) > 1
+                or (lexical_roots and not resolved_roots)
+            ):
                 raise UploadError("unsafe_path")
-            valid_roots = {os.path.normcase(os.path.normpath(os.path.join(root, _ROOT_NAME)))
-                           for root in (os.path.abspath(self.downloads_dir), os.path.realpath(self.downloads_dir))}
-            if any(os.path.normcase(os.path.normpath(root)) not in valid_roots
-                   for root in lexical_roots + resolved_roots):
+            valid_roots = {
+                os.path.normcase(os.path.normpath(os.path.join(root, _ROOT_NAME)))
+                for root in (
+                    os.path.abspath(self.downloads_dir),
+                    os.path.realpath(self.downloads_dir),
+                )
+            }
+            if any(
+                os.path.normcase(os.path.normpath(root)) not in valid_roots
+                for root in lexical_roots + resolved_roots
+            ):
                 raise UploadError("unsafe_path")
             if write:
                 raise UploadError("unsafe_path")
             stage = resolved_roots[0]
             relative = os.path.relpath(resolved, stage).split(os.sep)
-            if len(relative) != 2 or not _SLOT.fullmatch(relative[0]) or not _PAYLOAD.fullmatch(relative[1]):
+            if (
+                len(relative) != 2
+                or not _SLOT.fullmatch(relative[0])
+                or not _PAYLOAD.fullmatch(relative[1])
+            ):
                 raise UploadError("unsafe_path")
             plan = self._saved_plan(stage)
             slot = os.path.join(stage, relative[0])

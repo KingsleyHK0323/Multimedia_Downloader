@@ -21,15 +21,29 @@ TREE = ast.parse(SOURCE.read_text(encoding="utf-8"), filename=str(SOURCE))
 TOP = {"_open_regular", "_read_json", "_create_file"}
 METHODS = {"_completed", "_locked", "_inspect"}
 nodes = [n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name in TOP]
-nodes += [n for n in TREE.body if isinstance(n, ast.FunctionDef) and n.name == "_preserve_cleanup_control"]
-store = next(n for n in TREE.body if isinstance(n, ast.ClassDef) and n.name == "UploadStore")
-methods = [n for n in store.body if isinstance(n, ast.FunctionDef) and n.name in METHODS]
+nodes += [
+    n
+    for n in TREE.body
+    if isinstance(n, ast.FunctionDef) and n.name == "_preserve_cleanup_control"
+]
+store = next(
+    n for n in TREE.body if isinstance(n, ast.ClassDef) and n.name == "UploadStore"
+)
+methods = [
+    n for n in store.body if isinstance(n, ast.FunctionDef) and n.name in METHODS
+]
 assert {n.name for n in nodes if n.name in TOP} == TOP
 assert {n.name for n in methods} == METHODS
 for method in methods:
     method.decorator_list = []
 module = ast.Module(
-    body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *nodes, *methods],
+    body=[
+        ast.ImportFrom(
+            module="__future__", names=[ast.alias(name="annotations")], level=0
+        ),
+        *nodes,
+        *methods,
+    ],
     type_ignores=[],
 )
 ast.fix_missing_locations(module)
@@ -53,7 +67,9 @@ class FakeOS:
     def __init__(self, kind, body_error, failed_closes, unlock_error):
         self.kind = kind
         self.body_error = body_error
-        self.close_errors = {fd: OSError(f"synthetic close {fd}") for fd in failed_closes}
+        self.close_errors = {
+            fd: OSError(f"synthetic close {fd}") for fd in failed_closes
+        }
         self.unlock_error = OSError("synthetic unlock") if unlock_error else None
         self.close_calls = []
         self.unlock_calls = []
@@ -65,11 +81,18 @@ class FakeOS:
         return 11
 
     def fstat(self, fd):
-        if self.body_error is not None and self.kind in {"_open_regular", "_read_json", "_completed", "_inspect"}:
+        if self.body_error is not None and self.kind in {
+            "_open_regular",
+            "_read_json",
+            "_completed",
+            "_inspect",
+        }:
             raise self.body_error
         if self.kind == "_open_regular":
             return SimpleNamespace(st_mode=stat.S_IFREG, st_dev=1, st_ino=1)
-        return SimpleNamespace(st_size={"_read_json": 2, "_locked": 1}.get(self.kind, 0))
+        return SimpleNamespace(
+            st_size={"_read_json": 2, "_locked": 1}.get(self.kind, 0)
+        )
 
     def fsync(self, _fd):
         return None
@@ -97,13 +120,23 @@ def setup(kind, body_error, failed_closes, unlock_error=False):
             raise body_error
 
     namespace = {
-        "os": fake, "stat": stat, "json": json, "hashlib": hashlib, "sys": sys,
-        "contextlib": contextlib, "contextmanager": contextlib.contextmanager,
+        "os": fake,
+        "stat": stat,
+        "json": json,
+        "hashlib": hashlib,
+        "sys": sys,
+        "contextlib": contextlib,
+        "contextmanager": contextlib.contextmanager,
         "fcntl": SimpleNamespace(flock=fake.flock, LOCK_EX=1, LOCK_NB=2, LOCK_UN=8),
-        "_is_reparse": lambda _info: False, "_directory": lambda _path: None,
-        "_BINARY": 0, "_NOFOLLOW": 0, "_RECORD": SimpleNamespace(size=49),
-        "CHUNK_BYTES": 262144, "UploadError": UploadError,
-        "_write_all": write_all, "_read_exact": lambda _fd, _length: b"{}",
+        "_is_reparse": lambda _info: False,
+        "_directory": lambda _path: None,
+        "_BINARY": 0,
+        "_NOFOLLOW": 0,
+        "_RECORD": SimpleNamespace(size=49),
+        "CHUNK_BYTES": 262144,
+        "UploadError": UploadError,
+        "_write_all": write_all,
+        "_read_exact": lambda _fd, _length: b"{}",
     }
     exec(CODE, namespace)  # noqa: S102 - Execute selected local methods with a fake OS.
     if kind != "_open_regular":
@@ -146,10 +179,14 @@ def check_control_precedence(kind, control_type, failed_closes, unlock_error=Fal
     assert fake.close_calls == expected_closes, (kind, fake.close_calls)
     if kind == "_locked":
         assert fake.unlock_calls == [11], fake.unlock_calls
-    assert got is control, f"{kind} body {control_type.__name__} became {type(got).__name__}"
+    assert (
+        got is control
+    ), f"{kind} body {control_type.__name__} became {type(got).__name__}"
 
 
-def check_prior_control_does_not_replace_cleanup_error(kind, failed_closes, unlock_error=False):
+def check_prior_control_does_not_replace_cleanup_error(
+    kind, failed_closes, unlock_error=False
+):
     fake, namespace = setup(kind, None, failed_closes, unlock_error)
     previous = KeyboardInterrupt("synthetic previously handled interrupt")
     try:
@@ -184,7 +221,11 @@ def check_unlock_control_precedes_close_error(control_type, context_mode):
         return invoke("_locked", namespace, body)
 
     if context_mode in ("prior_interrupt", "prior_oserror"):
-        prior = KeyboardInterrupt("old interrupt") if context_mode == "prior_interrupt" else OSError("old error")
+        prior = (
+            KeyboardInterrupt("old interrupt")
+            if context_mode == "prior_interrupt"
+            else OSError("old error")
+        )
         try:
             raise prior
         except BaseException:
@@ -227,18 +268,24 @@ def check_read_json_handler_control(control_type, input_case):
     namespace["UploadError"] = fail_handler
     got = capture(lambda: invoke("_read_json", namespace, None))
     assert calls == ["interrupted"] and fake.close_calls == [11]
-    assert got is control, f"handler {control_type.__name__} became {type(got).__name__}"
+    assert (
+        got is control
+    ), f"handler {control_type.__name__} became {type(got).__name__}"
 
 
 def check_read_json_handler_ordinary(case_and_mode):
     input_case, mode = case_and_mode
-    fake, namespace = setup("_read_json", None, (11,) if mode == "ordinary_failure" else (), False)
+    fake, namespace = setup(
+        "_read_json", None, (11,) if mode == "ordinary_failure" else (), False
+    )
     data = b"\xff\xff" if input_case == "unicode" else b"!!"
     namespace["_read_exact"] = lambda _fd, _length: data
     ordinary = RuntimeError("synthetic ordinary handler failure")
     if mode == "ordinary_failure":
+
         def fail_handler(_code):
             raise ordinary
+
         namespace["UploadError"] = fail_handler
     got = capture(lambda: invoke("_read_json", namespace, None))
     assert fake.close_calls == [11]
@@ -254,32 +301,88 @@ def main():
     for input_case in ("unicode", "json"):
         for control_type in (KeyboardInterrupt, SystemExit):
             name = f"_read_json {input_case} handler {control_type.__name__} plus close"
-            checks.append((name, "_read_json_handler_control", control_type, (), False, input_case))
+            checks.append(
+                (
+                    name,
+                    "_read_json_handler_control",
+                    control_type,
+                    (),
+                    False,
+                    input_case,
+                )
+            )
         for mode in ("normal_handler", "ordinary_failure"):
             name = f"_read_json {input_case} handler {mode}"
-            checks.append((name, "_read_json_handler_ordinary", None, (), False, (input_case, mode)))
+            checks.append(
+                (
+                    name,
+                    "_read_json_handler_ordinary",
+                    None,
+                    (),
+                    False,
+                    (input_case, mode),
+                )
+            )
     # OpenAI-Codex_app_ui: cover unlock control, ordinary errors and old exception context.
     for control_type in (KeyboardInterrupt, SystemExit):
         for mode in ("normal", "body_error", "prior_interrupt", "prior_oserror"):
-            name = f"_locked unlock {control_type.__name__}, close OSError, context={mode}"
-            checks.append((name, "_locked_unlock_control", control_type, (11,), False, mode))
-    checks.append(("_locked body OSError propagates", "_locked_body_oserror", None, (), False, False))
+            name = (
+                f"_locked unlock {control_type.__name__}, close OSError, context={mode}"
+            )
+            checks.append(
+                (name, "_locked_unlock_control", control_type, (11,), False, mode)
+            )
+    checks.append(
+        (
+            "_locked body OSError propagates",
+            "_locked_body_oserror",
+            None,
+            (),
+            False,
+            False,
+        )
+    )
     for prior_type in (KeyboardInterrupt, OSError):
-        checks.append((f"_locked succeeds during prior {prior_type.__name__}",
-                       "_locked_success_prior", prior_type, (), False, False))
+        checks.append(
+            (
+                f"_locked succeeds during prior {prior_type.__name__}",
+                "_locked_success_prior",
+                prior_type,
+                (),
+                False,
+                False,
+            )
+        )
     for kind in ("_open_regular", "_read_json", "_create_file", "_completed"):
         for control_type in (KeyboardInterrupt, SystemExit):
-            checks.append((f"{kind} {control_type.__name__} plus close", kind, control_type, (11,), False, False))
-    for kind, variants in (("_locked", (((11,), False), ((), True), ((11,), True))),
-                           ("_inspect", (((11,), False), ((10,), False), ((11, 10), False)))):
+            checks.append(
+                (
+                    f"{kind} {control_type.__name__} plus close",
+                    kind,
+                    control_type,
+                    (11,),
+                    False,
+                    False,
+                )
+            )
+    for kind, variants in (
+        ("_locked", (((11,), False), ((), True), ((11,), True))),
+        ("_inspect", (((11,), False), ((10,), False), ((11, 10), False))),
+    ):
         for control_type in (KeyboardInterrupt, SystemExit):
             for failed_closes, unlock_error in variants:
                 name = f"{kind} {control_type.__name__} close={failed_closes} unlock={unlock_error}"
-                checks.append((name, kind, control_type, failed_closes, unlock_error, False))
+                checks.append(
+                    (name, kind, control_type, failed_closes, unlock_error, False)
+                )
     for kind in ("_read_json", "_create_file", "_completed"):
-        checks.append((f"{kind} prior interrupt plus close", kind, None, (11,), False, True))
-    for kind, variants in (("_locked", (((11,), False), ((), True), ((11,), True))),
-                           ("_inspect", (((11,), False), ((10,), False), ((11, 10), False)))):
+        checks.append(
+            (f"{kind} prior interrupt plus close", kind, None, (11,), False, True)
+        )
+    for kind, variants in (
+        ("_locked", (((11,), False), ((), True), ((11,), True))),
+        ("_inspect", (((11,), False), ((10,), False), ((11, 10), False))),
+    ):
         for failed_closes, unlock_error in variants:
             name = f"{kind} prior interrupt close={failed_closes} unlock={unlock_error}"
             checks.append((name, kind, None, failed_closes, unlock_error, True))
@@ -307,9 +410,13 @@ def main():
                 print(f"PASS {name}")
                 continue
             if prior:
-                check_prior_control_does_not_replace_cleanup_error(kind, failed_closes, unlock_error)
+                check_prior_control_does_not_replace_cleanup_error(
+                    kind, failed_closes, unlock_error
+                )
             else:
-                check_control_precedence(kind, control_type, failed_closes, unlock_error)
+                check_control_precedence(
+                    kind, control_type, failed_closes, unlock_error
+                )
         except AssertionError as error:
             failures.append(name)
             print(f"FAIL {name}: {error}")
@@ -317,7 +424,9 @@ def main():
             print(f"PASS {name}")
     check_open_regular_success_ignores_prior_control()
     print("PASS _open_regular successful body leaves its descriptor with the caller")
-    print(f"{len(checks) - len(failures) + 1}/{len(checks) + 1} synthetic checks passed")
+    print(
+        f"{len(checks) - len(failures) + 1}/{len(checks) + 1} synthetic checks passed"
+    )
     if failures:
         raise SystemExit(1)
 

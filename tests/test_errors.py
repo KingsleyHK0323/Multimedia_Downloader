@@ -6,6 +6,7 @@ it does not make the string matching robust, so these tests exist to make it
 *visible*: if an upstream library rewords a message, a test here should be what
 tells you, rather than a quietly reduced success rate in the field.
 """
+
 from __future__ import annotations
 
 import unittest
@@ -27,32 +28,39 @@ class ClassifyTests(unittest.TestCase):
         self.assertIs(classify(exc), ErrorKind.NO_FFMPEG)
 
     def test_403_is_transient(self):
-        self.assertIs(classify(RuntimeError("HTTP Error 403: Forbidden")),
-                      ErrorKind.TRANSIENT)
+        self.assertIs(
+            classify(RuntimeError("HTTP Error 403: Forbidden")), ErrorKind.TRANSIENT
+        )
 
     def test_forbidden_without_code_is_transient(self):
         self.assertIs(classify(RuntimeError("Forbidden")), ErrorKind.TRANSIENT)
 
     def test_5xx_is_transient(self):
-        self.assertIs(classify(RuntimeError("HTTP Error 503: Service Unavailable")),
-                      ErrorKind.TRANSIENT)
+        self.assertIs(
+            classify(RuntimeError("HTTP Error 503: Service Unavailable")),
+            ErrorKind.TRANSIENT,
+        )
 
     def test_unrecognised_is_unknown(self):
-        self.assertIs(classify(ValueError("something else entirely")),
-                      ErrorKind.UNKNOWN)
+        self.assertIs(
+            classify(ValueError("something else entirely")), ErrorKind.UNKNOWN
+        )
 
     def test_404_is_not_transient(self):
         # Retrying a genuine 404 just wastes the user's time.
-        self.assertIs(classify(RuntimeError("HTTP Error 404: Not Found")),
-                      ErrorKind.UNKNOWN)
+        self.assertIs(
+            classify(RuntimeError("HTTP Error 404: Not Found")), ErrorKind.UNKNOWN
+        )
 
     # ── Documented non-behaviour ─────────────────────────────────────────────
     # These pin what we deliberately do NOT treat as transient. If either is
     # ever added, it needs its own backoff -- these tests should then be
     # updated consciously rather than silently starting to fail.
     def test_rate_limit_is_not_transient_today(self):
-        self.assertIs(classify(RuntimeError("HTTP Error 429: Too Many Requests")),
-                      ErrorKind.UNKNOWN)
+        self.assertIs(
+            classify(RuntimeError("HTTP Error 429: Too Many Requests")),
+            ErrorKind.UNKNOWN,
+        )
 
     def test_timeout_is_not_transient_today(self):
         self.assertIs(classify(TimeoutError("timed out")), ErrorKind.UNKNOWN)
@@ -168,8 +176,18 @@ class TimeoutMarkerTests(unittest.TestCase):
             (TimeoutError("timed out: HTTP Error 503"), 1, False),
             (RuntimeError("HTTP Error 403: Forbidden"), 3, True),
             (RuntimeError("HTTP Error 503"), 3, False),
-            (RuntimeError("HTTP Error 404: Not Found https://example.invalid/403"), 1, False),
-            (RuntimeError("HTTP Error 429: Too Many Requests https://example.invalid/403"), 1, False),
+            (
+                RuntimeError("HTTP Error 404: Not Found https://example.invalid/403"),
+                1,
+                False,
+            ),
+            (
+                RuntimeError(
+                    "HTTP Error 429: Too Many Requests https://example.invalid/403"
+                ),
+                1,
+                False,
+            ),
             (RuntimeError("HTTP Error 429"), 1, False),
             (FileNotFoundError("403 while finding ffmpeg"), 1, False),
         )
@@ -190,6 +208,7 @@ class TimeoutMarkerTests(unittest.TestCase):
                 self.assertEqual(
                     fake.log_keys.count("log_hint_outdated"), int(expect_hint)
                 )
+
 
 # OpenAI-Codex_engine_cli: explicit 404/429 prefixes outrank later markers.
 class ExplicitNonTransientStatusTests(unittest.TestCase):

@@ -22,7 +22,14 @@ from textual.widgets import (
     TextArea,
 )
 
-from engine import AUDIO_FORMATS, BROWSERS, QUALITY_PRESETS, VIDEO_FORMATS, DownloadOptions, Downloader
+from engine import (
+    AUDIO_FORMATS,
+    BROWSERS,
+    QUALITY_PRESETS,
+    VIDEO_FORMATS,
+    DownloadOptions,
+    Downloader,
+)
 
 
 class DownloadTab(VerticalScroll):
@@ -52,21 +59,45 @@ class DownloadTab(VerticalScroll):
         with Horizontal(id="video-fields", classes="field-row"):
             with Vertical():
                 yield Label(tr.t("lbl_video_fmt"))
-                yield Select(((f, f) for f in VIDEO_FORMATS), value=VIDEO_FORMATS[0], id="video-fmt", allow_blank=False)
+                yield Select(
+                    ((f, f) for f in VIDEO_FORMATS),
+                    value=VIDEO_FORMATS[0],
+                    id="video-fmt",
+                    allow_blank=False,
+                )
             with Vertical():
                 yield Label(tr.t("lbl_quality"))
-                yield Select(((q, q) for q in QUALITY_PRESETS), value=QUALITY_PRESETS[0], id="quality", allow_blank=False)
+                yield Select(
+                    ((q, q) for q in QUALITY_PRESETS),
+                    value=QUALITY_PRESETS[0],
+                    id="quality",
+                    allow_blank=False,
+                )
         with Vertical(id="audio-fields", classes="field-row"):
             yield Label(tr.t("lbl_audio_fmt"))
-            yield Select(((f, f) for f in AUDIO_FORMATS), value=AUDIO_FORMATS[0], id="audio-fmt", allow_blank=False)
+            yield Select(
+                ((f, f) for f in AUDIO_FORMATS),
+                value=AUDIO_FORMATS[0],
+                id="audio-fmt",
+                allow_blank=False,
+            )
             yield Label(tr.t("lbl_bitrate"))
-            yield Select(((f"{v} kbps", v) for v in ("128", "192", "320")),
-                         value="192", id="bitrate", allow_blank=False)
+            yield Select(
+                ((f"{v} kbps", v) for v in ("128", "192", "320")),
+                value="192",
+                id="bitrate",
+                allow_blank=False,
+            )
 
         yield Label(tr.t("sec_cookie"), classes="section-title")
         with Vertical(classes="field-row"):
             yield Label(tr.t("cookie_m1"))
-            yield Select(((b, b) for b in BROWSERS), value=BROWSERS[0], id="browser", allow_blank=False)
+            yield Select(
+                ((b, b) for b in BROWSERS),
+                value=BROWSERS[0],
+                id="browser",
+                allow_blank=False,
+            )
             yield Label(tr.t("cookie_m2"))
             yield Input(placeholder="cookies.txt", id="cookie-file")
 
@@ -184,7 +215,12 @@ class DownloadTab(VerticalScroll):
 
         # OpenAI-Codex_app_ui: finish once if downloader initialization fails.
         try:
-            downloader = Downloader(opts, log_cb=log_cb, progress_cb=progress_cb, item_start_cb=item_start_cb)
+            downloader = Downloader(
+                opts,
+                log_cb=log_cb,
+                progress_cb=progress_cb,
+                item_start_cb=item_start_cb,
+            )
             self._downloader = downloader
             if self._cancel_requested.is_set():
                 downloader.stop()
@@ -198,7 +234,9 @@ class DownloadTab(VerticalScroll):
         try:
             results = downloader.download_batch(urls)
             for i, (_, success, _) in enumerate(results):
-                self.app.call_from_thread(self._mark_item, i, "done" if success else "error")
+                self.app.call_from_thread(
+                    self._mark_item, i, "done" if success else "error"
+                )
             for i in range(len(results), len(urls)):
                 self.app.call_from_thread(self._mark_item, i, "skipped")
         finally:
@@ -207,10 +245,14 @@ class DownloadTab(VerticalScroll):
 
     def _update_progress(self, pct: float, speed: str, eta: str) -> None:
         self.query_one("#progress", ProgressBar).update(progress=pct, total=100)
-        self.query_one("#status", Static).update(self.tr.t("status_progress", pct=pct, speed=speed, eta=eta))
+        self.query_one("#status", Static).update(
+            self.tr.t("status_progress", pct=pct, speed=speed, eta=eta)
+        )
 
     def _mark_item(self, index: int, status: str) -> None:
-        icon = {"running": "▶", "done": "✓", "error": "✗", "skipped": "–"}.get(status, "⏳")
+        icon = {"running": "▶", "done": "✓", "error": "✗", "skipped": "–"}.get(
+            status, "⏳"
+        )
         widget = self._item_widgets.get(index)
         url = self._item_urls.get(index)
         if widget is not None and url is not None:

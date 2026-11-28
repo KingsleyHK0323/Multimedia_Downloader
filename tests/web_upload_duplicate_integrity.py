@@ -51,7 +51,9 @@ def duplicate_detects_last_chunk_corruption():
     service.files.nodes[service.files.key(path)]["data"][-1] ^= 1
     before = service.files.snapshot(upload_id)
     replay = negative.send_chunk(service, upload_id, CHUNK, last)
-    assert replay["status"] == 409 and replay["body"]["error_code"] == "interrupted", replay
+    assert (
+        replay["status"] == 409 and replay["body"]["error_code"] == "interrupted"
+    ), replay
     assert service.files.snapshot(upload_id) == before
     no_open_handles_or_locks(service)
 
@@ -101,7 +103,9 @@ def duplicate_rejects_short_read_and_releases_descriptor():
 
     service.os.read = short
     replay = negative.send_chunk(service, upload_id, CHUNK, last)
-    assert replay["status"] == 409 and replay["body"]["error_code"] == "interrupted", replay
+    assert (
+        replay["status"] == 409 and replay["body"]["error_code"] == "interrupted"
+    ), replay
     no_open_handles_or_locks(service)
 
 
@@ -116,7 +120,9 @@ def duplicate_seek_failure_releases_descriptor():
 
     service.os.lseek = failing_seek
     replay = negative.send_chunk(service, upload_id, CHUNK, last)
-    assert replay["status"] == 503 and replay["body"]["error_code"] == "unavailable", replay
+    assert (
+        replay["status"] == 503 and replay["body"]["error_code"] == "unavailable"
+    ), replay
     no_open_handles_or_locks(service)
 
 
@@ -135,7 +141,9 @@ def duplicate_open_failure_releases_lock():
 
     service.os.open = failing_open
     replay = negative.send_chunk(service, upload_id, CHUNK, last)
-    assert replay["status"] == 503 and replay["body"]["error_code"] == "unavailable", replay
+    assert (
+        replay["status"] == 503 and replay["body"]["error_code"] == "unavailable"
+    ), replay
     assert payload_opens == 2
     no_open_handles_or_locks(service)
 
@@ -156,7 +164,9 @@ def duplicate_stat_failure_releases_descriptor():
 
     service.os.fstat = failing_stat
     replay = negative.send_chunk(service, upload_id, CHUNK, last)
-    assert replay["status"] == 503 and replay["body"]["error_code"] == "unavailable", replay
+    assert (
+        replay["status"] == 503 and replay["body"]["error_code"] == "unavailable"
+    ), replay
     assert payload_stats == 4
     no_open_handles_or_locks(service)
 
@@ -177,7 +187,9 @@ def duplicate_length_change_is_rejected():
 
     service.os.fstat = changed_size
     replay = negative.send_chunk(service, upload_id, CHUNK, last)
-    assert replay["status"] == 409 and replay["body"]["error_code"] == "interrupted", replay
+    assert (
+        replay["status"] == 409 and replay["body"]["error_code"] == "interrupted"
+    ), replay
     assert payload_stats == 4
     no_open_handles_or_locks(service)
 
@@ -198,7 +210,9 @@ def duplicate_close_failure_is_reported():
 
     service.os.close = failing_close
     replay = negative.send_chunk(service, upload_id, CHUNK, last)
-    assert replay["status"] == 503 and replay["body"]["error_code"] == "unavailable", replay
+    assert (
+        replay["status"] == 503 and replay["body"]["error_code"] == "unavailable"
+    ), replay
     assert payload_closes == 2
     no_open_handles_or_locks(service)
 
@@ -231,7 +245,9 @@ def prior_chunk_corruption_remains_finish_check():
     service.files.nodes[service.files.key(path)]["data"][0] ^= 1
     assert negative.send_chunk(service, upload_id, CHUNK, last)["status"] == 200
     finish = negative.post(service, "/api/uploads/finish", {"upload_id": upload_id})
-    assert finish["status"] == 409 and finish["body"]["error_code"] == "interrupted", finish
+    assert (
+        finish["status"] == 409 and finish["body"]["error_code"] == "interrupted"
+    ), finish
     assert not service.files.snapshot(upload_id)["completed"]
     no_open_handles_or_locks(service)
 
@@ -242,12 +258,16 @@ def changed_retry_still_rejects_without_payload_read():
 
     def no_payload_read(fd, count):
         if payload_handle(service, fd):
-            raise AssertionError("different retry should be rejected before reading payload")
+            raise AssertionError(
+                "different retry should be rejected before reading payload"
+            )
         return original_read(fd, count)
 
     service.os.read = no_payload_read
     replay = negative.send_chunk(service, upload_id, CHUNK, negative.encoded(b"bad"))
-    assert replay["status"] == 409 and replay["body"]["error_code"] == "conflict", replay
+    assert (
+        replay["status"] == 409 and replay["body"]["error_code"] == "conflict"
+    ), replay
     no_open_handles_or_locks(service)
 
 
@@ -281,9 +301,9 @@ def duplicate_body_control_survives_close_oserror(control_error):
         raised = exc
     assert payload_closes == 2, payload_closes
     assert not service.ns["msvcrt"].held
-    assert raised is control_error, (
-        f"body control exception was replaced; raised={raised!r}, response={response!r}"
-    )
+    assert (
+        raised is control_error
+    ), f"body control exception was replaced; raised={raised!r}, response={response!r}"
 
 
 def handled_outer_control_does_not_hide_duplicate_close_error():
@@ -305,7 +325,9 @@ def handled_outer_control_does_not_hide_duplicate_close_error():
     except KeyboardInterrupt:
         response = negative.send_chunk(service, upload_id, CHUNK, last)
     assert payload_closes == 2, payload_closes
-    assert response["status"] == 503 and response["body"]["error_code"] == "unavailable", response
+    assert (
+        response["status"] == 503 and response["body"]["error_code"] == "unavailable"
+    ), response
 
 
 def prepare_fresh_append():
@@ -324,8 +346,11 @@ def append_close_failure_service(failed_names, control_error=None):
 
     def failing_write(fd, data):
         descriptor = service.files.handles[fd]
-        if (control_error is not None and descriptor["append"]
-                and ntpath.basename(descriptor["key"]) == "payload.mp4"):
+        if (
+            control_error is not None
+            and descriptor["append"]
+            and ntpath.basename(descriptor["key"]) == "payload.mp4"
+        ):
             raise control_error
         return original_write(fd, data)
 
@@ -344,13 +369,18 @@ def append_close_failure_service(failed_names, control_error=None):
 
 
 def assert_append_closes_attempted_once(service, close_calls):
-    assert [name for _fd, name in close_calls] == ["payload.mp4", "journal.bin"], close_calls
+    assert [name for _fd, name in close_calls] == [
+        "payload.mp4",
+        "journal.bin",
+    ], close_calls
     assert len({fd for fd, _name in close_calls}) == 2, close_calls
     assert not service.ns["msvcrt"].held
 
 
 def append_body_control_survives_close_errors(control_error, failed_names):
-    service, upload_id, close_calls = append_close_failure_service(failed_names, control_error)
+    service, upload_id, close_calls = append_close_failure_service(
+        failed_names, control_error
+    )
     raised = None
     response = None
     try:
@@ -358,9 +388,9 @@ def append_body_control_survives_close_errors(control_error, failed_names):
     except BaseException as exc:
         raised = exc
     assert_append_closes_attempted_once(service, close_calls)
-    assert raised is control_error, (
-        f"body control exception was replaced; raised={raised!r}, response={response!r}"
-    )
+    assert (
+        raised is control_error
+    ), f"body control exception was replaced; raised={raised!r}, response={response!r}"
 
 
 def handled_outer_control_does_not_hide_append_close_errors(failed_names):
@@ -370,7 +400,9 @@ def handled_outer_control_does_not_hide_append_close_errors(failed_names):
     except KeyboardInterrupt:
         response = negative.send_chunk(service, upload_id, 0, negative.encoded(b"abc"))
     assert_append_closes_attempted_once(service, close_calls)
-    assert response["status"] == 503 and response["body"]["error_code"] == "unavailable", response
+    assert (
+        response["status"] == 503 and response["body"]["error_code"] == "unavailable"
+    ), response
 
 
 def main():
@@ -378,46 +410,94 @@ def main():
         ("detect last chunk corruption", duplicate_detects_last_chunk_corruption),
         ("read only last chunk", duplicate_reads_only_the_last_chunk),
         ("allow fragmented reads", duplicate_allows_fragmented_reads),
-        ("reject short read and close", duplicate_rejects_short_read_and_releases_descriptor),
+        (
+            "reject short read and close",
+            duplicate_rejects_short_read_and_releases_descriptor,
+        ),
         ("close after seek failure", duplicate_seek_failure_releases_descriptor),
         ("release lock after open failure", duplicate_open_failure_releases_lock),
         ("close after stat failure", duplicate_stat_failure_releases_descriptor),
         ("reject changed payload length", duplicate_length_change_is_rejected),
         ("report close failure", duplicate_close_failure_is_reported),
         ("bound a full chunk read", duplicate_full_chunk_has_bounded_read),
-        ("earlier corruption remains finish check", prior_chunk_corruption_remains_finish_check),
-        ("different retry remains conflict", changed_retry_still_rejects_without_payload_read),
-        ("duplicate SystemExit survives close OSError",
-         lambda: duplicate_body_control_survives_close_oserror(SystemExit("synthetic exit"))),
-        ("duplicate KeyboardInterrupt survives close OSError",
-         lambda: duplicate_body_control_survives_close_oserror(KeyboardInterrupt("synthetic interrupt"))),
-        ("handled outer control does not hide duplicate close failure",
-         handled_outer_control_does_not_hide_duplicate_close_error),
-        ("append KeyboardInterrupt survives payload close failure",
-         lambda: append_body_control_survives_close_errors(
-             KeyboardInterrupt("synthetic interrupt"), ("payload.mp4",))),
-        ("append KeyboardInterrupt survives journal close failure",
-         lambda: append_body_control_survives_close_errors(
-             KeyboardInterrupt("synthetic interrupt"), ("journal.bin",))),
-        ("append KeyboardInterrupt survives both close failures",
-         lambda: append_body_control_survives_close_errors(
-             KeyboardInterrupt("synthetic interrupt"), ("payload.mp4", "journal.bin"))),
-        ("append SystemExit survives payload close failure",
-         lambda: append_body_control_survives_close_errors(
-             SystemExit("synthetic exit"), ("payload.mp4",))),
-        ("append SystemExit survives journal close failure",
-         lambda: append_body_control_survives_close_errors(
-             SystemExit("synthetic exit"), ("journal.bin",))),
-        ("append SystemExit survives both close failures",
-         lambda: append_body_control_survives_close_errors(
-             SystemExit("synthetic exit"), ("payload.mp4", "journal.bin"))),
-        ("handled outer control does not hide append payload close failure",
-         lambda: handled_outer_control_does_not_hide_append_close_errors(("payload.mp4",))),
-        ("handled outer control does not hide append journal close failure",
-         lambda: handled_outer_control_does_not_hide_append_close_errors(("journal.bin",))),
-        ("handled outer control does not hide both append close failures",
-         lambda: handled_outer_control_does_not_hide_append_close_errors(
-             ("payload.mp4", "journal.bin"))),
+        (
+            "earlier corruption remains finish check",
+            prior_chunk_corruption_remains_finish_check,
+        ),
+        (
+            "different retry remains conflict",
+            changed_retry_still_rejects_without_payload_read,
+        ),
+        (
+            "duplicate SystemExit survives close OSError",
+            lambda: duplicate_body_control_survives_close_oserror(
+                SystemExit("synthetic exit")
+            ),
+        ),
+        (
+            "duplicate KeyboardInterrupt survives close OSError",
+            lambda: duplicate_body_control_survives_close_oserror(
+                KeyboardInterrupt("synthetic interrupt")
+            ),
+        ),
+        (
+            "handled outer control does not hide duplicate close failure",
+            handled_outer_control_does_not_hide_duplicate_close_error,
+        ),
+        (
+            "append KeyboardInterrupt survives payload close failure",
+            lambda: append_body_control_survives_close_errors(
+                KeyboardInterrupt("synthetic interrupt"), ("payload.mp4",)
+            ),
+        ),
+        (
+            "append KeyboardInterrupt survives journal close failure",
+            lambda: append_body_control_survives_close_errors(
+                KeyboardInterrupt("synthetic interrupt"), ("journal.bin",)
+            ),
+        ),
+        (
+            "append KeyboardInterrupt survives both close failures",
+            lambda: append_body_control_survives_close_errors(
+                KeyboardInterrupt("synthetic interrupt"), ("payload.mp4", "journal.bin")
+            ),
+        ),
+        (
+            "append SystemExit survives payload close failure",
+            lambda: append_body_control_survives_close_errors(
+                SystemExit("synthetic exit"), ("payload.mp4",)
+            ),
+        ),
+        (
+            "append SystemExit survives journal close failure",
+            lambda: append_body_control_survives_close_errors(
+                SystemExit("synthetic exit"), ("journal.bin",)
+            ),
+        ),
+        (
+            "append SystemExit survives both close failures",
+            lambda: append_body_control_survives_close_errors(
+                SystemExit("synthetic exit"), ("payload.mp4", "journal.bin")
+            ),
+        ),
+        (
+            "handled outer control does not hide append payload close failure",
+            lambda: handled_outer_control_does_not_hide_append_close_errors(
+                ("payload.mp4",)
+            ),
+        ),
+        (
+            "handled outer control does not hide append journal close failure",
+            lambda: handled_outer_control_does_not_hide_append_close_errors(
+                ("journal.bin",)
+            ),
+        ),
+        (
+            "handled outer control does not hide both append close failures",
+            lambda: handled_outer_control_does_not_hide_append_close_errors(
+                ("payload.mp4", "journal.bin")
+            ),
+        ),
     )
     failures = []
     for name, check in checks:

@@ -101,23 +101,43 @@ class ProgressBar:
 def load_download_tab():
     source = Path(__file__).resolve().parents[1] / "tui" / "download_tab.py"
     tree = ast.parse(source.read_text(encoding="utf-8"), filename=str(source))
-    tab = next(node for node in tree.body if isinstance(node, ast.ClassDef) and node.name == "DownloadTab")
+    tab = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "DownloadTab"
+    )
     names = {"__init__", "on_button_pressed", "_urls", "_start", "_stop", "_finish"}
-    methods = [node for node in tab.body if isinstance(node, ast.FunctionDef) and node.name in names]
+    methods = [
+        node
+        for node in tab.body
+        if isinstance(node, ast.FunctionDef) and node.name in names
+    ]
     assert {node.name for node in methods} == names
     tab.body = methods
     tab.bases = [ast.Name(id="FakeBase", ctx=ast.Load())]
     tab.keywords = []
     tab.decorator_list = []
     module = ast.Module(
-        body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), tab],
+        body=[
+            ast.ImportFrom(
+                module="__future__", names=[ast.alias(name="annotations")], level=0
+            ),
+            tab,
+        ],
         type_ignores=[],
     )
     ast.fix_missing_locations(module)
     namespace = {
-        "FakeBase": FakeBase, "Input": Input, "Select": Select, "TextArea": TextArea,
-        "Static": Static, "Button": Button, "ListItem": ListItem, "ListView": ListView,
-        "ProgressBar": ProgressBar, "threading": threading,
+        "FakeBase": FakeBase,
+        "Input": Input,
+        "Select": Select,
+        "TextArea": TextArea,
+        "Static": Static,
+        "Button": Button,
+        "ListItem": ListItem,
+        "ListView": ListView,
+        "ProgressBar": ProgressBar,
+        "threading": threading,
         "DownloadOptions": lambda **kwargs: SimpleNamespace(**kwargs),
     }
     # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
@@ -135,13 +155,22 @@ def make_tab(url="https://example.invalid/a"):
     tab.mode = "video"
     tab.runs = []
     tab.notifications = []
-    tab.app = SimpleNamespace(notify=lambda *args, **kwargs: tab.notifications.append((args, kwargs)))
+    tab.app = SimpleNamespace(
+        notify=lambda *args, **kwargs: tab.notifications.append((args, kwargs))
+    )
     tab.widgets = {
-        "#urls": TextArea(url), "#save-path": Input("synthetic-output"),
-        "#video-fmt": Select("mp4"), "#audio-fmt": Select("mp3"),
-        "#quality": Select("720p"), "#cookie-file": Input(""), "#browser": Select("none"),
-        "#bitrate": Select("192"), "#items-list": ListView(), "#progress": ProgressBar(),
-        "#start": Button("start"), "#stop": Button("stop", disabled=True),
+        "#urls": TextArea(url),
+        "#save-path": Input("synthetic-output"),
+        "#video-fmt": Select("mp4"),
+        "#audio-fmt": Select("mp3"),
+        "#quality": Select("720p"),
+        "#cookie-file": Input(""),
+        "#browser": Select("none"),
+        "#bitrate": Select("192"),
+        "#items-list": ListView(),
+        "#progress": ProgressBar(),
+        "#start": Button("start"),
+        "#stop": Button("stop", disabled=True),
     }
     tab.query_one = lambda selector, *_: tab.widgets[selector]
     tab._run_download = lambda urls, opts: tab.runs.append((list(urls), opts))
@@ -161,7 +190,9 @@ def test_repeated_start_preserves_stop_and_items():
     press(tab, "start")
     assert len(tab.runs) == 1, "a repeated start launched another worker"
     assert tab._cancel_requested.is_set(), "a repeated start cleared the stop request"
-    assert tab._item_widgets == original_items, "a repeated start replaced the current items"
+    assert (
+        tab._item_widgets == original_items
+    ), "a repeated start replaced the current items"
     assert tab.widgets["#stop"].disabled
 
 

@@ -22,31 +22,46 @@ SOURCE = Path(__file__).resolve().parents[1] / "web_upload.py"
 TREE = ast.parse(SOURCE.read_text(encoding="utf-8"), filename=str(SOURCE))
 constant_names = {"CHUNK_BYTES", "_ERRORS"}
 constants = [
-    node for node in TREE.body
+    node
+    for node in TREE.body
     if isinstance(node, ast.Assign)
-    and any(isinstance(target, ast.Name) and target.id in constant_names for target in node.targets)
+    and any(
+        isinstance(target, ast.Name) and target.id in constant_names
+        for target in node.targets
+    )
 ]
 function_names = {"_preserve_cleanup_control", "_read_exact"}
 functions = [
-    node for node in TREE.body
+    node
+    for node in TREE.body
     if isinstance(node, ast.FunctionDef) and node.name in function_names
 ]
 error_class = next(
-    node for node in TREE.body if isinstance(node, ast.ClassDef) and node.name == "UploadError"
+    node
+    for node in TREE.body
+    if isinstance(node, ast.ClassDef) and node.name == "UploadError"
 )
 store_class = next(
-    node for node in TREE.body if isinstance(node, ast.ClassDef) and node.name == "UploadStore"
+    node
+    for node in TREE.body
+    if isinstance(node, ast.ClassDef) and node.name == "UploadStore"
 )
 write_chunk = next(
-    node for node in store_class.body
+    node
+    for node in store_class.body
     if isinstance(node, ast.FunctionDef) and node.name == "write_chunk"
 )
 assert {node.targets[0].id for node in constants} == constant_names
 assert {node.name for node in functions} == function_names
 module = ast.Module(
     body=[
-        ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0),
-        *constants, error_class, *functions, write_chunk,
+        ast.ImportFrom(
+            module="__future__", names=[ast.alias(name="annotations")], level=0
+        ),
+        *constants,
+        error_class,
+        *functions,
+        write_chunk,
     ],
     type_ignores=[],
 )
@@ -106,7 +121,7 @@ class FakeOS:
         if self.short_read:
             return b""
         length = count if self.fragment is None else min(count, self.fragment)
-        result = self.payload[self.position:self.position + length]
+        result = self.payload[self.position : self.position + length]
         self.position += len(result)
         return result
 
@@ -163,8 +178,13 @@ def setup(original=b"end", payload=None):
     store = FakeStore(chunk_bytes, original, original if payload is None else payload)
     fake = store.fake
     namespace = {
-        "base64": base64, "binascii": binascii, "contextmanager": contextlib.contextmanager,
-        "hashlib": hashlib, "os": fake, "secrets": secrets, "struct": struct,
+        "base64": base64,
+        "binascii": binascii,
+        "contextmanager": contextlib.contextmanager,
+        "hashlib": hashlib,
+        "os": fake,
+        "secrets": secrets,
+        "struct": struct,
         "_open_regular": fake.open_regular,
     }
     # Execute selected production code with fake handles.
@@ -209,7 +229,9 @@ def fragmented_replay_is_bounded():
     store.fake.fragment = 1
     assert send(store, write) == {"next_offset": store.current}
     assert store.fake.reads == [
-        (store.offset, 3), (store.offset + 1, 2), (store.offset + 2, 1)
+        (store.offset, 3),
+        (store.offset + 1, 2),
+        (store.offset + 2, 1),
     ]
     assert store.fake.position == store.current
     cleaned(store)
@@ -293,8 +315,14 @@ def mismatching_replay_is_conflict():
 def oversized_input_is_rejected_before_lock():
     store, write, error = setup()
     limit = 4 * ((store.offset + 2) // 3)
-    expect_error(error, "too_large", lambda: write(store, "synthetic-id", store.offset, "A" * (limit + 1)))
-    assert not store.lock_active and not store.lock_enters and not store.fake.open_attempts
+    expect_error(
+        error,
+        "too_large",
+        lambda: write(store, "synthetic-id", store.offset, "A" * (limit + 1)),
+    )
+    assert (
+        not store.lock_active and not store.lock_enters and not store.fake.open_attempts
+    )
 
 
 # OpenAI-Codex_web_ai: exercise the maximum final segment without real files.
@@ -318,12 +346,19 @@ def replay_filesystem_calls_stay_within_slot_lock():
     import stat
 
     helpers = [
-        node for node in TREE.body
-        if isinstance(node, ast.FunctionDef) and node.name in {"_is_reparse", "_open_regular"}
+        node
+        for node in TREE.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name in {"_is_reparse", "_open_regular"}
     ]
     assert {node.name for node in helpers} == {"_is_reparse", "_open_regular"}
     helper_module = ast.Module(
-        body=[ast.ImportFrom(module="__future__", names=[ast.alias(name="annotations")], level=0), *helpers],
+        body=[
+            ast.ImportFrom(
+                module="__future__", names=[ast.alias(name="annotations")], level=0
+            ),
+            *helpers,
+        ],
         type_ignores=[],
     )
     ast.fix_missing_locations(helper_module)
@@ -358,7 +393,9 @@ def replay_filesystem_calls_stay_within_slot_lock():
             if (mode, stat_calls) in {("first_stat", 1), ("second_stat", 2)}:
                 raise OSError("synthetic fstat failure")
             info = original_fstat(fd)
-            return SimpleNamespace(st_mode=stat.S_IFREG, st_dev=1, st_ino=1, st_size=info.st_size)
+            return SimpleNamespace(
+                st_mode=stat.S_IFREG, st_dev=1, st_ino=1, st_size=info.st_size
+            )
 
         fake.lstat = lstat
         fake.open = open_file
@@ -376,7 +413,9 @@ def replay_filesystem_calls_stay_within_slot_lock():
             setattr(fake, name, locked_operation)
 
         namespace = write.__globals__
-        namespace.update({"stat": stat, "_REPARSE": 0x400, "_BINARY": 0, "_NOFOLLOW": 0})
+        namespace.update(
+            {"stat": stat, "_REPARSE": 0x400, "_BINARY": 0, "_NOFOLLOW": 0}
+        )
         # Run the real helper against fake OS methods.
         exec(helper_code, namespace)  # noqa: S102
         if mode == "success":

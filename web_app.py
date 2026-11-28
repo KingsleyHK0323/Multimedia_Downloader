@@ -56,8 +56,12 @@ from flask import Flask, Response, jsonify, request, send_from_directory, url_fo
 
 import i18n
 from engine import (
-    AUDIO_FORMATS, BROWSERS, HARDWARE_VIDEO_FORMATS, QUALITY_PRESETS,
-    VIDEO_ENCODERS, VIDEO_FORMATS,
+    AUDIO_FORMATS,
+    BROWSERS,
+    HARDWARE_VIDEO_FORMATS,
+    QUALITY_PRESETS,
+    VIDEO_ENCODERS,
+    VIDEO_FORMATS,
 )
 from engine_sidecar import Sidecar
 from web_upload import UploadError, UploadStore
@@ -77,14 +81,20 @@ def _configured_trusted_hosts(value):
 
 def _hostname(authority):
     """Normalize a single HTTP Host authority without trusting its port."""
-    if (not isinstance(authority, str) or not authority or not authority.isascii()
-            or authority.endswith(":")):
+    if (
+        not isinstance(authority, str)
+        or not authority
+        or not authority.isascii()
+        or authority.endswith(":")
+    ):
         return None
     if any(ord(ch) <= 32 or ord(ch) == 127 or ch in "/\\?#@" for ch in authority):
         return None
     if authority.startswith("["):
         _, closing, suffix = authority.partition("]")
-        if not closing or (suffix and (not suffix.startswith(":") or not suffix[1:].isdecimal())):
+        if not closing or (
+            suffix and (not suffix.startswith(":") or not suffix[1:].isdecimal())
+        ):
             return None
     try:
         parsed = urlsplit("//" + authority)
@@ -122,7 +132,9 @@ app.config["MMDL_TRUSTED_ORIGINS"] = {
 }
 # Keep this separate from Flask's TRUSTED_HOSTS: exact IPv6 parsing is enforced
 # below without depending on the installed Werkzeug version's matching rules.
-app.config["MMDL_TRUSTED_HOSTS"] = _configured_trusted_hosts(os.environ.get("MMDL_TRUSTED_HOSTS"))
+app.config["MMDL_TRUSTED_HOSTS"] = _configured_trusted_hosts(
+    os.environ.get("MMDL_TRUSTED_HOSTS")
+)
 
 
 @app.before_request
@@ -146,12 +158,15 @@ def _protect_browser_post():
     if request.method != "POST" or not request.path.startswith("/api/"):
         return None
     origin = request.headers.get("Origin")
-    allowed = {request.host_url.rstrip("/")} | set(app.config["MMDL_TRUSTED_ORIGINS"] or ())
+    allowed = {request.host_url.rstrip("/")} | set(
+        app.config["MMDL_TRUSTED_ORIGINS"] or ()
+    )
     if origin is not None and origin not in allowed:
         return jsonify({"error": "untrusted request origin"}), 403
     if not request.is_json:
         return jsonify({"error": "application/json is required"}), 415
     return None
+
 
 # ── Event bus: fan events out to every connected SSE client ──────────────────
 _subscribers: set[queue.Queue] = set()
@@ -199,12 +214,19 @@ def _dispatch(cmd: str, args: dict, *, operation_id=None, before_execute=None):
 # MMDL_ALLOW_ABSOLUTE_PATHS=1 to restore the old behaviour -- meaningful for a
 # single-user localhost run where reaching the rest of the disk is the point,
 # and no worse than the desktop app, which has the same reach by design.
-ALLOW_ABSOLUTE_PATHS = os.environ.get("MMDL_ALLOW_ABSOLUTE_PATHS", "").strip().lower() in (
-    "1", "true", "yes", "on",
+ALLOW_ABSOLUTE_PATHS = os.environ.get(
+    "MMDL_ALLOW_ABSOLUTE_PATHS", ""
+).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
 )
 
 # OpenAI-Codex_web_ai: the internal namespace remains guarded when uploads are disabled.
-_upload_store = UploadStore(DOWNLOADS_DIR, FRONTEND_DIST, restricted_paths=not ALLOW_ABSOLUTE_PATHS)
+_upload_store = UploadStore(
+    DOWNLOADS_DIR, FRONTEND_DIST, restricted_paths=not ALLOW_ABSOLUTE_PATHS
+)
 
 
 class UnsafePath(ValueError):
@@ -217,18 +239,27 @@ def _is_unc_or_device_path(path):
         return False
     separator = chr(92)
     normalized = path.replace("/", separator)
-    if (normalized.startswith(separator * 2 + "?" + separator) and len(normalized) >= 7
-            and normalized[4].isascii() and normalized[4].isalpha()
-            and normalized[5:7] == ":" + separator):
+    if (
+        normalized.startswith(separator * 2 + "?" + separator)
+        and len(normalized) >= 7
+        and normalized[4].isascii()
+        and normalized[4].isalpha()
+        and normalized[5:7] == ":" + separator
+    ):
         return False
-    return (normalized.startswith(separator * 2)
-            or normalized.startswith(separator + "??" + separator)
-            or normalized.lower().startswith(separator + "device" + separator))
+    return (
+        normalized.startswith(separator * 2)
+        or normalized.startswith(separator + "??" + separator)
+        or normalized.lower().startswith(separator + "device" + separator)
+    )
 
 
 def _deny_named_remote_upload_path(path):
     parts = path.replace(chr(92), "/").split("/")
-    if any(part.split(":", 1)[0].rstrip(" .").casefold() == ".mmdl-uploads-v1" for part in parts):
+    if any(
+        part.split(":", 1)[0].rstrip(" .").casefold() == ".mmdl-uploads-v1"
+        for part in parts
+    ):
         raise UploadError("unsafe_path")
     if any(part.rstrip(" .").casefold() == ".mmdl-uploads-v1" for part in parts):
         raise UploadError("unsafe_path")
@@ -249,8 +280,11 @@ def _guard_upload_path(path, *, write=False):
             candidate = path
         else:
             drive, tail = os.path.splitdrive(path)
-            candidate = (os.path.join(os.path.abspath(drive + "."), tail) if drive
-                         else os.path.join(os.getcwd(), path))
+            candidate = (
+                os.path.join(os.path.abspath(drive + "."), tail)
+                if drive
+                else os.path.join(os.getcwd(), path)
+            )
             if not os.path.isabs(candidate):
                 candidate = lexical
         _upload_store.authorize_path(candidate, write=write)
@@ -288,8 +322,9 @@ def _confine(path: str) -> str:
     _guard_upload_path(os.path.join(root, path))
     candidate = os.path.realpath(os.path.join(root, path))
     try:
-        inside = (os.path.commonpath([os.path.normcase(root), os.path.normcase(candidate)])
-                  == os.path.normcase(root))
+        inside = os.path.commonpath(
+            [os.path.normcase(root), os.path.normcase(candidate)]
+        ) == os.path.normcase(root)
     except ValueError:
         inside = False
     if not inside:
@@ -349,9 +384,10 @@ def _video_encoder_choice(value, output_format=None) -> str:
     """Require an exact encoder enum; only an omitted field gets the default."""
     if not isinstance(value, str) or value not in VIDEO_ENCODERS:
         raise UnsafePath("invalid video encoder")
-    if (value != "software"
-            and (not isinstance(output_format, str)
-                 or output_format.lower() not in HARDWARE_VIDEO_FORMATS)):
+    if value != "software" and (
+        not isinstance(output_format, str)
+        or output_format.lower() not in HARDWARE_VIDEO_FORMATS
+    ):
         raise UnsafePath("video encoder does not support this output format")
     return value
 
@@ -361,8 +397,12 @@ def _bitrate(value) -> str:
         raise UnsafePath("invalid bitrate")
     value = value.strip()
     digits = value.lstrip("0") or "0"
-    if (not value.isascii() or not value.isdecimal() or len(digits) > 4
-            or not 1 <= int(digits) <= 9999):
+    if (
+        not value.isascii()
+        or not value.isdecimal()
+        or len(digits) > 4
+        or not 1 <= int(digits) <= 9999
+    ):
         raise UnsafePath("invalid bitrate")
     return str(int(digits))
 
@@ -380,7 +420,9 @@ def _cookie_file(value):
 
 
 def _policy(value, overwrite_confirmed=False) -> str:
-    policy = _choice(value, {"rename", "skip", "overwrite"}, "conflict policy", "rename")
+    policy = _choice(
+        value, {"rename", "skip", "overwrite"}, "conflict policy", "rename"
+    )
     if policy == "overwrite" and overwrite_confirmed is not True:
         raise UnsafePath("overwrite requires explicit confirmation")
     return policy
@@ -440,17 +482,25 @@ def _confine_tasks(tasks, overwrite_confirmed=False) -> list[dict]:
         if t.get("kind") == "convert":
             for key in ("src_path", "dst_path"):
                 if isinstance(t.get(key), str) and t.get(key):
-                    _guard_upload_path(_upload_client_path(t[key]), write=(key == "dst_path"))
+                    _guard_upload_path(
+                        _upload_client_path(t[key]), write=(key == "dst_path")
+                    )
                 if t.get(key) and not ALLOW_ABSOLUTE_PATHS:
                     t[key] = _confine(t[key])
                 elif t.get(key) and (not isinstance(t[key], str) or "\x00" in t[key]):
                     raise UnsafePath("invalid file path")
-            t["conflict_policy"] = _policy(t.get("conflict_policy"), overwrite_confirmed)
+            t["conflict_policy"] = _policy(
+                t.get("conflict_policy"), overwrite_confirmed
+            )
             # OpenAI-Codex_Fork_Source_Code: validate before any operation setup.
-            destination_format = (os.path.splitext(t["dst_path"])[1].lstrip(".")
-                                  if isinstance(t.get("dst_path"), str) else "")
+            destination_format = (
+                os.path.splitext(t["dst_path"])[1].lstrip(".")
+                if isinstance(t.get("dst_path"), str)
+                else ""
+            )
             t["video_encoder"] = _video_encoder_choice(
-                t.get("video_encoder", "software"), destination_format)
+                t.get("video_encoder", "software"), destination_format
+            )
         out.append(t)
     return out
 
@@ -468,10 +518,16 @@ def _confine_preview_queue(tasks) -> list[dict]:
         if not isinstance(task_id, str) or not task_id.strip() or task_id in seen_ids:
             raise UnsafePath("preview task IDs must be non-empty and unique")
         seen_ids.add(task_id)
-        item = {"kind": "convert", "task_id": task_id,
-                "conflict_policy": _choice(task.get("conflict_policy"),
-                                           {"rename", "skip", "overwrite"},
-                                           "conflict policy", "rename")}
+        item = {
+            "kind": "convert",
+            "task_id": task_id,
+            "conflict_policy": _choice(
+                task.get("conflict_policy"),
+                {"rename", "skip", "overwrite"},
+                "conflict policy",
+                "rename",
+            ),
+        }
         for field in ("src_path", "dst_path"):
             value = task.get(field)
             if not isinstance(value, str) or not value.strip() or "\x00" in value:
@@ -512,7 +568,9 @@ def _preview_display_path(path):
                 confined = _confine(absolute)
             except UnsafePath:
                 return absolute
-            return os.path.relpath(confined, os.path.realpath(DOWNLOADS_DIR)).replace(os.sep, "/")
+            return os.path.relpath(confined, os.path.realpath(DOWNLOADS_DIR)).replace(
+                os.sep, "/"
+            )
 
         # OpenAI-Codex_web_ai: compare lexical names without resolving the target.
         absolute = os.path.abspath(path)
@@ -527,11 +585,16 @@ def _preview_display_path(path):
             try:
                 if not os.path.isabs(root):
                     continue
-                if os.path.commonpath([os.path.normcase(root), os.path.normcase(absolute)]) != os.path.normcase(root):
+                if os.path.commonpath(
+                    [os.path.normcase(root), os.path.normcase(absolute)]
+                ) != os.path.normcase(root):
                     continue
                 relative = os.path.relpath(absolute, root)
-                if (not os.path.isabs(relative) and relative != os.pardir
-                        and not relative.startswith(os.pardir + os.sep)):
+                if (
+                    not os.path.isabs(relative)
+                    and relative != os.pardir
+                    and not relative.startswith(os.pardir + os.sep)
+                ):
                     return relative.replace(os.sep, "/")
             except (OSError, ValueError):
                 continue
@@ -552,8 +615,11 @@ def _add_output_links(cmd: str, result):
                         if key in job:
                             job[key] = _preview_display_path(job[key])
         return result
-    collection, field = (("jobs", "dst") if cmd == "convert" else
-                         ("tasks", "dst_path") if cmd == "run_queue" else (None, None))
+    collection, field = (
+        ("jobs", "dst")
+        if cmd == "convert"
+        else ("tasks", "dst_path") if cmd == "run_queue" else (None, None)
+    )
     items = result.get(collection, []) if collection else []
     if not isinstance(items, list):
         return result
@@ -582,8 +648,12 @@ def _read_upload_json(limit):
     length_header = request.environ.get("CONTENT_LENGTH")
     if request.environ.get("HTTP_TRANSFER_ENCODING"):
         raise UploadError("invalid_request")
-    if (not isinstance(length_header, str) or not length_header
-            or not length_header.isascii() or not length_header.isdecimal()):
+    if (
+        not isinstance(length_header, str)
+        or not length_header
+        or not length_header.isascii()
+        or not length_header.isdecimal()
+    ):
         raise UploadError("invalid_request")
     if len(length_header) > 12:
         raise UploadError("too_large")
@@ -641,8 +711,12 @@ def api_upload_create():
 @app.post("/api/uploads/chunk")
 def api_upload_chunk():
     body = _read_upload_json(_UPLOAD_CHUNK_BODY_LIMIT)
-    return _upload_json_call(_upload_store.write_chunk, body.get("upload_id"),
-                             body.get("offset"), body.get("data_base64"))
+    return _upload_json_call(
+        _upload_store.write_chunk,
+        body.get("upload_id"),
+        body.get("offset"),
+        body.get("data_base64"),
+    )
 
 
 @app.post("/api/uploads/finish")
@@ -651,8 +725,13 @@ def api_upload_finish():
     try:
         result = _upload_store.finish(body.get("upload_id"))
         path = result.get("path") if isinstance(result, dict) else None
-        if (not isinstance(path, str) or not path or "\x00" in path
-                or os.path.isabs(path) or os.path.splitdrive(path)[0]):
+        if (
+            not isinstance(path, str)
+            or not path
+            or "\x00" in path
+            or os.path.isabs(path)
+            or os.path.splitdrive(path)[0]
+        ):
             raise UploadError("unavailable")
         _confine(path)
         return jsonify({"path": path})
@@ -681,7 +760,11 @@ def api_prepare_operation():
     if not isinstance(a, dict):
         raise UnsafePath("invalid request")
     command = a.get("command")
-    if not isinstance(command, str) or command not in {"download", "convert", "run_queue"}:
+    if not isinstance(command, str) or command not in {
+        "download",
+        "convert",
+        "run_queue",
+    }:
         raise UnsafePath("invalid operation command")
     return _dispatch("prepare", {"command": command})
 
@@ -720,19 +803,27 @@ def api_download():
             # The engine rejects these too -- that is the check that actually
             # protects the CLI, TUI and desktop app. Repeating it here only
             # buys a 400 instead of a 500 for a malformed request.
-            "video_fmt": _choice(a.get("video_fmt"), set(VIDEO_FORMATS),
-                                 "video format", "mp4"),
-            "audio_fmt": _choice(a.get("audio_fmt"), set(AUDIO_FORMATS),
-                                 "audio format", "mp3"),
-            "quality": _choice(a.get("quality"), set(QUALITY_PRESETS),
-                               "quality preset", "best"),
+            "video_fmt": _choice(
+                a.get("video_fmt"), set(VIDEO_FORMATS), "video format", "mp4"
+            ),
+            "audio_fmt": _choice(
+                a.get("audio_fmt"), set(AUDIO_FORMATS), "audio format", "mp3"
+            ),
+            "quality": _choice(
+                a.get("quality"), set(QUALITY_PRESETS), "quality preset", "best"
+            ),
             "browser": _choice(a.get("browser"), set(BROWSERS), "browser", "none"),
             "bitrate": _bitrate(a.get("bitrate", "192")),
             "cookie_file": _cookie_file(a.get("cookie_file")),
             "noplaylist": noplaylist,
         },
     }
-    return _dispatch("download", args, operation_id=operation_id, before_execute=_prepare_downloads_dir)
+    return _dispatch(
+        "download",
+        args,
+        operation_id=operation_id,
+        before_execute=_prepare_downloads_dir,
+    )
 
 
 # OpenAI-Codex_Fork_Source_Code: expose metadata-only playlist preview.
@@ -742,16 +833,27 @@ def api_preview_playlist():
     if not isinstance(a, dict):
         raise UnsafePath("invalid request")
     url = a.get("url")
-    if (not isinstance(url, str) or not url.strip() or "\x00" in url
-            or len(url) > 8192 or any(ord(char) < 32 for char in url)):
+    if (
+        not isinstance(url, str)
+        or not url.strip()
+        or "\x00" in url
+        or len(url) > 8192
+        or any(ord(char) < 32 for char in url)
+    ):
         raise UnsafePath("invalid playlist URL")
     options = {
         # Metadata preview never creates or writes to the downloads directory.
         "save_path": "",
         "mode": _choice(a.get("mode"), {"video", "audio"}, "mode", "video"),
-        "video_fmt": _choice(a.get("video_fmt"), set(VIDEO_FORMATS), "video format", "mp4"),
-        "audio_fmt": _choice(a.get("audio_fmt"), set(AUDIO_FORMATS), "audio format", "mp3"),
-        "quality": _choice(a.get("quality"), set(QUALITY_PRESETS), "quality preset", "best"),
+        "video_fmt": _choice(
+            a.get("video_fmt"), set(VIDEO_FORMATS), "video format", "mp4"
+        ),
+        "audio_fmt": _choice(
+            a.get("audio_fmt"), set(AUDIO_FORMATS), "audio format", "mp3"
+        ),
+        "quality": _choice(
+            a.get("quality"), set(QUALITY_PRESETS), "quality preset", "best"
+        ),
         "browser": _choice(a.get("browser"), set(BROWSERS), "browser", "none"),
         "bitrate": _bitrate(a.get("bitrate", "192")),
         "cookie_file": _cookie_file(a.get("cookie_file")),
@@ -765,20 +867,35 @@ def api_convert():
     if not isinstance(a, dict):
         raise UnsafePath("invalid request")
     operation_id = _operation_id(a)
-    dst_fmt = _choice(a.get("dst_fmt"), set(VIDEO_FORMATS) | set(AUDIO_FORMATS),
-                      "output format", "mp4")
+    dst_fmt = _choice(
+        a.get("dst_fmt"),
+        set(VIDEO_FORMATS) | set(AUDIO_FORMATS),
+        "output format",
+        "mp4",
+    )
     video_encoder = _video_encoder_choice(a.get("video_encoder", "software"), dst_fmt)
     args = {
         "files": _confine_all(a.get("files")),
         "dst_fmt": dst_fmt,
         "save_path": _save_path(a.get("save_path")),
-        "conflict_policy": _policy(a.get("conflict_policy"), a.get("overwrite_confirmed")),
+        "conflict_policy": _policy(
+            a.get("conflict_policy"), a.get("overwrite_confirmed")
+        ),
         # OpenAI-Codex_Fork_Source_Code: absent clients retain software default.
         "video_encoder": video_encoder,
         # OpenAI-Codex_app_ui: forward explicit boolean confirmation.
-        **({"overwrite_confirmed": True} if a.get("overwrite_confirmed") is True else {}),
+        **(
+            {"overwrite_confirmed": True}
+            if a.get("overwrite_confirmed") is True
+            else {}
+        ),
     }
-    return _dispatch("convert", args, operation_id=operation_id, before_execute=_prepare_downloads_dir)
+    return _dispatch(
+        "convert",
+        args,
+        operation_id=operation_id,
+        before_execute=_prepare_downloads_dir,
+    )
 
 
 @app.post("/api/preview_convert")
@@ -786,12 +903,19 @@ def api_preview_convert():
     a = request.get_json() or {}
     if not isinstance(a, dict):
         raise UnsafePath("invalid request")
-    return _dispatch("preview_convert", {
-        "files": _confine_all(a.get("files")),
-        "dst_fmt": _choice(a.get("dst_fmt"), set(VIDEO_FORMATS) | set(AUDIO_FORMATS),
-                           "output format", "mp4"),
-        "save_path": _save_path(a.get("save_path")),
-    })
+    return _dispatch(
+        "preview_convert",
+        {
+            "files": _confine_all(a.get("files")),
+            "dst_fmt": _choice(
+                a.get("dst_fmt"),
+                set(VIDEO_FORMATS) | set(AUDIO_FORMATS),
+                "output format",
+                "mp4",
+            ),
+            "save_path": _save_path(a.get("save_path")),
+        },
+    )
 
 
 @app.post("/api/preview_queue")
@@ -808,11 +932,20 @@ def api_run_queue():
     if not isinstance(a, dict):
         raise UnsafePath("invalid request")
     operation_id = _operation_id(a)
-    return _dispatch("run_queue", {
-        "tasks": _confine_tasks(a.get("tasks"), a.get("overwrite_confirmed")),
-        # OpenAI-Codex_app_ui: forward explicit boolean confirmation.
-        **({"overwrite_confirmed": True} if a.get("overwrite_confirmed") is True else {}),
-    }, operation_id=operation_id, before_execute=_prepare_downloads_dir)
+    return _dispatch(
+        "run_queue",
+        {
+            "tasks": _confine_tasks(a.get("tasks"), a.get("overwrite_confirmed")),
+            # OpenAI-Codex_app_ui: forward explicit boolean confirmation.
+            **(
+                {"overwrite_confirmed": True}
+                if a.get("overwrite_confirmed") is True
+                else {}
+            ),
+        },
+        operation_id=operation_id,
+        before_execute=_prepare_downloads_dir,
+    )
 
 
 @app.post("/api/ai_plan")
@@ -820,11 +953,14 @@ def api_ai_plan():
     a = request.get_json() or {}
     if not isinstance(a, dict):
         raise UnsafePath("invalid request")
-    return _dispatch("ai_plan", {
-        "api_key": a.get("api_key", ""),
-        "prompt": a.get("prompt", ""),
-        "context": a.get("context"),
-    })
+    return _dispatch(
+        "ai_plan",
+        {
+            "api_key": a.get("api_key", ""),
+            "prompt": a.get("prompt", ""),
+            "context": a.get("context"),
+        },
+    )
 
 
 @app.post("/api/stop")
@@ -854,11 +990,15 @@ def events():
             with _sub_lock:
                 _subscribers.discard(q)
 
-    return Response(stream(), mimetype="text/event-stream", headers={
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",  # disable proxy buffering (nginx)
-        "Connection": "keep-alive",
-    })
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable proxy buffering (nginx)
+            "Connection": "keep-alive",
+        },
+    )
 
 
 # ── Produced-file retrieval ──────────────────────────────────────────────────
@@ -905,7 +1045,9 @@ def main() -> None:
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "5000"))
     lang_note = ", ".join(i18n.available().keys())
-    sys.stderr.write(f"[web_app] serving on {_server_url(host, port)}  (langs: {lang_note})\n")
+    sys.stderr.write(
+        f"[web_app] serving on {_server_url(host, port)}  (langs: {lang_note})\n"
+    )
     # threaded=True so the SSE stream and command requests run concurrently.
     app.run(host=host, port=port, threaded=True)
 

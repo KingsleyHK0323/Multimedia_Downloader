@@ -13,31 +13,58 @@ from __future__ import annotations
 # ─────────────────────────────────────────────────────────────────────────────
 
 VIDEO_FORMATS: list[str] = [
-    "mp4", "mkv", "mov", "avi", "webm",
-    "flv", "wmv", "ts",  "m4v", "3gp",
+    "mp4",
+    "mkv",
+    "mov",
+    "avi",
+    "webm",
+    "flv",
+    "wmv",
+    "ts",
+    "m4v",
+    "3gp",
 ]
 
 # OpenAI-Codex_Fork_Source_Code: expose explicit conversion encoder choices.
 # OpenAI-Codex_Fork_Source_Code: VideoToolbox is an explicit choice, not detection.
-VIDEO_ENCODERS: list[str] = ["software", "h264_nvenc", "h264_qsv", "h264_amf", "h264_videotoolbox"]
+VIDEO_ENCODERS: list[str] = [
+    "software",
+    "h264_nvenc",
+    "h264_qsv",
+    "h264_amf",
+    "h264_videotoolbox",
+]
 HARDWARE_VIDEO_FORMATS: list[str] = ["mp4", "mkv", "mov"]
 
 AUDIO_FORMATS: list[str] = [
-    "mp3", "flac", "aac", "wav",
-    "ogg", "m4a", "opus", "wma",
+    "mp3",
+    "flac",
+    "aac",
+    "wav",
+    "ogg",
+    "m4a",
+    "opus",
+    "wma",
 ]
 
 QUALITY_PRESETS: list[str] = ["best", "1080p", "720p", "480p", "360p", "worst"]
 
 BROWSERS: list[str] = [
-    "none", "chrome", "firefox", "edge",
-    "safari", "brave", "opera", "chromium",
+    "none",
+    "chrome",
+    "firefox",
+    "edge",
+    "safari",
+    "brave",
+    "opera",
+    "chromium",
 ]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 #  Helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def format_filesize(size_bytes: int) -> str:
     """
@@ -46,9 +73,9 @@ def format_filesize(size_bytes: int) -> str:
     Uses 1 MiB / 1 GiB as boundaries (>=) so that exactly 1 MiB displays
     as "1.0 MB" rather than "1024.0 KB".
     """
-    if size_bytes >= 1_073_741_824:        # 1 GiB
+    if size_bytes >= 1_073_741_824:  # 1 GiB
         return f"{size_bytes / 1_073_741_824:.2f} GB"
-    if size_bytes >= 1_048_576:            # 1 MiB
+    if size_bytes >= 1_048_576:  # 1 MiB
         return f"{size_bytes / 1_048_576:.1f} MB"
     return f"{size_bytes / 1024:.1f} KB"
 
@@ -69,10 +96,7 @@ def build_ydl_format_string(quality: str, fmt: str) -> str:
     if quality == "worst":
         return "worstvideo+worstaudio/worst"
     height = quality.replace("p", "")
-    return (
-        f"bestvideo[height<={height}]+bestaudio"
-        f"/best[height<={height}]/best"
-    )
+    return f"bestvideo[height<={height}]+bestaudio" f"/best[height<={height}]/best"
 
 
 def ensure_known(value: str, allowed: list[str], field: str) -> str:
@@ -113,7 +137,7 @@ def platform_headers(url: str) -> dict[str, str]:
     """
     if is_douyin(url):
         return {
-            "Referer":    "https://www.douyin.com/",
+            "Referer": "https://www.douyin.com/",
             "User-Agent": (
                 "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) "
                 "AppleWebKit/605.1.15 (KHTML, like Gecko) "
@@ -122,7 +146,7 @@ def platform_headers(url: str) -> dict[str, str]:
         }
     if is_tiktok(url):
         return {
-            "Referer":    "https://www.tiktok.com/",
+            "Referer": "https://www.tiktok.com/",
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "

@@ -129,10 +129,14 @@ class LogTab(Vertical):
         stem = f"mmdl_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         lines = [
             self.tr.t("log_file_header"),
-            self.tr.t("log_file_generated", ts=datetime.now().isoformat(timespec="seconds")),
+            self.tr.t(
+                "log_file_generated", ts=datetime.now().isoformat(timespec="seconds")
+            ),
             "",
         ]
-        lines += [f"[{ts}] [{level.upper():4}] {text}" for ts, level, text in self._entries]
+        lines += [
+            f"[{ts}] [{level.upper():4}] {text}" for ts, level, text in self._entries
+        ]
         lines.append("")
         lines.append(self.tr.t("log_file_end", n=len(self._entries)))
         for index in range(1000):
@@ -145,12 +149,16 @@ class LogTab(Vertical):
             except FileExistsError:
                 continue
             except OSError as e:
-                self.app.notify(self.tr.t("log_save_failed", err=str(e)), severity="error")
+                self.app.notify(
+                    self.tr.t("log_save_failed", err=str(e)), severity="error"
+                )
                 return
             self.app.notify(self.tr.t("log_saved", name=name))
             return
-        self.app.notify(self.tr.t("log_save_failed", err="No available log filename"),
-                        severity="error")
+        self.app.notify(
+            self.tr.t("log_save_failed", err="No available log filename"),
+            severity="error",
+        )
 
 
 # Updated by OpenAI-Codex_Fork_Source_Code.
