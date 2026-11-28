@@ -293,7 +293,7 @@ jobs:
           node-version: '22'
           registry-url: 'https://npm.pkg.github.com'
           scope: '@kingsleyhk0323'
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: npm-web-package-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/npm-delivery
