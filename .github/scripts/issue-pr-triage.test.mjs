@@ -493,7 +493,7 @@ test('scheduled label bootstrap does not create labels without a human PR', asyn
 
 test('scheduled welcome includes a fork PR targeting the website branch', async () => {
   const h = welcomeHarness('pr'); h.context.eventName = 'schedule'; h.context.payload = {};
-  h.state.openPulls[0].base.ref = 'Multimedia_Downloader_Web_Preview';
+  h.state.openPulls[0].base.ref = 'Multimedia_Downloader_Website';
   await h.run();
   assert.equal(h.state.created.length, 1);
   assert.match(h.state.created[0].body, /first pull request/);
@@ -502,7 +502,7 @@ test('scheduled welcome includes a fork PR targeting the website branch', async 
 test('website PR CI completion wakes the first-interaction scanner', async () => {
   assert.match(welcomeWorkflow, /workflows: \[CI, Website build check\]/);
   const h = welcomeHarness('pr');
-  h.state.openPulls[0].base.ref = 'Multimedia_Downloader_Web_Preview';
+  h.state.openPulls[0].base.ref = 'Multimedia_Downloader_Website';
   h.context.payload = { workflow_run: { event: 'pull_request', name: 'Website build check', pull_requests: [] } };
   await h.run();
   assert.equal(h.state.created.length, 1);

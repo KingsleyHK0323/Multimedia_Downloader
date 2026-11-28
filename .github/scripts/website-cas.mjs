@@ -9,7 +9,7 @@ const BOT = 'kingsley-multimedia-automation[bot]';
 const APP_ID = 5868451;
 const ACTIONS_ID = 15368;
 const WEBSITE_CI_BLOB = '7f8b062f29ee5286ef88c5f5ca4c7c73c5e8dc29';
-const TARGET = 'Multimedia_Downloader_Web_Preview';
+const TARGET = 'Multimedia_Downloader_Website';
 const TEMP = 'automation/protected-workflows';
 const SHA = /^[0-9a-f]{40}$/;
 const positive = n => Number.isSafeInteger(n) && n > 0;

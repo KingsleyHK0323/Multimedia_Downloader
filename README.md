@@ -156,7 +156,7 @@ needed after a labeled pull request is merged.
 
 The `Auto-format Python` workflow formats changed tracked Python files on pushes to `Source_Code` with Black and commits formatting changes back to that branch. It requests CI, matrix, cross-branch, container and API documentation workflows after its commit; a concurrent branch update causes its push to fail safely. (OpenAI-Codex)
 
-After a pull request merges, the `Clean merged branches` workflow deletes its unchanged source branch when it belongs to this repository. It preserves `Source_Code` and `Multimedia_Downloader_Web_Preview`. (OpenAI-Codex)
+After a pull request merges, the `Clean merged branches` workflow deletes its unchanged source branch when it belongs to this repository. It preserves `Source_Code` and `Multimedia_Downloader_Website`. (OpenAI-Codex)
 
 Release builds upload installers to a draft. Automatic publication requires the six expected nonempty installers and successful CI and Python matrix runs for the tagged commit. The workflow does not automatically publish v4.3.3; a historical v4.3.3 release already exists. A failed build or missing verification leaves a draft unpublished. (OpenAI-Codex)
 
@@ -178,13 +178,13 @@ The `Stale issue and PR management` workflow warns after 30 days of inactivity a
 
 The repository owner is listed in `.github/CODEOWNERS` for pull request review requests. GitHub does not request a review from the author of their own pull request. (OpenAI-Codex)
 
-The `Cross-branch checks` workflow checks the current `Source_Code` version and builds the `Multimedia_Downloader_Web_Preview` branch after source pushes or completion of the preview deployment workflow. (OpenAI-Codex)
+The `Cross-branch checks` workflow checks the current `Source_Code` version and builds the `Multimedia_Downloader_Website` branch after source pushes or completion of the preview deployment workflow. (OpenAI-Codex)
 
 The `Python matrix tests` workflow runs the Python suite on Windows, macOS, and Linux with Python 3.10 through 3.14. (OpenAI-Codex)
 
 The `CI` workflow runs the existing source checks on pushes and pull requests.
 Every Monday at 00:17 UTC (08:17 Hong Kong time), it also runs those checks on
-`Source_Code`, builds the `Multimedia_Downloader_Web_Preview` branch, and checks
+`Source_Code`, builds the `Multimedia_Downloader_Website` branch, and checks
 that the published GitHub Pages URL returns HTTP 200 with the expected page
 title. Schedule events run from the repository's default branch.
 

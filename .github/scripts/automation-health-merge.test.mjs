@@ -145,7 +145,7 @@ function harness(options = {}) {
   const writer = {
     paginate: async (route, args) => {
       assert.equal(route, 'GET /repos/{owner}/{repo}/rules/branches/{branch}');
-      if (args.branch === 'Multimedia_Downloader_Web_Preview') {
+      if (args.branch === 'Multimedia_Downloader_Website') {
         state.websiteReads++;
         if (state.noWebsiteRule) return [];
         const parameters = state.websiteParamMode === 'missing' ? undefined :
@@ -175,8 +175,8 @@ function harness(options = {}) {
           state.websiteDetailParamMode === 'extra' ? { update_allows_fetch_and_merge: false, unknown_option: true } :
           { update_allows_fetch_and_merge: state.allowFetchMerge };
         const include = state.scopeMode === 'other' ? ['refs/heads/Source_Code'] :
-          state.scopeMode === 'broad' ? ['~ALL'] : ['refs/heads/Multimedia_Downloader_Web_Preview'];
-        const exclude = state.scopeMode === 'excluded' ? ['refs/heads/Multimedia_Downloader_Web_Preview'] : [];
+          state.scopeMode === 'broad' ? ['~ALL'] : ['refs/heads/Multimedia_Downloader_Website'];
+        const exclude = state.scopeMode === 'excluded' ? ['refs/heads/Multimedia_Downloader_Website'] : [];
         const conditions = state.scopeMode === 'missing' ? undefined :
           { ref_name: { include, exclude }, ...(state.scopeMode === 'unknown' ? { unknown: true } : {}) };
         return { data: { id: 8, enforcement: 'active', target: 'branch',

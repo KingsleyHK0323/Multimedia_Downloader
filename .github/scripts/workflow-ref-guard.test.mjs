@@ -24,7 +24,7 @@ test('preview checks execute only commits from trusted website history', () => {
   const end = '      # END TRUSTED_PREVIEW_REF';
   const script = shellBlock(cross, start, end);
   const before = cross.split(start)[0];
-  assert.match(before, /ref: Multimedia_Downloader_Web_Preview\n          fetch-depth: 0\n          persist-credentials: false/);
+  assert.match(before, /ref: Multimedia_Downloader_Website\n          fetch-depth: 0\n          persist-credentials: false/);
 
   const repo = join(directory(), 'repo');
   mkdirSync(repo);
@@ -69,7 +69,7 @@ test('preview checks execute only commits from trusted website history', () => {
   assert.notEqual(verify({ REQUESTED_SHA: untrusted }).status, 0);
   assert.equal(git('rev-parse', 'HEAD'), tip);
   assert.notEqual(verify({ REQUESTED_SHA: 'v1$(printf INJECTED)' }).status, 0);
-  const run = { EVENT_NAME: 'workflow_run', RUN_BRANCH: 'Multimedia_Downloader_Web_Preview',
+  const run = { EVENT_NAME: 'workflow_run', RUN_BRANCH: 'Multimedia_Downloader_Website',
     RUN_REPOSITORY: 'owner/repo', RUN_SHA: ancestor, RUN_CONCLUSION: 'success' };
   assert.equal(verify(run).status, 0);
   assert.equal(git('rev-parse', 'HEAD'), ancestor);

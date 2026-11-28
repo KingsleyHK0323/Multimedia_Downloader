@@ -43,7 +43,7 @@ jobs:
       # OpenAI-Codex: fetch trusted website history before selecting a requested commit.
       - uses: actions/checkout@v7
         with:
-          ref: Multimedia_Downloader_Web_Preview
+          ref: Multimedia_Downloader_Website
           fetch-depth: 0
           persist-credentials: false
       # BEGIN TRUSTED_PREVIEW_REF
@@ -62,7 +62,7 @@ jobs:
           target=""
           if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
             target="$REQUESTED_SHA"
-          elif [[ "$EVENT_NAME" == workflow_run && "$RUN_BRANCH" == Multimedia_Downloader_Web_Preview ]]; then
+          elif [[ "$EVENT_NAME" == workflow_run && "$RUN_BRANCH" == Multimedia_Downloader_Website ]]; then
             [[ "$RUN_REPOSITORY" == "$THIS_REPOSITORY" && "$RUN_CONCLUSION" == success ]] || { echo "::error::Untrusted or unsuccessful preview deployment."; exit 1; }
             [[ "$RUN_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Invalid deployed preview commit."; exit 1; }
             target="$RUN_SHA"
