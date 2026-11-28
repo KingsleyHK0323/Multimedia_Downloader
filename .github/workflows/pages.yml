@@ -2,7 +2,7 @@ name: Build and deploy preview site
 
 on:
   push:
-    branches: [Multimedia_Downloader_Web_Preview]
+    branches: [Multimedia_Downloader_Website]
   workflow_dispatch:
 
 permissions:

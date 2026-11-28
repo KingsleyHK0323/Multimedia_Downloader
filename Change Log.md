@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-11-28
+
+- Follow the renamed Multimedia_Downloader_Website branch for website builds and GitHub Pages deployment. (OpenAI-Codex)
+
 ## 2026-11-22
 
 - Run the non-deploying website build for the approved temporary website candidate branch. (OpenAI-Codex_ruleset_architecture)

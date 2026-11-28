@@ -4,9 +4,9 @@ name: Website build check
 on:
   push:
     # OpenAI-Codex_ruleset_architecture: test the approved temporary website candidate before updating the protected branch.
-    branches: [Multimedia_Downloader_Web_Preview, automation/protected-workflows]
+    branches: [Multimedia_Downloader_Website, automation/protected-workflows]
   pull_request:
-    branches: [Multimedia_Downloader_Web_Preview]
+    branches: [Multimedia_Downloader_Website]
 
 permissions:
   contents: read
