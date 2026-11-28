@@ -425,7 +425,9 @@ with open(os.path.join(slot, "payload.mp4"), "ab") as stream:
     os.fsync(stream.fileno())
 os._exit(23)
 '''
-    crashed = subprocess.run([sys.executable, "-B", "-c", crash_child, str(crash_slot)],  # noqa: S603
+    # OpenAI-Codex_formatter_fix: This child uses the current interpreter.
+    crashed = subprocess.run(  # noqa: S603
+        [sys.executable, "-B", "-c", crash_child, str(crash_slot)],
                              capture_output=True, text=True, timeout=30)
     assert crashed.returncode == 23 and not crashed.stderr
     restarted = UploadStore(str(race_root), str(DIST), ENV)

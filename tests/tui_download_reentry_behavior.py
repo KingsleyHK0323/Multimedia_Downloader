@@ -120,7 +120,10 @@ def load_download_tab():
         "ProgressBar": ProgressBar, "threading": threading,
         "DownloadOptions": lambda **kwargs: SimpleNamespace(**kwargs),
     }
-    exec(compile(module, str(source), "exec"), namespace)  # noqa: S102 - Use real methods without Textual.
+    # OpenAI-Codex_formatter_fix: Keep the security exception on the call.
+    # Use real methods without Textual.
+    compiled = compile(module, str(source), "exec")
+    exec(compiled, namespace)  # noqa: S102
     return namespace["DownloadTab"]
 
 

@@ -55,7 +55,10 @@ scope = {"classify": errors.classify, "is_stale_tool": errors.is_stale_tool,
          "ErrorKind": errors.ErrorKind, "OperationCancelled": errors.OperationCancelled,
          "redact_sensitive_urls": module.redact_sensitive_urls,
          "time": fake_time, "_MAX_RETRIES": 2, "_RETRY_DELAY_S": 2}
-exec(compile(synthetic_module, "<synthetic-downloader>", "exec"), scope)  # noqa: S102 - Execute only repository AST with fake dependencies.
+# OpenAI-Codex_formatter_fix: Keep the security exception on the call.
+# Execute only repository AST with fake dependencies.
+compiled = compile(synthetic_module, "<synthetic-downloader>", "exec")
+exec(compiled, scope)  # noqa: S102
 raw_url = "https://example.invalid/media?token=SYNTHETIC_INPUT_42"
 attempted, starts, log_events = [], [], []
 downloader = scope["Downloader"](object(), log_cb=lambda level, key, **fmt: log_events.append((level, key, fmt)),
