@@ -1,3 +1,4 @@
+# OpenAI-Codex_artifact_fix: pin reviewed artifact action upgrades.
 # OpenAI-Codex: generate API documentation and refresh the approved Pages site.
 name: API documentation build
 
@@ -31,7 +32,7 @@ jobs:
       - name: Generate HTML reference
         run: python -m pdoc -o api-docs engine ai i18n
       - name: Upload documentation artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: python-api-documentation
           path: api-docs/

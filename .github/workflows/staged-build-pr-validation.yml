@@ -1,3 +1,4 @@
+# OpenAI-Codex_artifact_fix: pin reviewed artifact action upgrades.
 name: Staged build PR validation
 # OpenAI-Codex_safe_scope: untrusted test artifacts; no release writes.
 on:
@@ -80,8 +81,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          curl -fL --retry 3 --max-time 300 -o ffmpeg.tar.xz https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
-          xz -t ffmpeg.tar.xz
+          sources=(
+            https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz
+            https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz
+          )
+          for url in "${sources[@]}"; do
+            if curl -fL --connect-timeout 10 --retry 1 --max-time 300 -o ffmpeg.tar.xz "$url" && xz -t ffmpeg.tar.xz; then
+              break
+            fi
+            if [[ "$url" == "${sources[-1]}" ]]; then exit 1; fi
+          done
           mkdir ffmpeg-dl
           tar -xf ffmpeg.tar.xz -C ffmpeg-dl
           bin="$(find ffmpeg-dl -name ffmpeg -type f | head -1)"
@@ -163,7 +172,7 @@ jobs:
                       'platform': os.environ['PLATFORM'], 'assets': files}
           (output / 'manifest.json').write_text(json.dumps(manifest, sort_keys=True), encoding='utf-8')
           PY
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: staged-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.platform }}
           path: ${{ runner.temp }}/staged-release-output/
@@ -177,7 +186,7 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: staged-${{ github.run_id }}-${{ github.run_attempt }}-*
           path: staged-artifacts
