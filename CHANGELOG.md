@@ -12,6 +12,8 @@
 
 ### Unreleased
 
+- Show the final download result and available HTTP status in the progress panel, and round live percentages to one decimal place. (OpenAI-Codex_ui_fix)
+
 ### [4.3.24] — 2026-11-28 (Public Beta)
 
 > Download progress, conversion, and the new icons have not yet been verified in real desktop use. Some build dependencies remain unpinned. (OpenAI-Codex)

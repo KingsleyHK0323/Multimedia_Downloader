@@ -96,6 +96,7 @@
   "log_item_error": "[{i}/{t}]  ✗  Error: {err}",
   "stop_requested": "Stop requested. Waiting for the current operation to stop.",
   "log_hint_cookie_database": "Chrome's cookie database could not be copied. Close Chrome completely and retry, or select an exported cookie file. Do not share your cookies.",
+  "log_hint_bilibili_412": "BiliBili rejected the request (HTTP 412). Open the video on BiliBili to check availability, then retry later.",
   "log_hint_http_567": "The site returned HTTP 567. Retry later or check whether the video requires authentication; a retry may still fail.",
   "log_hint_incomplete_download": "The transfer ended before all bytes arrived. Check your connection and retry; the server may not support resuming.",
   "log_all_done": "✓  All {t} tasks finished.",

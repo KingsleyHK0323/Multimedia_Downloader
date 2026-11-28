@@ -1,7 +1,7 @@
 // OpenAI-Codex_Fork_GitHub_REPO: classify terminal replies without exposing URLs or errors.
 export type DownloadOutcome =
   | { kind: "complete"; total: number }
-  | { kind: "failed"; total: number; failed: number }
+  | { kind: "failed"; total: number; failed: number; httpStatus?: string }
   | { kind: "incomplete"; total: number; done: number }
   | { kind: "unknown" };
 
@@ -18,6 +18,16 @@ export function downloadOutcome(response: unknown, requested: readonly string[])
     if (!item[1]) failed += 1;
   }
   if (results.length < requested.length) return { kind: "incomplete", total: requested.length, done: results.length };
-  if (failed) return { kind: "failed", total: requested.length, failed };
+  if (failed) {
+    // OpenAI-Codex_ui_fix: expose only a validated HTTP status, never the raw diagnostic.
+    const item = results[0];
+    const httpStatus = results.length === 1 && Array.isArray(item)
+      ? /\bHTTP(?: Error)?\s+([45]\d{2})\b/i.exec(item[2])?.[1] : undefined;
+    return { kind: "failed", total: requested.length, failed, ...(httpStatus ? { httpStatus } : {}) };
+  }
   return { kind: "complete", total: requested.length };
+}
+
+export function formatDownloadPercent(value: number): string {
+  return Number.isFinite(value) ? String(Math.round(Math.min(100, Math.max(0, value)) * 10) / 10) : "—";
 }

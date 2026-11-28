@@ -96,6 +96,7 @@
   "log_item_error": "[{i}/{t}]  ✗  錯誤：{err}",
   "stop_requested": "已要求停止，正等待目前工作結束。",
   "log_hint_cookie_database": "無法複製 Chrome 的 Cookie 資料庫。請完全關閉 Chrome 後重試，或選擇已匯出的 Cookie 檔案；不要分享 Cookie。",
+  "log_hint_bilibili_412": "BiliBili 拒絕了請求（HTTP 412）。請在 BiliBili 開啟影片確認是否可觀看，稍後再試。",
   "log_hint_http_567": "網站回傳 HTTP 567。請稍後重試，或檢查影片是否需要登入；重試仍可能失敗。",
   "log_hint_incomplete_download": "傳輸在接收完整資料前中斷。請檢查網絡並重試；伺服器可能不支援續傳。",
   "log_all_done": "✓  全部 {t} 個任務完成。",

@@ -3,9 +3,9 @@
   import Card from "../components/Card.svelte";
   import ProgressBar from "../components/ProgressBar.svelte";
   import { api, IS_TAURI, type Formats } from "../api";
-  import { t, progress, busy, downloadItems } from "../store";
+  import { t, progress, busy, downloadItems, downloadDisplay } from "../store";
   import { toast } from "../lib/toast";
-  import { downloadOutcome } from "../lib/downloadOutcome";
+  import { downloadOutcome, formatDownloadPercent } from "../lib/downloadOutcome";
 
   let { mode, formats }: { mode: "video" | "audio"; formats: Formats | null } = $props();
 
@@ -25,7 +25,7 @@
   const urlList = $derived(urls.split("\n").map((u) => u.trim()).filter(Boolean));
 
   async function start() {
-    if (urlList.length === 0) return;
+    if ($busy || urlList.length === 0) return;
     // Lives in the shared store (not local state) so it survives switching
     // away to another tab and back — see store.ts's downloadItems comment.
     const startedUrls = [...urlList]; // OpenAI-Codex_Fork_GitHub_REPO
@@ -33,6 +33,7 @@
     busy.set(true);
     stopping = false;
     progress.set(null);
+    downloadDisplay.set({ mode, terminal: null });
     let stoppedResultConfirmed = false; // OpenAI-Codex
     try {
       const response = await api.startDownload({
@@ -42,13 +43,15 @@
       });
       const outcome = downloadOutcome(response, startedUrls);
       stoppedResultConfirmed = stopping && outcome.kind === "incomplete";
-      if (outcome.kind === "complete") toast(tr("status_all_done_dl", { t: outcome.total }), "ok");
-      else if (outcome.kind === "failed") toast(tr("download_result_failed",
-        { ok: outcome.total - outcome.failed, fail: outcome.failed, total: outcome.total }), "err");
-      else if (outcome.kind === "incomplete") toast(tr("download_result_incomplete",
-        { done: outcome.done, total: outcome.total }), "err");
-      else toast(tr("download_result_unknown"), "err");
+      // OpenAI-Codex_ui_fix: terminal outcomes take precedence over late progress events.
+      const terminal = outcome.kind === "complete" ? { key: "status_all_done_dl", params: { t: outcome.total } }
+        : outcome.kind === "failed" ? { key: "download_result_failed", params: { ok: outcome.total - outcome.failed, fail: outcome.failed, total: outcome.total }, httpStatus: outcome.httpStatus }
+        : outcome.kind === "incomplete" ? { key: "download_result_incomplete", params: { done: outcome.done, total: outcome.total } }
+        : { key: "download_result_unknown" };
+      downloadDisplay.set({ mode, terminal });
+      toast(tr(terminal.key, terminal.params), outcome.kind === "complete" ? "ok" : "err");
     } catch (e) {
+      downloadDisplay.set({ mode, terminal: { key: "download_result_unknown" } });
       toast(String(e instanceof Error ? e.message : e), "err");
     } finally {
       if (stoppedResultConfirmed) {
@@ -146,11 +149,15 @@
     </div>
   </Card>
 
-  {#if $progress}
+  {#if $downloadDisplay?.mode === mode && $downloadDisplay.terminal}
+    <Card>
+      <p role="status" class="text-xs">{tr($downloadDisplay.terminal.key, $downloadDisplay.terminal.params)}{#if $downloadDisplay.terminal.httpStatus} (HTTP {$downloadDisplay.terminal.httpStatus}){/if}</p>
+    </Card>
+  {:else if $progress && $busy && $downloadDisplay?.mode === mode}
     <Card>
       <ProgressBar
         pct={$progress.pct}
-        label={stopping ? tr("stop_requested") : tr("status_progress", { pct: $progress.pct, speed: $progress.speed, eta: $progress.eta })}
+        label={stopping ? tr("stop_requested") : tr("status_progress", { pct: formatDownloadPercent($progress.pct), speed: $progress.speed, eta: $progress.eta })}
       />
     </Card>
   {/if}
