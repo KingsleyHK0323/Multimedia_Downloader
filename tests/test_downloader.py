@@ -30,7 +30,9 @@ def _make_downloader(**cbs) -> Downloader:
 class DownloadPreflightTests(unittest.TestCase):
     def test_queue_and_batch_reject_low_space(self):
         dl = _make_downloader()
-        with patch("engine.downloader.shutil.disk_usage") as usage, patch.object(dl, "download_one") as transfer:
+        with patch("engine.downloader.shutil.disk_usage") as usage, patch.object(
+            dl, "download_one"
+        ) as transfer:
             usage.return_value.free = 1
             with self.assertRaises(ValueError):
                 dl.download_one_with_retry("mock")
@@ -41,7 +43,9 @@ class DownloadPreflightTests(unittest.TestCase):
     def test_prestart_stop_applies_only_to_first_batch(self):
         dl = _make_downloader()
         dl.stop()
-        with patch("engine.downloader.shutil.disk_usage") as usage, patch.object(dl, "download_one") as transfer:
+        with patch("engine.downloader.shutil.disk_usage") as usage, patch.object(
+            dl, "download_one"
+        ) as transfer:
             self.assertEqual(dl.download_batch(["first"]), [])
             usage.assert_not_called()
             transfer.assert_not_called()

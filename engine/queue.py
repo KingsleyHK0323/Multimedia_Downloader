@@ -40,17 +40,18 @@ class Task:
     * ``"download"`` uses ``url`` + ``options``
     * ``"convert"``  uses ``src_path`` + ``dst_path``
     """
-    kind:     str
-    label:    str = ""
-    status:   str = "pending"   # pending | running | done | error | skipped
-    error:    str = ""
+
+    kind: str
+    label: str = ""
+    status: str = "pending"  # pending | running | done | error | skipped
+    error: str = ""
     #: str value of an :class:`engine.errors.ErrorKind`; "" while not failed.
     #: Named error_kind, not kind -- ``kind`` above already means the task type
     #: ("download"/"convert") and crosses the IPC boundary under that name.
     error_kind: str = ""
     # download
-    url:      Optional[str] = None
-    options:  Optional[DownloadOptions] = None
+    url: Optional[str] = None
+    options: Optional[DownloadOptions] = None
     # convert
     src_path: Optional[str] = None
     dst_path: Optional[str] = None
@@ -58,14 +59,18 @@ class Task:
 
 # ── Task factories — the clean way for a planner to build a plan ──────────────
 
+
 def download_task(url: str, options: DownloadOptions, label: str = "") -> Task:
-    return Task(kind=DOWNLOAD, url=url, options=options,
-                label=label or url)
+    return Task(kind=DOWNLOAD, url=url, options=options, label=label or url)
 
 
 def convert_task(src_path: str, dst_path: str, label: str = "") -> Task:
-    return Task(kind=CONVERT, src_path=src_path, dst_path=dst_path,
-                label=label or os.path.basename(src_path))
+    return Task(
+        kind=CONVERT,
+        src_path=src_path,
+        dst_path=dst_path,
+        label=label or os.path.basename(src_path),
+    )
 
 
 class TaskQueue:
@@ -82,14 +87,14 @@ class TaskQueue:
 
     def __init__(
         self,
-        log_cb:         Optional[LogCallback]        = None,
+        log_cb: Optional[LogCallback] = None,
         task_update_cb: Optional[TaskUpdateCallback] = None,
-        ffmpeg_bin:     str = "ffmpeg",
+        ffmpeg_bin: str = "ffmpeg",
     ) -> None:
-        self.log_cb         = log_cb
+        self.log_cb = log_cb
         self.task_update_cb = task_update_cb
-        self.ffmpeg_bin     = ffmpeg_bin
-        self._stop          = False
+        self.ffmpeg_bin = ffmpeg_bin
+        self._stop = False
 
     def stop(self) -> None:
         """Request cooperative cancellation. Pending tasks become ``skipped``."""
@@ -110,7 +115,7 @@ class TaskQueue:
         ok = fail = 0
         for i, task in enumerate(tasks, start=1):
             if self._stop:
-                for rest in tasks[i - 1:]:
+                for rest in tasks[i - 1 :]:
                     if rest.status == "pending":
                         self._set_status(rest, "skipped")
                 self._log("warn", "log_queue_stopped")
@@ -164,8 +169,9 @@ class TaskQueue:
         else:
             self._set_status(task, "error", f"unknown task kind: {task.kind!r}")
 
-    def _set_status(self, task: Task, status: str, error: str = "",
-                    kind: ErrorKind | None = None) -> None:
+    def _set_status(
+        self, task: Task, status: str, error: str = "", kind: ErrorKind | None = None
+    ) -> None:
         task.status = status
         if error:
             task.error = error
