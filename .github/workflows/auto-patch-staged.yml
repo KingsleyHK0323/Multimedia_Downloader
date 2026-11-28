@@ -665,6 +665,7 @@ jobs:
             })();
             const { inspectMergedPatch } = (() => {
             // BEGIN EXACT MERGED PATCH INSPECTOR
+            // OpenAI-Codex_artifact_fix: pin reviewed artifact action upgrades.
             // OpenAI-Codex_health_release_architecture: reconstruct a merged patch candidate before tag or release decisions.
             
             const FULL = 'KingsleyHK0323/Multimedia_Downloader', RID = 1251103365;
